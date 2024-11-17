@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created Nov 12 02:54:48 2024
+Created Nov 17 21:518:48 2024
 
 @author: Lucjan & Silas
 """
@@ -27,11 +27,39 @@ import psutil
 import traceback
 from scipy import stats
 import seaborn as sns
+import dask.dataframe as dd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Add after imports
 # Set default seaborn style
 sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
 sns.set_context("notebook", rc={"lines.linewidth": 1.0})
+
+# Add at the top of the file, after imports
+class Config:
+    """Configuration constants"""
+    MAX_WORKERS = os.cpu_count() * 2
+    MAX_PLOT_POINTS = 10000
+    PROGRESS_RESET_DELAY = 500  # milliseconds
+    DEFAULT_WINDOW_SIZE = (1920, 1080)
+    
+    class Colors:
+        """Color constants"""
+        ERROR = "red"
+        SUCCESS = "green"
+        INFO = "blue"
+        WARNING = "orange"
+    
+    class Plot:
+        """Plot configuration"""
+        DPI = 100  # Increased from default 100
+        FIGURE_SIZE = (12, 8)  # Inches
+        EXPORT_DPI = 300  # Higher DPI for exports
+        LINE_WIDTH = 0.5
+        FONT_SIZE = 10
+        TITLE_SIZE = 12
+        LABEL_SIZE = 8
 
 # Add after the imports, before the first function definition
 def profile_function(func):
@@ -176,8 +204,22 @@ class Application(tk.Tk):
         self.style = ttk.Style(self)
         self.style.theme_use('clam')
 
+        # Initialize high-resolution figure
+        self.figure = Figure(
+            figsize=Config.Plot.FIGURE_SIZE, 
+            dpi=Config.Plot.DPI,
+            facecolor='white'
+        )
+        
+        # Configure default plot styling
+        plt.rcParams['figure.dpi'] = Config.Plot.DPI
+        plt.rcParams['savefig.dpi'] = Config.Plot.EXPORT_DPI
+        plt.rcParams['lines.linewidth'] = Config.Plot.LINE_WIDTH
+        plt.rcParams['font.size'] = Config.Plot.FONT_SIZE
+        plt.rcParams['axes.titlesize'] = Config.Plot.TITLE_SIZE
+        plt.rcParams['axes.labelsize'] = Config.Plot.LABEL_SIZE
+
         # Initialize figure and canvas as None
-        self.figure = Figure(figsize=(8, 6))
         self.canvas = None
 
         self.file_path = tk.StringVar()
@@ -737,6 +779,46 @@ class Application(tk.Tk):
 
     # Function to browse and load the file
     @profile_function
+    def load_single_file(self, file, timestamps=None, index=0):
+        """
+        Helper function to load a single file
+        
+        Args:
+            file (str): Path to the file to load
+            timestamps (list, optional): List of timestamps for batch mode
+            index (int, optional): Index of the file in the batch
+            
+        Returns:
+            dict: Dictionary containing time, amplitude and index data
+        """
+        print(f"Loading file {index+1}: {file}")
+        
+        try:
+            df = pd.read_csv(file, delimiter='\t')
+            df.columns = [col.strip() for col in df.columns]
+            
+            # Check if the file has standard time column name
+            has_timestamp = 'Time - Plot 0' in df.columns
+            
+            if has_timestamp:
+                time_col = 'Time - Plot 0'
+                amp_col = 'Amplitude - Plot 0'
+            else:
+                # Assume first column is time, second is amplitude
+                df.columns = ['Time - Plot 0', 'Amplitude - Plot 0']
+                time_col = 'Time - Plot 0'
+                amp_col = 'Amplitude - Plot 0'
+            
+            return {
+                'time': df[time_col].values,
+                'amplitude': df[amp_col].values,
+                'index': index
+            }
+        except Exception as e:
+            print(f"Error loading file {file}: {str(e)}")
+            raise
+
+    @profile_function
     def browse_file(self):
         """Browse and load file(s) based on current mode"""
         print(f"Memory before loading: {get_memory_usage():.2f} MB")
@@ -769,53 +851,51 @@ class Application(tk.Tk):
                 # Store file names
                 self.loaded_files = [os.path.basename(f) for f in files]
                 
-                all_times = []
-                all_amplitudes = []
-                
                 # Get timestamps if in batch mode
                 timestamps = []
                 if self.file_mode.get() == "batch":
                     timestamps = [t.strip() for t in self.batch_timestamps.get().split(',') if t.strip()]
                 
-                for i, file in enumerate(files):
-                    print(f"Loading file {i+1}/{len(files)}: {file}")
+                # Use ThreadPoolExecutor for parallel file loading
+                results = []
+                with ThreadPoolExecutor(max_workers=min(len(files), os.cpu_count() * 2)) as executor:
+                    future_to_file = {
+                        executor.submit(self.load_single_file, file, timestamps, i): i 
+                        for i, file in enumerate(files)
+                    }
                     
-                    df = pd.read_csv(file, delimiter='\t')
-                    df.columns = [col.strip() for col in df.columns]
-                    
-                    # Check if the file has standard time column name
-                    has_timestamp = 'Time - Plot 0' in df.columns
-                    
-                    if has_timestamp:
-                        time_col = 'Time - Plot 0'
-                        amp_col = 'Amplitude - Plot 0'
-                    else:
-                        # Assume first column is time, second is amplitude
-                        df.columns = ['Time - Plot 0', 'Amplitude - Plot 0']
-                        time_col = 'Time - Plot 0'
-                        amp_col = 'Amplitude - Plot 0'
-                    
-                    # Append data with time offset if in batch mode
+                    for future in as_completed(future_to_file):
+                        i = future_to_file[future]
+                        try:
+                            result = future.result()
+                            results.append(result)
+                            self.update_progress_bar(len(results))
+                        except Exception as e:
+                            print(f"Error loading file {i}: {str(e)}")
+                            raise e
+
+                # Sort results by index to maintain order
+                results.sort(key=lambda x: x['index'])
+                
+                # Process results
+                all_times = []
+                all_amplitudes = []
+                
+                for i, result in enumerate(results):
                     if self.file_mode.get() == "batch" and timestamps:
-                        # Convert timestamp to seconds from start
                         if i == 0:
                             start_time = timestamps_to_seconds([timestamps[0]], timestamps[0])[0]*1e4
                         current_time = timestamps_to_seconds([timestamps[i]], timestamps[0])[0]*1e4
                         time_offset = current_time
-                        all_times.append(df[time_col].values + time_offset)
+                        all_times.append(result['time'] + time_offset)
                     else:
-                        # For single file or no timestamps, just concatenate
                         if all_times:
-                            time_offset = all_times[-1][-1] + (df[time_col].iloc[1] - df[time_col].iloc[0])
-                            all_times.append(df[time_col].values + time_offset)
+                            time_offset = all_times[-1][-1] + (result['time'][1] - result['time'][0])
+                            all_times.append(result['time'] + time_offset)
                         else:
-                            all_times.append(df[time_col].values)
-                        
-                    all_amplitudes.append(df[amp_col].values)
-                    print(f"File {i+1} loaded. Time points: {len(df[time_col])}, Amplitude points: {len(df[amp_col])}")  # Debug print
+                            all_times.append(result['time'])
                     
-                    # Update progress
-                    self.update_progress_bar(i + 1)
+                    all_amplitudes.append(result['amplitude'])
                 
                 # Combine all data
                 self.t_value = np.concatenate(all_times)
@@ -1848,15 +1928,36 @@ class Application(tk.Tk):
 
     # Function to export the current plot
     def export_plot(self):
+        """Export plot with high resolution"""
         try:
-            file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png"), ("PDF files", "*.pdf")])
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".png",
+                filetypes=[
+                    ("PNG files", "*.png"),
+                    ("PDF files", "*.pdf"),
+                    ("SVG files", "*.svg"),
+                    ("TIFF files", "*.tiff")
+                ]
+            )
             if file_path:
-                self.figure.savefig(file_path)
-                self.preview_label.config(text=f"Plot exported successfully to {file_path}", foreground="green")
-            else:
-                self.preview_label.config(text="No file path selected", foreground="red")
+                # Save with high DPI and tight layout
+                self.figure.savefig(
+                    file_path,
+                    dpi=Config.Plot.EXPORT_DPI,
+                    bbox_inches='tight',
+                    pad_inches=0.1,
+                    facecolor='white',
+                    edgecolor='none'
+                )
+                self.preview_label.config(
+                    text=f"Plot exported successfully to {file_path}", 
+                    foreground="green"
+                )
         except Exception as e:
-            self.preview_label.config(text=f"Error exporting plot: {e}", foreground="red")
+            self.preview_label.config(
+                text=f"Error exporting plot: {e}", 
+                foreground="red"
+            )
 
     # Function to reset the view of the plot
  
@@ -1936,15 +2037,24 @@ class Application(tk.Tk):
 
     # Add this helper function at the class level
     def show_error(self, title, error):
-        """Display error message in GUI and console."""
-        error_message = f"=== ERROR DETAILS ===\n"
-        error_message += f"Error Message: {title}: {str(error)}\n"
-        error_message += f"Error Type: {type(error).__name__}\n"
-        error_message += f"Traceback:\n{traceback.format_exc()}"
-        error_message += f"===================\n"
+        """
+        Display error message in GUI and console
         
-        print(error_message)  # Print to console
+        Args:
+            title (str): Error title
+            error (Exception): The error object
+        """
+        error_message = (
+            f"=== ERROR DETAILS ===\n"
+            f"Error Message: {title}: {str(error)}\n"
+            f"Error Type: {type(error).__name__}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+            f"===================\n"
+        )
+        
+        print(error_message)
         self.preview_label.config(text=f"{title}: {str(error)}", foreground="red")
+        logging.error(error_message)
 
     # Add this method to the Application class
     def get_width_range(self):

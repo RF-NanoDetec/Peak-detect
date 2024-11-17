@@ -28,6 +28,11 @@ import traceback
 from scipy import stats
 import seaborn as sns
 
+# Add after imports
+# Set default seaborn style
+sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
+sns.set_context("notebook", rc={"lines.linewidth": 1.0})
+
 # Add after the imports, before the first function definition
 def profile_function(func):
     @wraps(func)
@@ -506,21 +511,33 @@ class Application(tk.Tk):
 
         ttk.Button(
             action_frame, 
-            text="Detect Peaks",  # Changed from "Run Peak Detection"
+            text="Detect Peaks",
             command=self.run_peak_detection
         ).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(
             action_frame, 
-            text="View Individual Peaks",  # Changed from "Display Example Peaks"
+            text="View Individual Peaks",
             command=self.plot_filtered_peaks
         ).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(
             action_frame, 
-            text="Quick Save Results",  # Changed from "Save Peak Information"
+            text="Next Peaks →",  # Added arrow for better UX
+            command=self.show_next_peaks
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            action_frame, 
+            text="Quick Save Results",
             command=self.save_peak_information_to_csv
         ).pack(side=tk.LEFT, padx=5)
+
+        # Add tooltips
+        self.create_tooltip(
+            action_frame.winfo_children()[-2],  # Next Peaks button
+            "Show next set of individual peaks"
+        )
 
         # Configure grid weights
         peak_params_frame.columnconfigure(1, weight=1)
@@ -553,6 +570,10 @@ class Application(tk.Tk):
         self.create_tooltip(
             action_frame.winfo_children()[2],  # Quick Save Results button
             "Save current peak detection results to CSV file"
+        )
+        self.create_tooltip(
+            action_frame.winfo_children()[-1],  # Next Peaks button
+            "Show next set of individual peaks"
         )
 
         # === Peak Analysis Tab ===
@@ -1265,46 +1286,42 @@ class Application(tk.Tk):
             return
 
         try:
-            # Convert pandas Series to numpy arrays if needed
-            t = np.array(self.t_value)*1e-4
-            filtered_signal = np.array(self.filtered_signal)
-            x = np.array(self.x_value)
+            # Get peaks and properties
+            width_values = self.width_p.get().strip().split(',')
+            width_p = [int(float(value.strip()) * 10) for value in width_values]
             
-            height_threshold = self.height_lim.get()
-            distance = self.distance.get()
-            rel_height = self.rel_height.get()
-
-            # Debug print
-            print(f"Debug info:")
-            print(f"Signal range: {np.min(filtered_signal)} to {np.max(filtered_signal)}")
-            print(f"Height threshold: {height_threshold}")
-            print(f"Distance: {distance}")
-            print(f"Rel height: {rel_height}")
-
-            width_p = [int(float(x) * 10) for x in self.width_p.get().split(',')]
-            print(f"Width range: {width_p}")
-
             peaks_x_filter, amp_x_filter = find_peaks_with_window(
-                filtered_signal, 
-                width=width_p, 
-                prominence=height_threshold,
-                distance=distance, 
-                rel_height=rel_height
+                self.filtered_signal, 
+                width=width_p,
+                prominence=self.height_lim.get(),
+                distance=self.distance.get(), 
+                rel_height=self.rel_height.get()
             )
 
             if len(peaks_x_filter) == 0:
-                self.preview_label.config(
-                    text="No peaks found. Try adjusting parameters (lower threshold or wider width range)",
-                    foreground="red"
-                )
+                self.preview_label.config(text="No peaks found with current parameters", foreground="red")
                 return
 
-            print(f"Number of peaks found: {len(peaks_x_filter)}")
+            # Divide measurement into segments and select representative peaks
+            total_peaks = len(peaks_x_filter)
+            num_segments = 10  # We want 10 peaks from different segments
+            segment_size = total_peaks // num_segments
+
+            # Store the current segment offset in the class if it doesn't exist
+            if not hasattr(self, 'segment_offset'):
+                self.segment_offset = 0
+
+            # Select peaks from different segments
+            selected_peaks = []
+            for i in range(num_segments):
+                segment_start = (i * segment_size + self.segment_offset) % total_peaks
+                peak_idx = segment_start
+                if peak_idx < total_peaks:
+                    selected_peaks.append(peak_idx)
 
             window = np.round(amp_x_filter['widths'], 0).astype(int) + 50
-            num_peaks_to_plot = min(10, len(peaks_x_filter))
-            values = np.round(np.linspace(0, len(peaks_x_filter) - 1, num_peaks_to_plot)).astype(int)
             
+            # Create new figure
             new_figure = Figure(figsize=(10, 8))
             axs = []
             for i in range(2):
@@ -1315,15 +1332,14 @@ class Application(tk.Tk):
 
             handles, labels = [], []
 
-            for idx, val in enumerate(values):
-                i = val
-                # Add bounds checking
+            # Plot selected peaks
+            for idx, peak_idx in enumerate(selected_peaks):
+                i = peak_idx
                 start_idx = max(0, peaks_x_filter[i] - window[i])
-                end_idx = min(len(t), peaks_x_filter[i] + window[i])
+                end_idx = min(len(self.t_value*1e-4), peaks_x_filter[i] + window[i])
                 
-                # Extract data slices as numpy arrays
-                xData = t[start_idx:end_idx]
-                yData_sub = filtered_signal[start_idx:end_idx]
+                xData = self.t_value[start_idx:end_idx]*1e-4
+                yData_sub = self.filtered_signal[start_idx:end_idx]
                 
                 if len(xData) == 0:
                     continue
@@ -1341,8 +1357,8 @@ class Application(tk.Tk):
                                linewidth=0.5)
                 
                 # Plot peak marker
-                peak_time = t[peaks_x_filter[i]]
-                peak_height = filtered_signal[peaks_x_filter[i]] - background
+                peak_time = self.t_value[peaks_x_filter[i]]*1e-4
+                peak_height = self.filtered_signal[peaks_x_filter[i]] - background
                 line2, = ax.plot((peak_time - xData[0]) * 1e3, 
                                peak_height,
                                "x", 
@@ -1351,7 +1367,7 @@ class Application(tk.Tk):
                                label='Peak')
 
                 # Plot raw data
-                raw_data = x[start_idx:end_idx]
+                raw_data = self.x_value[start_idx:end_idx]
                 corrected_signal = raw_data - background
                 line3, = ax.plot((xData - xData[0]) * 1e3, 
                                corrected_signal, 
@@ -1366,12 +1382,22 @@ class Application(tk.Tk):
                 width_height = amp_x_filter["width_heights"][i] - background
                 
                 line4 = ax.hlines(y=width_height,
-                                xmin=(t[left_idx] - xData[0]) * 1e3,
-                                xmax=(t[right_idx] - xData[0]) * 1e3,
+                                xmin=(self.t_value[left_idx]*1e-4 - xData[0]) * 1e3,
+                                xmax=(self.t_value[right_idx]*1e-4 - xData[0]) * 1e3,
                                 color="red",
                                 linestyles='-',
                                 alpha=0.8)
                 line4 = Line2D([0], [0], color='red', linestyle='-', label='Peak Width')
+
+                # Add peak number label
+                ax.text(0.02, 0.98, f'Peak #{i+1}',  # i+1 to start counting from 1 instead of 0
+                        transform=ax.transAxes,
+                        fontsize=10,
+                        fontweight='bold',
+                        verticalalignment='top',
+                        bbox=dict(facecolor='white', 
+                                 edgecolor='none',
+                                 alpha=0.7))
 
                 # Customize subplot
                 ax.set_xlabel('Time (ms)', fontsize=10)
@@ -1387,15 +1413,40 @@ class Application(tk.Tk):
                 if idx == 0:
                     handles.extend([line3, line1, line2, line4])
 
-            # Add legend
-            new_figure.legend(handles, 
-                               ['Raw Data', 'Filtered Data', 'Peak', 'Peak Width'], 
-                               loc='center right',
-                               bbox_to_anchor=(0.98, 0.5),
-                               fontsize=10)
+            # Remove individual legends from subplots (with check)
+            for ax_row in axs:
+                for ax in ax_row:
+                    legend = ax.get_legend()
+                    if legend is not None:  # Only remove if legend exists
+                        legend.remove()
 
-            new_figure.suptitle('Individual Peak Analysis', fontsize=14, y=1.02)
-            new_figure.tight_layout()
+            # Create handles for the legend (move this before the legend creation)
+            handles = [
+                Line2D([0], [0], color='black', alpha=0.5, linewidth=0.3, label='Raw Data'),
+                Line2D([0], [0], color='blue', alpha=0.8, linewidth=0.5, label='Filtered Data'),
+                Line2D([0], [0], color='red', marker='x', linestyle='None', label='Peak'),
+                Line2D([0], [0], color='red', linestyle='-', alpha=0.8, label='Peak Width')
+            ]
+
+            # Add a single, optimized legend
+            new_figure.legend(
+                handles=handles,
+                labels=['Raw Data', 'Filtered Data', 'Peak', 'Peak Width'],
+                loc='center',
+                bbox_to_anchor=(0.5, 0.98),
+                ncol=4,
+                fontsize=8,
+                framealpha=0.9,
+                edgecolor='gray',
+                borderaxespad=0.5,
+                columnspacing=1.0,
+                handletextpad=0.5,
+            )
+
+            # Adjust the layout
+            new_figure.subplots_adjust(top=0.92)
+            new_figure.suptitle('Individual Peak Analysis', fontsize=12, y=0.96)
+            new_figure.tight_layout(rect=[0, 0, 1, 0.92])
 
             # Update or create tab in plot_tab_control
             tab_name = "Exemplary Peaks"  # Changed from "Filtered Peaks Plot"
@@ -1414,18 +1465,32 @@ class Application(tk.Tk):
             new_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             new_canvas.draw_idle()
 
-            # Save the plot
-            new_figure.savefig('filtered_peaks_plot.png', bbox_inches='tight')
-            self.preview_label.config(
-                text=f"Example peaks plotted successfully. Found {len(peaks_x_filter)} peaks.", 
-                foreground="green"
-            )
+            
+            #)
 
         except Exception as e:
             self.preview_label.config(text=f"Error plotting example peaks: {str(e)}", foreground="red")
             print(f"Detailed error: {str(e)}")
-            import traceback
             traceback.print_exc()
+
+    def show_next_peaks(self):
+        """Show the next set of peaks in the filtered peaks plot"""
+        if not hasattr(self, 'segment_offset'):
+            self.segment_offset = 0
+        
+        # Increment the offset
+        self.segment_offset += 1
+        
+        # Reset to beginning if we've reached the end
+        if self.segment_offset >= len(self.filtered_signal):
+            self.segment_offset = 0
+            self.preview_label.config(
+                text="Reached end of peaks, returning to start", 
+                foreground="blue"
+            )
+        
+        # Replot with new offset
+        self.plot_filtered_peaks()
 
     # Function to calculate the areas of detected peaks
     def calculate_peak_areas(self):
@@ -2024,8 +2089,7 @@ class Application(tk.Tk):
                 f'Mean: {df_all["width"].mean():.1f} ms\n'
                 f'Median: {df_all["width"].median():.1f} ms\n'
                 f'Std: {df_all["width"].std():.1f} ms\n'
-                f'N: {len(df_all):,}'
-            )
+                f'N: {len(df_all):,}')
             ax[3].text(0.95, 0.95, stats_text,
                       transform=ax[3].transAxes,
                       fontsize=9,

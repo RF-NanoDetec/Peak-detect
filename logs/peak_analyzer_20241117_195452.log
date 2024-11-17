@@ -1,0 +1,23 @@
+2024-11-17 19:54:52,150 - root - INFO - Peak Analyzer logging initialized
+2024-11-17 19:54:52,161 - root - ERROR - Application failed to start: Can't find a usable init.tcl in the following directories: 
+    C:/Users/lucek/AppData/Local/Programs/Python/Python313/lib/tcl8.6 C:/Users/lucek/AppData/Local/Programs/Python/lib/tcl8.6 C:/Users/lucek/AppData/Local/Programs/lib/tcl8.6 C:/Users/lucek/AppData/Local/Programs/Python/library C:/Users/lucek/AppData/Local/Programs/library C:/Users/lucek/AppData/Local/Programs/tcl8.6.14/library C:/Users/lucek/AppData/Local/tcl8.6.14/library
+
+
+
+This probably means that Tcl wasn't installed properly.
+Traceback (most recent call last):
+  File "C:\Users\lucek\Desktop\Silas\software\batch processing\versionv3_operational\peak_analyzer\main.py", line 16, in main
+    app = Application()
+  File "C:\Users\lucek\Desktop\Silas\software\batch processing\versionv3_operational\peak_analyzer\gui\application.py", line 18, in __init__
+    super().__init__()
+    ~~~~~~~~~~~~~~~~^^
+  File "C:\Users\lucek\AppData\Local\Programs\Python\Python313\Lib\tkinter\__init__.py", line 2459, in __init__
+    self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+              ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_tkinter.TclError: Can't find a usable init.tcl in the following directories: 
+    C:/Users/lucek/AppData/Local/Programs/Python/Python313/lib/tcl8.6 C:/Users/lucek/AppData/Local/Programs/Python/lib/tcl8.6 C:/Users/lucek/AppData/Local/Programs/lib/tcl8.6 C:/Users/lucek/AppData/Local/Programs/Python/library C:/Users/lucek/AppData/Local/Programs/library C:/Users/lucek/AppData/Local/Programs/tcl8.6.14/library C:/Users/lucek/AppData/Local/tcl8.6.14/library
+
+
+
+This probably means that Tcl wasn't installed properly.
+
