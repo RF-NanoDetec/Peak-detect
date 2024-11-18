@@ -5,31 +5,32 @@ Created Nov 17 21:518:48 2024
 @author: Lucjan & Silas
 """
 
-import tkinter as tk
-from tkinter import filedialog, messagebox, Tcl
-from tkinter import ttk
-from tkinter.scrolledtext import ScrolledText
+# Standard library
+import os
+import time
+import logging
+import traceback
+from functools import wraps
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Third-party libraries
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter, find_peaks, butter, filtfilt, peak_widths
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.widgets import RectangleSelector
 from matplotlib.lines import Line2D
-import os
-import time
-import cProfile
-import pstats
-from functools import wraps
-import logging
-import psutil
-import traceback
+from scipy.signal import savgol_filter, find_peaks, butter, filtfilt, peak_widths
 from scipy import stats
 import seaborn as sns
-import dask.dataframe as dd
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+import psutil
+
+# Tkinter
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk, Tcl
+from tkinter.scrolledtext import ScrolledText
+
 
 # Add after imports
 # Set default seaborn style
@@ -132,20 +133,15 @@ def timestamps_to_seconds(timestamps, start_time):
                         f"Format should be 'MM:SS' (e.g., '01:30')")
 
 # Detect peaks with a sliding window and filter out invalid ones
+@profile_function
 def find_peaks_with_window(signal, width, prominence, distance, rel_height):
-    profiler = cProfile.Profile()
-    profiler.enable()
     
     peaks, properties = find_peaks(signal, 
                                  width=width,
                                  prominence=prominence,
                                  distance=distance,
                                  rel_height=rel_height)
-    
-    profiler.disable()
-    stats = pstats.Stats(profiler).sort_stats('cumulative')
-    stats.print_stats(20)  # Print top 20 time-consuming operations
-    
+        
     return peaks, properties
 
 # Estimate the average peak width
@@ -153,7 +149,6 @@ def estimate_peak_widths(signal, fs, big_counts):
     peaks, _ = find_peaks(signal, width=[1, 2000], prominence=big_counts, distance=1000)
     widths = peak_widths(signal, peaks, rel_height=0.5)[0]
     avg_width = np.mean(widths) / fs
-    print(f'Estimated peak widths: {widths}')
     return avg_width
 # Add this memory tracking function
 def get_memory_usage():
@@ -611,11 +606,11 @@ class Application(tk.Tk):
         )
         self.create_tooltip(
             action_frame.winfo_children()[2],  # Quick Save Results button
-            "Save current peak detection results to CSV file"
+            "Show next set of individual peaks"
         )
         self.create_tooltip(
             action_frame.winfo_children()[-1],  # Next Peaks button
-            "Show next set of individual peaks"
+            "Save current peak detection results to CSV file"
         )
 
         # === Peak Analysis Tab ===
@@ -947,6 +942,7 @@ class Application(tk.Tk):
             self.update_progress_bar(0)  # Reset on error
 
     # Function to plot the raw data
+    @profile_function
     def plot_raw_data(self):
         """Optimized plotting of raw data"""
         if self.data is None:
@@ -1314,50 +1310,7 @@ class Application(tk.Tk):
             self.show_error("Error during peak detection", e)
             self.update_progress_bar(0)  # Reset on error
 
-    def plot_peak_detection_results(self, peaks_x_filter, peak_areas):
-        """Separate method for plotting peak detection results"""
-        try:
-            self.figure.clear()
-            ax = self.figure.add_subplot(111)
-            
-            # Plot raw data in black
-            ax.plot(self.t_value / 60, self.x_value, 
-                    color='black', 
-                    linewidth=0.05, 
-                    label='Raw Data',
-                    alpha=0.7)
-            
-            # Plot filtered data in blue
-            ax.plot(self.t_value / 60, self.filtered_signal, 
-                    color='blue', 
-                    linewidth=0.1,
-                    label='Filtered Data',
-                    alpha=0.8)
-            
-            # Plot detected peaks in red
-            ax.scatter(self.t_value[peaks_x_filter] / 60, 
-                      self.filtered_signal[peaks_x_filter],
-                      color='red',
-                      s=5,
-                      label=f'Detected Peaks ({len(peaks_x_filter)})',
-                      zorder=5)
-            
-            # Customize the plot
-            ax.set_xlabel('Time (min)', fontsize=12)
-            ax.set_ylabel('Counts', fontsize=12)
-            ax.set_title('Raw and Filtered Signals with Detected Peaks', fontsize=14)
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.legend(fontsize=10)
-            
-            # Adjust layout
-            self.figure.tight_layout()
-
-            # Update the canvas
-            self.canvas.draw_idle()
-
-        except Exception as e:
-            self.show_error("Error plotting peak detection results", e)
-
+    
     # Function to plot the detected filtered peaks
     @profile_function
     def plot_filtered_peaks(self):
@@ -1399,7 +1352,7 @@ class Application(tk.Tk):
                 if peak_idx < total_peaks:
                     selected_peaks.append(peak_idx)
 
-            window = np.round(amp_x_filter['widths'], 0).astype(int) + 50
+            window = 3*np.round(amp_x_filter['widths'], 0).astype(int) 
             
             # Create new figure
             new_figure = Figure(figsize=(10, 8))
@@ -1573,6 +1526,7 @@ class Application(tk.Tk):
         self.plot_filtered_peaks()
 
     # Function to calculate the areas of detected peaks
+    @profile_function
     def calculate_peak_areas(self):
         if self.filtered_signal is None:
             self.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
@@ -1870,58 +1824,7 @@ class Application(tk.Tk):
             self.show_error("Error in plot_data", e)
             raise  # Re-raise the exception for debugging
 
-    def update_data_plot_display(self, title):
-        """Update the data plot display with proper layout and canvas."""
-        try:
-            # Clear any existing data canvas
-            if hasattr(self, 'data_canvas') and self.data_canvas is not None:
-                self.data_canvas.get_tk_widget().pack_forget()
-
-            # Create new canvas for data plot
-            self.data_canvas = FigureCanvasTkAgg(self.data_figure, master=self)
-            self.data_canvas.draw()
-            
-            # Configure canvas layout
-            canvas_widget = self.data_canvas.get_tk_widget()
-            canvas_widget.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-            
-            # Store original view limits
-            axes = self.data_figure.get_axes()
-            self.data_original_xlims = [ax.get_xlim() for ax in axes]
-            self.data_original_ylims = [ax.get_ylim() for ax in axes]
-            
-            # Update title and layout
-            self.data_figure.suptitle(title)
-            self.data_figure.tight_layout()
-            
-            # Enable zoom functionality for data plot
-            self.enable_data_zoom()
-            
-            # Update status
-            self.preview_label.config(text=f"Data plot updated: {title}", foreground="green")
-            
-        except Exception as e:
-            self.show_error("Error updating data plot display", e)
-
-    def enable_data_zoom(self):
-        """Enable zoom functionality for data plot."""
-        try:
-            if hasattr(self, 'data_canvas'):
-                self.data_canvas.mpl_connect('key_press_event', self.on_data_key_press)
-                for ax in self.data_figure.get_axes():
-                    self.data_canvas.mpl_connect('button_press_event', self.on_data_mouse_click)
-                    self.data_canvas.mpl_connect('button_release_event', self.on_data_mouse_release)
-                    self.data_canvas.mpl_connect('motion_notify_event', self.on_data_mouse_motion)
-        except Exception as e:
-            self.show_error("Error enabling data zoom", e)
-
-    def on_data_key_press(self, event):
-        """Handle key press events for data plot."""
-        if event.key == 'r':  # Reset zoom on 'r' key press
-            for ax in self.data_figure.get_axes():
-                ax.autoscale()
-            self.data_canvas.draw()
-
+    
    
 
     
@@ -2005,21 +1908,7 @@ class Application(tk.Tk):
             )
             print(f"DEBUG: Error in auto calculation: {str(e)}")
 
-    # Add new optimized plotting function
-    def plot_optimized(self, x: np.ndarray, y: np.ndarray, ax: plt.Axes, **plot_kwargs):
-        """Plot large datasets efficiently using decimation."""
-        n_points = len(x)
-        
-        if n_points > 100000:
-            # Decimate data for plotting
-            stride = n_points // 100000
-            x_plot = x[::stride]
-            y_plot = y[::stride]
-        else:
-            x_plot, y_plot = x, y
-        
-        # Use more efficient line plotting
-        ax.plot(x_plot, y_plot, **plot_kwargs)
+    
 
     def on_file_mode_change(self):
         """Handle file mode changes between single and batch modes"""
@@ -2038,23 +1927,16 @@ class Application(tk.Tk):
     # Add this helper function at the class level
     def show_error(self, title, error):
         """
-        Display error message in GUI and console
+        Centralized error handling
         
         Args:
             title (str): Error title
             error (Exception): The error object
         """
-        error_message = (
-            f"=== ERROR DETAILS ===\n"
-            f"Error Message: {title}: {str(error)}\n"
-            f"Error Type: {type(error).__name__}\n"
-            f"Traceback:\n{traceback.format_exc()}"
-            f"===================\n"
-        )
-        
+        error_message = f"{title}: {str(error)}"
         print(error_message)
-        self.preview_label.config(text=f"{title}: {str(error)}", foreground="red")
-        logging.error(error_message)
+        self.preview_label.config(text=error_message, foreground=Config.Colors.ERROR)
+        logging.error(f"{error_message}\n{traceback.format_exc()}")
 
     # Add this method to the Application class
     def get_width_range(self):
@@ -2290,7 +2172,8 @@ class Application(tk.Tk):
             
             # Reset to zero if completed
             if value >= self.progress['maximum']:
-                self.after(500, lambda: self.update_progress_bar(0))  # Reset after 500ms
+                self.after(Config.PROGRESS_RESET_DELAY, 
+                          lambda: self.update_progress_bar(0))
         except Exception as e:
             print(f"Error updating progress bar: {e}")
 
