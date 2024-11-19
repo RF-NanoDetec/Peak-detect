@@ -25,7 +25,7 @@ from scipy.signal import savgol_filter, find_peaks, butter, filtfilt, peak_width
 from scipy import stats
 import seaborn as sns
 import psutil
-
+from numba import njit  # Add this import at the top of your file
 # Tkinter
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, Tcl
@@ -109,13 +109,19 @@ def apply_butterworth_filter(order, Wn, btype, fs, x):
     return x_f
 
 # Find the nearest value in an array
+@njit
 def find_nearest(array, value):
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    print(f'Nearest index: {idx}, Nearest value: {array[idx]}')
+    idx = 0
+    min_diff = np.abs(array[0] - value)
+    for i in range(1, len(array)):
+        diff = np.abs(array[i] - value)
+        if diff < min_diff:
+            min_diff = diff
+            idx = i
     return idx
 
 # Convert timestamps to seconds
+@njit
 def timestamps_to_seconds(timestamps, start_time):
     """Convert timestamps to seconds from start time"""
     try:
@@ -1040,149 +1046,174 @@ class Application(tk.Tk):
         if self.data is None:
             self.show_error("No data loaded. Please load files first.")
             return
-        
+
         try:
             # Initialize progress
             total_steps = 4
             self.update_progress_bar(0, total_steps)
-            
+
             # Get parameters and prepare data
             normalization_factor = self.normalization_factor.get()
             big_counts = self.big_counts.get()
             current_cutoff = self.cutoff_value.get()
-            
+
             t = self.data['Time - Plot 0'].values * 1e-4
             x = self.data['Amplitude - Plot 0'].values
             rate = np.median(np.diff(t))
             self.fs = 1 / rate
-            
+
             # Update progress
             self.update_progress_bar(1)
-            
+
             # Apply filtering
             if current_cutoff > 0:
                 self.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', self.fs, x)
                 calculated_cutoff = current_cutoff
             else:
-                self.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(x, self.fs, big_counts, normalization_factor)
+                self.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
+                    x, self.fs, big_counts, normalization_factor
+                )
                 self.cutoff_value.set(calculated_cutoff)
-            
+
             # Update progress
             self.update_progress_bar(2)
-            
-            # First, create a common mask for both signals
+
+            # Create a common mask for both signals
             max_points = 10000
             if len(x) > max_points:
                 # Calculate stride
                 stride = len(x) // max_points
-                
+
                 # Create base mask
                 mask = np.zeros(len(x), dtype=bool)
                 mask[::stride] = True
-                
-                # Find peaks in both signals and add to mask
-                peaks_raw, _ = find_peaks(x, height=np.mean(x) + 3*np.std(x))
-                peaks_filtered, _ = find_peaks(self.filtered_signal, height=np.mean(self.filtered_signal) + 3*np.std(self.filtered_signal))
-                
-                # Combine peaks
+
+                # Find peaks in both signals
+                mean_x, std_x = np.mean(x), np.std(x)
+                mean_filtered, std_filtered = np.mean(self.filtered_signal), np.std(self.filtered_signal)
+
+                peaks_raw, _ = find_peaks(x, height=mean_x + 3 * std_x)
+                peaks_filtered, _ = find_peaks(self.filtered_signal, height=mean_filtered + 3 * std_filtered)
                 all_peaks = np.unique(np.concatenate([peaks_raw, peaks_filtered]))
-                
-                # Add points around peaks
-                for peak in all_peaks:
-                    start_idx = max(0, peak - 5)
-                    end_idx = min(len(x), peak + 6)
-                    mask[start_idx:end_idx] = True
-                
+
+                # Create peaks mask and expand peaks by convolution
+                peaks_mask = np.zeros(len(x), dtype=bool)
+                peaks_mask[all_peaks] = True
+                peaks_mask = np.convolve(peaks_mask.astype(int), np.ones(11, dtype=int), mode='same') > 0
+
                 # Find significant changes in both signals
-                diff_raw = np.abs(np.diff(x))
-                diff_filtered = np.abs(np.diff(self.filtered_signal))
-                
-                changes_raw = np.where(diff_raw > 5* np.std(diff_raw))[0]
-                changes_filtered = np.where(diff_filtered > 5*np.std(diff_filtered))[0]
-                
-                # Combine changes
+                diff_raw = np.abs(np.diff(x, prepend=x[0]))
+                diff_filtered = np.abs(np.diff(self.filtered_signal, prepend=self.filtered_signal[0]))
+
+                threshold_raw = 5 * np.std(diff_raw)
+                threshold_filtered = 5 * np.std(diff_filtered)
+
+                changes_raw = np.where(diff_raw > threshold_raw)[0]
+                changes_filtered = np.where(diff_filtered > threshold_filtered)[0]
                 all_changes = np.unique(np.concatenate([changes_raw, changes_filtered]))
-                for idx in all_changes:
-                    mask[idx:idx+2] = True
-                
+
+                # Create changes mask and expand changes by convolution
+                changes_mask = np.zeros(len(x), dtype=bool)
+                changes_mask[all_changes] = True
+                changes_mask = np.convolve(changes_mask.astype(int), np.ones(3, dtype=int), mode='same') > 0
+
+                # Combine masks
+                mask |= peaks_mask | changes_mask
+
                 # Apply mask to both signals
                 t_plot = t[mask] / 60  # Convert to minutes
                 x_plot = x[mask]
                 filtered_plot = self.filtered_signal[mask]
             else:
-                t_plot = t/ 60
+                t_plot = t / 60
                 x_plot = x
                 filtered_plot = self.filtered_signal
-            
+
             # Create plot
             self.figure.clear()
             ax = self.figure.add_subplot(111)
-            
+
             # Plot decimated data
-            ax.plot(t_plot, x_plot,
-                    color='black',
-                    linewidth=0.05,
-                    label=f'Raw Data ({len(x_plot):,} points)',
-                    alpha=0.4)
-            
-            ax.plot(t_plot, filtered_plot,
-                    color='blue',
-                    linewidth=0.05,
-                    label=f'Filtered Data ({len(filtered_plot):,} points)',
-                    alpha=0.9)
-            
+            ax.plot(
+                t_plot,
+                x_plot,
+                color='black',
+                linewidth=0.05,
+                label=f'Raw Data ({len(x_plot):,} points)',
+                alpha=0.4,
+            )
+
+            ax.plot(
+                t_plot,
+                filtered_plot,
+                color='blue',
+                linewidth=0.05,
+                label=f'Filtered Data ({len(filtered_plot):,} points)',
+                alpha=0.9,
+            )
+
             # Customize plot
             ax.set_xlabel('Time (min)', fontsize=12)
             ax.set_ylabel('Amplitude (counts)', fontsize=12)
             ax.set_title('Raw and Filtered Signals (Optimized View)', fontsize=14)
             ax.grid(True, linestyle='--', alpha=0.7)
             ax.legend(fontsize=10)
-            
+
             # Add filtering parameters annotation
-            filter_text = (f'Cutoff: {calculated_cutoff:.1f} Hz\n'
-                          f'Total points: {len(self.filtered_signal):,}\n'
-                          f'Plotted points: {len(filtered_plot):,}')
-            ax.text(0.02, 0.98, filter_text,
-                    transform=ax.transAxes,
-                    verticalalignment='top',
-                    fontsize=8,
-                    bbox=dict(facecolor='white', alpha=0.8))
-            
+            filter_text = (
+                f'Cutoff: {calculated_cutoff:.1f} Hz\n'
+                f'Total points: {len(self.filtered_signal):,}\n'
+                f'Plotted points: {len(filtered_plot):,}'
+            )
+            ax.text(
+                0.02,
+                0.98,
+                filter_text,
+                transform=ax.transAxes,
+                verticalalignment='top',
+                fontsize=8,
+                bbox=dict(facecolor='white', alpha=0.8),
+            )
+
             # Update progress
             self.update_progress_bar(3)
-            
+
             # Update or create tab
             tab_name = "Smoothed Data"
             tab_exists = False
-            
+
             for tab in self.plot_tab_control.tabs():
                 if self.plot_tab_control.tab(tab, "text") == tab_name:
                     self.plot_tab_control.select(tab)
                     tab_exists = True
                     break
-            
+
             if not tab_exists:
                 new_tab = ttk.Frame(self.plot_tab_control)
                 self.plot_tab_control.add(new_tab, text=tab_name)
                 self.plot_tab_control.select(new_tab)
                 self.canvas = FigureCanvasTkAgg(self.figure, new_tab)
                 self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            
+
             # Update the canvas
             self.canvas.draw_idle()
-            
+
             # Final progress update
             self.update_progress_bar(4)
-            
+
             # Update status
             self.preview_label.config(
-                text=f"Analysis completed (Cutoff: {calculated_cutoff:.1f} Hz, Decimated from {len(self.filtered_signal):,} to {len(filtered_plot):,} points)",
-                foreground="green"
+                text=(
+                    f"Analysis completed (Cutoff: {calculated_cutoff:.1f} Hz, "
+                    f"Decimated from {len(self.filtered_signal):,} to {len(filtered_plot):,} points)"
+                ),
+                foreground="green",
             )
 
         except Exception as e:
             self.show_error("Error during analysis", e)
             self.update_progress_bar(0)
+
 
     # Function to run peak detection
     @profile_function
@@ -1527,6 +1558,7 @@ class Application(tk.Tk):
 
     # Function to calculate the areas of detected peaks
     @profile_function
+    @njit  # Apply Numba's Just-In-Time compilation
     def calculate_peak_areas(self):
         if self.filtered_signal is None:
             self.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
