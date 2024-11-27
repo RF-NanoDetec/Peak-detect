@@ -6,7 +6,7 @@ This module contains all configuration constants and settings used throughout th
 
 import os
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple, Dict
 
 @dataclass
@@ -28,16 +28,16 @@ class GuiConfig:
     WIDGET_WIDTH: int = 15
     
     # Font configurations
-    FONTS: Dict[str, tuple] = {
+    FONTS: Dict[str, tuple] = field(default_factory=lambda: {
         'default': ('Arial', 10),
         'title': ('Arial', 12, 'bold'),
         'header': ('Arial', 11, 'bold'),
         'small': ('Arial', 8),
         'monospace': ('Courier', 10)
-    }
+    })
     
     # Color scheme
-    COLORS: Dict[str, str] = {
+    COLORS: Dict[str, str] = field(default_factory=lambda: {
         'bg': '#f0f0f0',
         'fg': '#333333',
         'highlight': '#0078d7',
@@ -45,7 +45,7 @@ class GuiConfig:
         'success': '#00ff00',
         'warning': '#ffa500',
         'info': '#0000ff'
-    }
+    })
     
     # Theme settings
     THEME: str = 'clam'  # Available: 'clam', 'alt', 'default', 'classic'
