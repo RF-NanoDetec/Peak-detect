@@ -152,4 +152,3 @@ def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor):
     
     return filtered_signal, cutoff
 
-print("profile_function ist definiert:", 'profile_function' in globals())
