@@ -30,13 +30,9 @@ from numba import njit  # Add this import at the top of your file
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, Tcl
 from tkinter.scrolledtext import ScrolledText
+from utils.plotting import setup_seaborn, decimate_for_plot
 
-
-# Add after imports
-# Set default seaborn style
-sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
-sns.set_context("notebook", rc={"lines.linewidth": 1.0})
-
+setup_seaborn()
 # Add at the top of the file, after imports
 class Config:
     """Configuration constants"""
@@ -971,7 +967,7 @@ class Application(tk.Tk):
             self.update_progress_bar(1)
             
             # Decimate data for plotting
-            t_plot, x_plot = self.decimate_for_plot(
+            t_plot, x_plot = decimate_for_plot(
                 self.data['Time - Plot 0'].values * 1e-4 / 60,  # Convert to minutes
                 self.data['Amplitude - Plot 0'].values
             )
@@ -2209,47 +2205,6 @@ class Application(tk.Tk):
         except Exception as e:
             print(f"Error updating progress bar: {e}")
 
-   
-
-    def decimate_for_plot(self, x, y, max_points=10000):
-        """
-        Intelligently reduce number of points for plotting while preserving important features
-        
-        Args:
-            x: time array
-            y: signal array
-            max_points: maximum number of points to plot
-        
-        Returns:
-            x_decimated, y_decimated: decimated arrays for plotting
-        """
-        if len(x) <= max_points:
-            return x, y
-        
-        # Calculate decimation factor
-        stride = len(x) // max_points
-        
-        # Initialize masks for important points
-        mask = np.zeros(len(x), dtype=bool)
-        
-        # Include regularly spaced points
-        mask[::stride] = True
-        
-        # Find peaks and include points around them
-        peaks, _ = find_peaks(y, height=np.mean(y) + 3*np.std(y))
-        for peak in peaks:
-            start_idx = max(0, peak - 5)
-            end_idx = min(len(x), peak + 6)
-            mask[start_idx:end_idx] = True
-        
-        # Find significant changes in signal
-        diff = np.abs(np.diff(y))
-        significant_changes = np.where(diff > 5*np.std(diff))[0]
-        for idx in significant_changes:
-            mask[idx:idx+2] = True
-        
-        # Apply mask
-        return x[mask], y[mask]
 
 if __name__ == "__main__":
     app = Application()
