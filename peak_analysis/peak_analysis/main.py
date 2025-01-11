@@ -111,6 +111,8 @@ class Application(tk.Tk):
         self.data_original_xlims = None
         self.data_original_ylims = None
 
+        self.tab_figures = {}  # Dictionary to store figures for each tab
+
     def setup_performance_logging(self):
         logging.basicConfig(
             filename='performance.log',
@@ -665,6 +667,46 @@ class Application(tk.Tk):
             print(f"Error loading file {file}: {str(e)}")
             raise
 
+    def reset_application_state(self):
+        """Reset all application variables and plots to initial state"""
+        try:
+            # Reset data variables
+            self.data = None
+            self.t_value = None
+            self.x_value = None
+            self.filtered_signal = None
+            self.segment_offset = 0
+
+            # Reset variables to default values
+            self.normalization_factor.set(1.0)
+            self.start_time.set("0:00")
+            self.big_counts.set(100)
+            self.height_lim.set(20)
+            self.distance.set(30)
+            self.rel_height.set(0.85)
+            self.width_p.set("1,200")
+            self.cutoff_value.set(0)
+
+            # Clear results summary
+            self.update_results_summary(preview_text="")
+
+            # Clear all tabs except Welcome tab
+            for tab in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab, "text") != "Welcome":
+                    self.plot_tab_control.forget(tab)
+
+            # Reset tab figures dictionary
+            self.tab_figures.clear()
+
+            # Reset preview label
+            self.preview_label.config(text="Application state reset", foreground="blue")
+
+            # Reset progress bar
+            self.update_progress_bar(0)
+
+        except Exception as e:
+            self.show_error("Error resetting application state", e)
+
     @profile_function
     def browse_file(self):
         """Browse and load file(s) based on current mode"""
@@ -672,6 +714,9 @@ class Application(tk.Tk):
         print(f"Current file mode: {self.file_mode.get()}")
         
         try:
+            # Reset application state before loading new file
+            self.reset_application_state()
+            
             # Reset progress bar
             self.update_progress_bar(0)
             
@@ -880,6 +925,8 @@ class Application(tk.Tk):
                 foreground="green"
             )
 
+            self.tab_figures["Raw Data"] = self.figure
+
         except Exception as e:
             self.preview_label.config(text=f"Error plotting raw data: {str(e)}", foreground="red")
             print(f"Detailed error: {str(e)}")
@@ -1009,7 +1056,8 @@ class Application(tk.Tk):
             filter_text = (
                 f'Cutoff: {calculated_cutoff:.1f} Hz\n'
                 f'Total points: {len(self.filtered_signal):,}\n'
-                f'Plotted points: {len(filtered_plot):,}')
+                f'Plotted points: {len(filtered_plot):,}'
+            )
             ax.text(
                 0.02,
                 0.98,
@@ -1054,6 +1102,8 @@ class Application(tk.Tk):
                 ),
                 foreground="green",
             )
+
+            self.tab_figures["Smoothed Data"] = self.figure
 
         except Exception as e:
             self.show_error("Error during analysis", e)
@@ -1373,6 +1423,8 @@ class Application(tk.Tk):
             new_canvas = FigureCanvasTkAgg(new_figure, new_tab)
             new_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             new_canvas.draw_idle()
+
+            self.tab_figures["Exemplary Peaks"] = new_figure
 
             
             #)
@@ -1697,6 +1749,8 @@ class Application(tk.Tk):
             
             self.preview_label.config(text="Peak analysis plot created successfully", foreground="green")
             
+            self.tab_figures["Peak Analysis"] = self.data_figure
+            
         except Exception as e:
             self.show_error("Error in plot_data", e)
             raise  # Re-raise the exception for debugging
@@ -1720,8 +1774,21 @@ class Application(tk.Tk):
                 ]
             )
             if file_path:
+                # Get the currently selected tab
+                current_tab = self.plot_tab_control.select()
+                tab_text = self.plot_tab_control.tab(current_tab, "text")
+                print(f"Exporting from tab: {tab_text}")  # Debug output
+                
+                # Get figure from dictionary
+                figure_to_export = self.tab_figures.get(tab_text)
+                print(f"Found figure in dictionary: {figure_to_export is not None}")  # Debug output
+                
+                if figure_to_export is None:
+                    print("Warning: No figure found for this tab")
+                    return
+                
                 # Save with high DPI and tight layout
-                self.figure.savefig(
+                figure_to_export.savefig(
                     file_path,
                     dpi=Config.Plot.EXPORT_DPI,
                     bbox_inches='tight',
@@ -1733,9 +1800,13 @@ class Application(tk.Tk):
                     text=f"Plot exported successfully to {file_path}", 
                     foreground="green"
                 )
+                print(f"Successfully exported figure to {file_path}")  # Debug output
+                
         except Exception as e:
+            error_msg = f"Error exporting plot: {str(e)}"
+            print(f"Export error: {error_msg}")  # Debug output
             self.preview_label.config(
-                text=f"Error exporting plot: {e}", 
+                text=error_msg, 
                 foreground="red"
             )
 
