@@ -31,6 +31,7 @@ from tkinter import filedialog, messagebox, ttk, Tcl
 from tkinter.scrolledtext import ScrolledText
 import sys
 import os
+from PIL import Image, ImageTk
 
 # Local imports
 from config.settings import Config
@@ -626,34 +627,35 @@ class Application(tk.Tk):
 
         return tooltip
 
-    # Function to browse and load the file
-    @profile_function
     def load_single_file(self, file, timestamps=None, index=0):
         """
         Helper function to load a single file
-        
         Args:
             file (str): Path to the file to load
             timestamps (list, optional): List of timestamps for batch mode
             index (int, optional): Index of the file in the batch
-            
+
         Returns:
             dict: Dictionary containing time, amplitude and index data
         """
         print(f"Loading file {index+1}: {file}")
-        
+
         try:
-            df = pd.read_csv(file, delimiter='\t')
+            # Determine file type based on extension
+            if file.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            else:
+                df = pd.read_csv(file, delimiter='\t')
+            
+            # Strip any extra spaces in the column names
             df.columns = [col.strip() for col in df.columns]
             
-            # Check if the file has standard time column name
-            has_timestamp = 'Time - Plot 0' in df.columns
-            
-            if has_timestamp:
+            # Check if the file has the standard time column name
+            if 'Time - Plot 0' in df.columns:
                 time_col = 'Time - Plot 0'
                 amp_col = 'Amplitude - Plot 0'
             else:
-                # Assume first column is time, second is amplitude
+                # Assume first column is time, second is amplitude if headers don't match expected names
                 df.columns = ['Time - Plot 0', 'Amplitude - Plot 0']
                 time_col = 'Time - Plot 0'
                 amp_col = 'Amplitude - Plot 0'
@@ -666,6 +668,7 @@ class Application(tk.Tk):
         except Exception as e:
             print(f"Error loading file {file}: {str(e)}")
             raise
+
 
     def reset_application_state(self):
         """Reset all application variables and plots to initial state"""
@@ -724,13 +727,17 @@ class Application(tk.Tk):
             if self.file_mode.get() == "single":
                 files = list(filedialog.askopenfilenames(
                     title="Select Data File",
-                    filetypes=(("Text files", "*.txt"), ("All files", "*.*"))
+                    filetypes=(
+                        ("Data files", "*.txt *.xls *.xlsx"),
+                        ("All files", "*.*")
+                    )
                 ))
             else:  # batch mode
                 folder = filedialog.askdirectory(title="Select Folder with Data Files")
                 if folder:
+                    # Include both text and Excel files
                     files = [os.path.join(folder, f) for f in os.listdir(folder) 
-                            if f.endswith('.txt')]
+                            if f.lower().endswith(('.txt', '.xls', '.xlsx'))]
             
             if files:
                 files = list(Tcl().call('lsort', '-dict', files))
@@ -1514,37 +1521,50 @@ class Application(tk.Tk):
             return
 
         try:
+            filtered_signal = self.filtered_signal
+            t = self.t_value
             height_lim_factor = self.height_lim.get()
             distance = self.distance.get()
             rel_height = self.rel_height.get()
-            
-            # Convert width values properly
-            width_values = [float(x) for x in self.width_p.get().split(',')]
-            width_p = [int(float(x) * 10) for x in width_values]  # Convert to samples
 
+            # First convert string to float, then multiply by 10 and convert to int
+            width_values = self.width_p.get().strip().split(',')
+            width_p = [int(float(value.strip()) * 10) for value in width_values]
+            
             peaks_x_filter, amp_x_filter = find_peaks_with_window(
-                self.filtered_signal, 
-                width=width_p, 
+                filtered_signal, 
+                width=width_p,
                 prominence=height_lim_factor,
                 distance=distance, 
                 rel_height=rel_height
             )
 
-            # Calculate peak areas
             window = np.round(amp_x_filter['widths'], 0).astype(int) + 40
-            peak_areas = np.zeros(len(peaks_x_filter))
+            events = len(peaks_x_filter)
             
-            for i in range(len(peaks_x_filter)):
-                yData = self.filtered_signal[peaks_x_filter[i] - window[i]:peaks_x_filter[i] + window[i]]
+            peak_area = np.zeros(events)
+            start = np.zeros(events)
+            end = np.zeros(events)
+            Datay = filtered_signal
+
+            for i in range(events):
+                start_idx = max(0, peaks_x_filter[i] - window[i]) 
+                end_idx = min(len(filtered_signal), peaks_x_filter[i] + window[i])
+                yData = filtered_signal[start_idx:end_idx]
                 background = np.min(yData)
+
                 st = int(amp_x_filter["left_ips"][i])
                 en = int(amp_x_filter["right_ips"][i])
-                peak_areas[i] = np.sum(self.filtered_signal[st:en] - background)
 
+                start[i] = st
+                end[i] = en
+
+                peak_area[i] = np.sum(filtered_signal[st:en] - background)
+        
             # Create DataFrame with results
             results_df = pd.DataFrame({
                 "Peak Time (min)": self.t_value[peaks_x_filter] / 60,  # Convert to minutes
-                "Peak Area": peak_areas,
+                "Peak Area": peak_area,
                 "Peak Width (ms)": amp_x_filter['widths'] / 10,  # Convert to milliseconds
                 "Peak Height": amp_x_filter['prominences'],
                 "Start Time": self.protocol_start_time.get(),
@@ -2166,6 +2186,58 @@ class Application(tk.Tk):
         
         # Apply mask
         return x[mask], y[mask]
+def resource_path(relative_path):
+    """ Get the absolute path to the resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)    
+
+def splash_screen():
+    splash = tk.Tk()
+    splash.overrideredirect(True)  # Remove window decorations
+
+    # Load and display the image
+    img_path = resource_path("images/startim.png")  # Adjust the path based on your structure
+    img = Image.open(img_path)
+    img = img.resize((400, 400), Image.LANCZOS)  # Resize to a larger square size
+    photo = ImageTk.PhotoImage(img)
+
+    label = tk.Label(splash, image=photo)
+    label.pack()
+
+    # Create a loading bar
+    loading_bar = ttk.Progressbar(splash, orient="horizontal", length=300, mode="indeterminate")
+    loading_bar.pack(pady=20)  # Add some vertical padding
+    loading_bar.start()  # Start the loading animation
+
+    # Set the size of the splash screen
+    splash.update_idletasks()  # Update "requested size" from geometry manager
+    width = splash.winfo_width()
+    height = splash.winfo_height()
+
+    # Get screen width and height
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+
+    # Calculate the position for centering
+    x = (screen_width // 2) - (width // 2)
+    y = (screen_height // 2) - (height // 2)
+
+    # Set the geometry of the splash screen
+    splash.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Show the splash screen for 3 seconds
+    splash.after(3000, lambda: [loading_bar.stop(), splash.destroy()])  # Stop the loading bar and destroy the splash screen
+    splash.mainloop()
+
+# Call the splash screen function
+#splash_screen()
+
+# Your main program code goes here
 
 if __name__ == "__main__":
     app = Application()
