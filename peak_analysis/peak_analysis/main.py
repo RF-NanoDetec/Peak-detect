@@ -36,6 +36,7 @@ from PIL import Image, ImageTk
 # Local imports
 from config.settings import Config
 from peak_analysis_utils import * # Importiere alle Funktionen aus dem neuen Modul
+from plot_functions import plot_raw_data as plot_raw_data_function
 
 
 # Set default seaborn style
@@ -848,96 +849,8 @@ class Application(tk.Tk):
     # Function to plot the raw data
     @profile_function
     def plot_raw_data(self):
-        """Optimized plotting of raw data"""
-        if self.data is None:
-            self.preview_label.config(text="No data to plot", foreground="red")
-            return
-
-        try:
-            # Initialize progress
-            self.update_progress_bar(0, 3)
-            
-            # Create new figure if needed
-            if self.canvas is None:
-                self.canvas = FigureCanvasTkAgg(self.figure, self.plot_tab_control)
-            
-            # Clear the current figure
-            self.figure.clear()
-            ax = self.figure.add_subplot(111)
-            
-            # Update progress
-            self.update_progress_bar(1)
-            
-            # Decimate data for plotting
-            t_plot, x_plot = self.decimate_for_plot(
-                self.data['Time - Plot 0'].values * 1e-4 / 60,  # Convert to minutes
-                self.data['Amplitude - Plot 0'].values
-            )
-            
-            # Update progress
-            self.update_progress_bar(2)
-            
-            # Plot decimated data
-            ax.plot(t_plot, x_plot,
-                    color='black',
-                    linewidth=0.05,
-                    label=f'Raw Data ({len(t_plot):,} points)',
-                    alpha=0.9)
-            
-            # Customize plot
-            ax.set_xlabel('Time (min)', fontsize=12)
-            ax.set_ylabel('Amplitude (counts)', fontsize=12)
-            ax.set_title('Raw Data (Optimized View)', fontsize=14)
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.legend(fontsize=10)
-            
-            # Add data statistics annotation
-            stats_text = (f'Total points: {len(self.data):,}\n'
-                         f'Plotted points: {len(t_plot):,}\n'
-                         f'Mean: {np.mean(x_plot):.1f}\n'
-                         f'Std: {np.std(x_plot):.1f}')
-            ax.text(0.02, 0.98, stats_text,
-                    transform=ax.transAxes,
-                    verticalalignment='top',
-                    fontsize=8,
-                    bbox=dict(facecolor='white', alpha=0.8))
-            
-            # Adjust layout
-            self.figure.tight_layout()
-            
-            # Update or create tab
-            tab_exists = False
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == "Raw Data":
-                    self.plot_tab_control.select(tab)
-                    tab_exists = True
-                    break
-            
-            if not tab_exists:
-                new_tab = ttk.Frame(self.plot_tab_control)
-                self.plot_tab_control.add(new_tab, text="Raw Data")
-                self.plot_tab_control.select(new_tab)
-                canvas = FigureCanvasTkAgg(self.figure, new_tab)
-                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            
-            # Update the canvas
-            self.canvas.draw_idle()
-            
-            # Final progress update
-            self.update_progress_bar(3)
-            
-            # Update status
-            self.preview_label.config(
-                text=f"Raw data plotted successfully (Decimated from {len(self.data):,} to {len(t_plot):,} points)",
-                foreground="green"
-            )
-
-            self.tab_figures["Raw Data"] = self.figure
-
-        except Exception as e:
-            self.preview_label.config(text=f"Error plotting raw data: {str(e)}", foreground="red")
-            print(f"Detailed error: {str(e)}")
-            traceback.print_exc()
+        """Ruft die ausgelagerte Funktion für optimierte Darstellung der Rohdaten auf"""
+        return plot_raw_data_function(self, profile_function=profile_function)
 
     # Function to start data analysis
     @profile_function
