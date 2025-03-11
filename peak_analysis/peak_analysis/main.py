@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created Nov 17 21:518:48 2024
 
@@ -30,167 +29,20 @@ from numba import njit  # Add this import at the top of your file
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, Tcl
 from tkinter.scrolledtext import ScrolledText
-from utils.plotting import setup_seaborn, decimate_for_plot
+import sys
+import os
+from PIL import Image, ImageTk
 
-setup_seaborn()
-# Add at the top of the file, after imports
-class Config:
-    """Configuration constants"""
-    MAX_WORKERS = os.cpu_count() * 2
-    MAX_PLOT_POINTS = 10000
-    PROGRESS_RESET_DELAY = 500  # milliseconds
-    DEFAULT_WINDOW_SIZE = (1920, 1080)
-    
-    class Colors:
-        """Color constants"""
-        ERROR = "red"
-        SUCCESS = "green"
-        INFO = "blue"
-        WARNING = "orange"
-    
-    class Plot:
-        """Plot configuration"""
-        DPI = 100  # Increased from default 100
-        FIGURE_SIZE = (12, 8)  # Inches
-        EXPORT_DPI = 300  # Higher DPI for exports
-        LINE_WIDTH = 0.5
-        FONT_SIZE = 10
-        TITLE_SIZE = 12
-        LABEL_SIZE = 8
+# Local imports
+from config.settings import Config
+from peak_analysis_utils import * # Importiere alle Funktionen aus dem neuen Modul
+from plot_functions import plot_raw_data as plot_raw_data_function
 
-# Add after the imports, before the first function definition
-def profile_function(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Get memory usage before
-        process = psutil.Process(os.getpid())
-        memory_before = process.memory_info().rss / 1024 / 1024  # Convert to MB
-        
-        # Get start time
-        start_time = time.time()
-        
-        # Run the function
-        result = func(*args, **kwargs)
-        
-        # Get end time
-        end_time = time.time()
-        
-        # Get memory usage after
-        memory_after = process.memory_info().rss / 1024 / 1024  # Convert to MB
-        
-        # Calculate memory difference
-        memory_diff = memory_after - memory_before
-        
-        # Log the performance data
-        logging.info(f"{func.__name__} performance:")
-        logging.info(f"  Time: {end_time - start_time:.2f} seconds")
-        logging.info(f"  Memory before: {memory_before:.1f} MB")
-        logging.info(f"  Memory after: {memory_after:.1f} MB")
-        logging.info(f"  Memory difference: {memory_diff:.1f} MB")
-        
-        # Print to console as well
-        print(f"\n{func.__name__} performance:")
-        print(f"  Time: {end_time - start_time:.2f} seconds")
-        print(f"  Memory usage: {memory_diff:+.1f} MB")
-        
-        return result
-    return wrapper
 
-# Butterworth filter application
-def apply_butterworth_filter(order, Wn, btype, fs, x):
-    b, a = butter(order, Wn, btype, fs=fs)
-    x_f = filtfilt(b, a, x)
-    print(f'Butterworth filter coefficients (b, a): {b}, {a}')
-    print(f'Filtered signal: {x_f[:10]}...')  # Printing the first 10 values for brevity
-    return x_f
+# Set default seaborn style
+sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
+sns.set_context("notebook", rc={"lines.linewidth": 1.0})
 
-# Find the nearest value in an array
-@njit
-def find_nearest(array, value):
-    idx = 0
-    min_diff = np.abs(array[0] - value)
-    for i in range(1, len(array)):
-        diff = np.abs(array[i] - value)
-        if diff < min_diff:
-            min_diff = diff
-            idx = i
-    return idx
-
-# Convert timestamps to seconds
-@njit
-def timestamps_to_seconds(timestamps, start_time):
-    """Convert timestamps to seconds from start time"""
-    try:
-        seconds = []
-        start_min, start_sec = map(int, start_time.split(':'))
-        start_time_seconds = start_min * 60 + start_sec
-        
-        for timestamp in timestamps:
-            minu, sec = map(int, timestamp.split(':'))
-            seconds.append(minu * 60 + sec - start_time_seconds)
-            
-        return seconds
-    except Exception as e:
-        raise ValueError(f"Error converting timestamps: {e}\n"
-                        f"Format should be 'MM:SS' (e.g., '01:30')")
-
-# Detect peaks with a sliding window and filter out invalid ones
-@profile_function
-def find_peaks_with_window(signal, width, prominence, distance, rel_height):
-    
-    peaks, properties = find_peaks(signal, 
-                                 width=width,
-                                 prominence=prominence,
-                                 distance=distance,
-                                 rel_height=rel_height)
-        
-    return peaks, properties
-
-# Estimate the average peak width
-def estimate_peak_widths(signal, fs, big_counts):
-    peaks, _ = find_peaks(signal, width=[1, 2000], prominence=big_counts, distance=1000)
-    widths = peak_widths(signal, peaks, rel_height=0.5)[0]
-    avg_width = np.mean(widths) / fs
-    return avg_width
-# Add this memory tracking function
-def get_memory_usage():
-    process = psutil.Process(os.getpid())
-    return process.memory_info().rss / 1024 / 1024  # Convert to MB
-# Adjust the low-pass filter cutoff frequency
-def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor):
-    print("\nDEBUG: Starting adjust_lowpass_cutoff")
-    print(f"DEBUG: Input parameters:")
-    print(f"- fs: {fs}")
-    print(f"- big_counts: {big_counts}")
-    print(f"- normalization_factor: {normalization_factor}")
-    
-    avg_width = estimate_peak_widths(signal, fs, big_counts)
-    print(f'\nDEBUG: Average width of peaks: {avg_width} seconds')
-    
-    # Calculate base cutoff frequency from average width (in Hz)
-    base_cutoff = 1 / avg_width  # Convert time width to frequency
-    print(f'DEBUG: Base cutoff frequency (1/width): {base_cutoff:.2f} Hz')
-    
-    # Apply normalization factor to adjust the cutoff
-    cutoff = base_cutoff * float(normalization_factor)  # Ensure normalization_factor is float
-    print(f'DEBUG: After normalization:')
-    print(f'- Base cutoff: {base_cutoff:.2f} Hz')
-    print(f'- Normalization factor: {normalization_factor}')
-    print(f'- Adjusted cutoff: {cutoff:.2f} Hz')
-    
-    # Limit the cutoff frequency to reasonable values
-    original_cutoff = cutoff
-    cutoff = max(min(cutoff, 10000), 50)
-    if cutoff != original_cutoff:
-        print(f'DEBUG: Cutoff was limited from {original_cutoff:.2f} to {cutoff:.2f} Hz')
-    
-    print(f'\nDEBUG: Final cutoff frequency: {cutoff:.2f} Hz')
-    
-    order = 2
-    btype = 'lowpass'
-    filtered_signal = apply_butterworth_filter(order, cutoff, btype, fs, signal)
-    
-    return filtered_signal, cutoff
 
 class Application(tk.Tk):
     def __init__(self):
@@ -260,6 +112,8 @@ class Application(tk.Tk):
         self.data_canvas = None
         self.data_original_xlims = None
         self.data_original_ylims = None
+
+        self.tab_figures = {}  # Dictionary to store figures for each tab
 
     def setup_performance_logging(self):
         logging.basicConfig(
@@ -774,34 +628,35 @@ class Application(tk.Tk):
 
         return tooltip
 
-    # Function to browse and load the file
-    @profile_function
     def load_single_file(self, file, timestamps=None, index=0):
         """
         Helper function to load a single file
-        
         Args:
             file (str): Path to the file to load
             timestamps (list, optional): List of timestamps for batch mode
             index (int, optional): Index of the file in the batch
-            
+
         Returns:
             dict: Dictionary containing time, amplitude and index data
         """
         print(f"Loading file {index+1}: {file}")
-        
+
         try:
-            df = pd.read_csv(file, delimiter='\t')
+            # Determine file type based on extension
+            if file.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            else:
+                df = pd.read_csv(file, delimiter='\t')
+            
+            # Strip any extra spaces in the column names
             df.columns = [col.strip() for col in df.columns]
             
-            # Check if the file has standard time column name
-            has_timestamp = 'Time - Plot 0' in df.columns
-            
-            if has_timestamp:
+            # Check if the file has the standard time column name
+            if 'Time - Plot 0' in df.columns:
                 time_col = 'Time - Plot 0'
                 amp_col = 'Amplitude - Plot 0'
             else:
-                # Assume first column is time, second is amplitude
+                # Assume first column is time, second is amplitude if headers don't match expected names
                 df.columns = ['Time - Plot 0', 'Amplitude - Plot 0']
                 time_col = 'Time - Plot 0'
                 amp_col = 'Amplitude - Plot 0'
@@ -815,6 +670,47 @@ class Application(tk.Tk):
             print(f"Error loading file {file}: {str(e)}")
             raise
 
+
+    def reset_application_state(self):
+        """Reset all application variables and plots to initial state"""
+        try:
+            # Reset data variables
+            self.data = None
+            self.t_value = None
+            self.x_value = None
+            self.filtered_signal = None
+            self.segment_offset = 0
+
+            # Reset variables to default values
+            self.normalization_factor.set(1.0)
+            self.start_time.set("0:00")
+            self.big_counts.set(100)
+            self.height_lim.set(20)
+            self.distance.set(30)
+            self.rel_height.set(0.85)
+            self.width_p.set("1,200")
+            self.cutoff_value.set(0)
+
+            # Clear results summary
+            self.update_results_summary(preview_text="")
+
+            # Clear all tabs except Welcome tab
+            for tab in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab, "text") != "Welcome":
+                    self.plot_tab_control.forget(tab)
+
+            # Reset tab figures dictionary
+            self.tab_figures.clear()
+
+            # Reset preview label
+            self.preview_label.config(text="Application state reset", foreground="blue")
+
+            # Reset progress bar
+            self.update_progress_bar(0)
+
+        except Exception as e:
+            self.show_error("Error resetting application state", e)
+
     @profile_function
     def browse_file(self):
         """Browse and load file(s) based on current mode"""
@@ -822,6 +718,9 @@ class Application(tk.Tk):
         print(f"Current file mode: {self.file_mode.get()}")
         
         try:
+            # Reset application state before loading new file
+            self.reset_application_state()
+            
             # Reset progress bar
             self.update_progress_bar(0)
             
@@ -829,13 +728,17 @@ class Application(tk.Tk):
             if self.file_mode.get() == "single":
                 files = list(filedialog.askopenfilenames(
                     title="Select Data File",
-                    filetypes=(("Text files", "*.txt"), ("All files", "*.*"))
+                    filetypes=(
+                        ("Data files", "*.txt *.xls *.xlsx"),
+                        ("All files", "*.*")
+                    )
                 ))
             else:  # batch mode
                 folder = filedialog.askdirectory(title="Select Folder with Data Files")
                 if folder:
+                    # Include both text and Excel files
                     files = [os.path.join(folder, f) for f in os.listdir(folder) 
-                            if f.endswith('.txt')]
+                            if f.lower().endswith(('.txt', '.xls', '.xlsx'))]
             
             if files:
                 files = list(Tcl().call('lsort', '-dict', files))
@@ -946,611 +849,35 @@ class Application(tk.Tk):
     # Function to plot the raw data
     @profile_function
     def plot_raw_data(self):
-        """Optimized plotting of raw data"""
-        if self.data is None:
-            self.preview_label.config(text="No data to plot", foreground="red")
-            return
-
-        try:
-            # Initialize progress
-            self.update_progress_bar(0, 3)
-            
-            # Create new figure if needed
-            if self.canvas is None:
-                self.canvas = FigureCanvasTkAgg(self.figure, self.plot_tab_control)
-            
-            # Clear the current figure
-            self.figure.clear()
-            ax = self.figure.add_subplot(111)
-            
-            # Update progress
-            self.update_progress_bar(1)
-            
-            # Decimate data for plotting
-            t_plot, x_plot = decimate_for_plot(
-                self.data['Time - Plot 0'].values * 1e-4 / 60,  # Convert to minutes
-                self.data['Amplitude - Plot 0'].values
-            )
-            
-            # Update progress
-            self.update_progress_bar(2)
-            
-            # Plot decimated data
-            ax.plot(t_plot, x_plot,
-                    color='black',
-                    linewidth=0.05,
-                    label=f'Raw Data ({len(t_plot):,} points)',
-                    alpha=0.9)
-            
-            # Customize plot
-            ax.set_xlabel('Time (min)', fontsize=12)
-            ax.set_ylabel('Amplitude (counts)', fontsize=12)
-            ax.set_title('Raw Data (Optimized View)', fontsize=14)
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.legend(fontsize=10)
-            
-            # Add data statistics annotation
-            stats_text = (f'Total points: {len(self.data):,}\n'
-                         f'Plotted points: {len(t_plot):,}\n'
-                         f'Mean: {np.mean(x_plot):.1f}\n'
-                         f'Std: {np.std(x_plot):.1f}')
-            ax.text(0.02, 0.98, stats_text,
-                    transform=ax.transAxes,
-                    verticalalignment='top',
-                    fontsize=8,
-                    bbox=dict(facecolor='white', alpha=0.8))
-            
-            # Adjust layout
-            self.figure.tight_layout()
-            
-            # Update or create tab
-            tab_exists = False
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == "Raw Data":
-                    self.plot_tab_control.select(tab)
-                    tab_exists = True
-                    break
-            
-            if not tab_exists:
-                new_tab = ttk.Frame(self.plot_tab_control)
-                self.plot_tab_control.add(new_tab, text="Raw Data")
-                self.plot_tab_control.select(new_tab)
-                canvas = FigureCanvasTkAgg(self.figure, new_tab)
-                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            
-            # Update the canvas
-            self.canvas.draw_idle()
-            
-            # Final progress update
-            self.update_progress_bar(3)
-            
-            # Update status
-            self.preview_label.config(
-                text=f"Raw data plotted successfully (Decimated from {len(self.data):,} to {len(t_plot):,} points)",
-                foreground="green"
-            )
-
-        except Exception as e:
-            self.preview_label.config(text=f"Error plotting raw data: {str(e)}", foreground="red")
-            print(f"Detailed error: {str(e)}")
-            traceback.print_exc()
+        """Ruft die ausgelagerte Funktion für optimierte Darstellung der Rohdaten auf"""
+        return plot_raw_data_function(self, profile_function=profile_function)
 
     # Function to start data analysis
     @profile_function
     def start_analysis(self):
         """Optimized analysis and plotting of filtered data"""
-        if self.data is None:
-            self.show_error("No data loaded. Please load files first.")
-            return
-
-        try:
-            # Initialize progress
-            total_steps = 4
-            self.update_progress_bar(0, total_steps)
-
-            # Get parameters and prepare data
-            normalization_factor = self.normalization_factor.get()
-            big_counts = self.big_counts.get()
-            current_cutoff = self.cutoff_value.get()
-
-            t = self.data['Time - Plot 0'].values * 1e-4
-            x = self.data['Amplitude - Plot 0'].values
-            rate = np.median(np.diff(t))
-            self.fs = 1 / rate
-
-            # Update progress
-            self.update_progress_bar(1)
-
-            # Apply filtering
-            if current_cutoff > 0:
-                self.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', self.fs, x)
-                calculated_cutoff = current_cutoff
-            else:
-                self.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
-                    x, self.fs, big_counts, normalization_factor
-                )
-                self.cutoff_value.set(calculated_cutoff)
-
-            # Update progress
-            self.update_progress_bar(2)
-
-            # Create a common mask for both signals
-            max_points = 10000
-            if len(x) > max_points:
-                # Calculate stride
-                stride = len(x) // max_points
-
-                # Create base mask
-                mask = np.zeros(len(x), dtype=bool)
-                mask[::stride] = True
-
-                # Find peaks in both signals
-                mean_x, std_x = np.mean(x), np.std(x)
-                mean_filtered, std_filtered = np.mean(self.filtered_signal), np.std(self.filtered_signal)
-
-                peaks_raw, _ = find_peaks(x, height=mean_x + 3 * std_x)
-                peaks_filtered, _ = find_peaks(self.filtered_signal, height=mean_filtered + 3 * std_filtered)
-                all_peaks = np.unique(np.concatenate([peaks_raw, peaks_filtered]))
-
-                # Create peaks mask and expand peaks by convolution
-                peaks_mask = np.zeros(len(x), dtype=bool)
-                peaks_mask[all_peaks] = True
-                peaks_mask = np.convolve(peaks_mask.astype(int), np.ones(11, dtype=int), mode='same') > 0
-
-                # Find significant changes in both signals
-                diff_raw = np.abs(np.diff(x, prepend=x[0]))
-                diff_filtered = np.abs(np.diff(self.filtered_signal, prepend=self.filtered_signal[0]))
-
-                threshold_raw = 5 * np.std(diff_raw)
-                threshold_filtered = 5 * np.std(diff_filtered)
-
-                changes_raw = np.where(diff_raw > threshold_raw)[0]
-                changes_filtered = np.where(diff_filtered > threshold_filtered)[0]
-                all_changes = np.unique(np.concatenate([changes_raw, changes_filtered]))
-
-                # Create changes mask and expand changes by convolution
-                changes_mask = np.zeros(len(x), dtype=bool)
-                changes_mask[all_changes] = True
-                changes_mask = np.convolve(changes_mask.astype(int), np.ones(3, dtype=int), mode='same') > 0
-
-                # Combine masks
-                mask |= peaks_mask | changes_mask
-
-                # Apply mask to both signals
-                t_plot = t[mask] / 60  # Convert to minutes
-                x_plot = x[mask]
-                filtered_plot = self.filtered_signal[mask]
-            else:
-                t_plot = t / 60
-                x_plot = x
-                filtered_plot = self.filtered_signal
-
-            # Create plot
-            self.figure.clear()
-            ax = self.figure.add_subplot(111)
-
-            # Plot decimated data
-            ax.plot(
-                t_plot,
-                x_plot,
-                color='black',
-                linewidth=0.05,
-                label=f'Raw Data ({len(x_plot):,} points)',
-                alpha=0.4,
-            )
-
-            ax.plot(
-                t_plot,
-                filtered_plot,
-                color='blue',
-                linewidth=0.05,
-                label=f'Filtered Data ({len(filtered_plot):,} points)',
-                alpha=0.9,
-            )
-
-            # Customize plot
-            ax.set_xlabel('Time (min)', fontsize=12)
-            ax.set_ylabel('Amplitude (counts)', fontsize=12)
-            ax.set_title('Raw and Filtered Signals (Optimized View)', fontsize=14)
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.legend(fontsize=10)
-
-            # Add filtering parameters annotation
-            filter_text = (
-                f'Cutoff: {calculated_cutoff:.1f} Hz\n'
-                f'Total points: {len(self.filtered_signal):,}\n'
-                f'Plotted points: {len(filtered_plot):,}'
-            )
-            ax.text(
-                0.02,
-                0.98,
-                filter_text,
-                transform=ax.transAxes,
-                verticalalignment='top',
-                fontsize=8,
-                bbox=dict(facecolor='white', alpha=0.8),
-            )
-
-            # Update progress
-            self.update_progress_bar(3)
-
-            # Update or create tab
-            tab_name = "Smoothed Data"
-            tab_exists = False
-
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == tab_name:
-                    self.plot_tab_control.select(tab)
-                    tab_exists = True
-                    break
-
-            if not tab_exists:
-                new_tab = ttk.Frame(self.plot_tab_control)
-                self.plot_tab_control.add(new_tab, text=tab_name)
-                self.plot_tab_control.select(new_tab)
-                self.canvas = FigureCanvasTkAgg(self.figure, new_tab)
-                self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-            # Update the canvas
-            self.canvas.draw_idle()
-
-            # Final progress update
-            self.update_progress_bar(4)
-
-            # Update status
-            self.preview_label.config(
-                text=(
-                    f"Analysis completed (Cutoff: {calculated_cutoff:.1f} Hz, "
-                    f"Decimated from {len(self.filtered_signal):,} to {len(filtered_plot):,} points)"
-                ),
-                foreground="green",
-            )
-
-        except Exception as e:
-            self.show_error("Error during analysis", e)
-            self.update_progress_bar(0)
+        from plot_functions import start_analysis as start_analysis_function
+        return start_analysis_function(self, profile_function=profile_function)
 
 
     # Function to run peak detection
     @profile_function
     def run_peak_detection(self):
         """Run peak detection and overlay peaks on existing plot"""
-        if self.filtered_signal is None:
-            self.show_error("Filtered signal not available. Please start the analysis first.")
-            return
-            
-        try:
-            # Initialize progress
-            total_steps = 3
-            self.update_progress_bar(0, total_steps)
-            
-            # Get the current axes
-            ax = self.figure.gca()
-            
-            # Remove previously plotted peaks and width indicators
-            lines_to_remove = []
-            for line in ax.lines:
-                # Check if this is a peak marker (red x marker) or not a main data line
-                if (line.get_color() == 'red' and line.get_marker() == 'x') or \
-                   'Detected Peaks' in str(line.get_label()):
-                    lines_to_remove.append(line)
-            
-            # Remove the marked lines
-            for line in lines_to_remove:
-                line.remove()
-            
-            # Clear horizontal lines (peak width indicators)
-            for collection in ax.collections:
-                collection.remove()
-            
-            # Get parameters
-            height_lim_factor = self.height_lim.get()
-            distance = self.distance.get()
-            rel_height = self.rel_height.get()
-            width_p = [int(float(x) * 10) for x in self.width_p.get().split(',')]
-            
-            # Update progress
-            self.update_progress_bar(1)
-            
-            # Find peaks
-            peaks_x_filter, amp_x_filter = find_peaks_with_window(
-                self.filtered_signal, 
-                width=width_p, 
-                prominence=height_lim_factor,
-                distance=distance, 
-                rel_height=rel_height
-            )
-            
-            # Check if any peaks were found
-            if len(peaks_x_filter) == 0:
-                self.show_error("No peaks found with current parameters. Try adjusting threshold or width range.")
-                return
-            
-            # Calculate peak areas
-            window = np.round(amp_x_filter['widths'], 0).astype(int) + 40
-            peak_areas = np.zeros(len(peaks_x_filter))
-            start_indices = np.zeros(len(peaks_x_filter))
-            end_indices = np.zeros(len(peaks_x_filter))
-
-            for i in range(len(peaks_x_filter)):
-                # Get window indices
-                start_idx = max(0, peaks_x_filter[i] - window[i])
-                end_idx = min(len(self.filtered_signal), peaks_x_filter[i] + window[i])
-                
-                yData = self.filtered_signal[start_idx:end_idx]
-                background = np.min(yData)
-
-                st = int(amp_x_filter["left_ips"][i])
-                en = int(amp_x_filter["right_ips"][i])
-                
-                start_indices[i] = st
-                end_indices[i] = en
-                peak_areas[i] = np.sum(self.filtered_signal[st:en] - background)
-
-            # Update progress
-            self.update_progress_bar(2)
-            
-            # Add peak markers to the existing plot
-            ax.plot(self.t_value[peaks_x_filter]*1e-4 / 60, 
-                    self.filtered_signal[peaks_x_filter],
-                    'rx',
-                    markersize=5,
-                    label=f'Detected Peaks ({len(peaks_x_filter)})')
-            
-            
-
-            # Update legend
-            ax.legend(fontsize=10)
-            
-            # Calculate peak intervals
-            peak_times = self.t_value[peaks_x_filter]*1e-4
-            intervals = np.diff(peak_times)
-            
-            if len(intervals) > 0:
-                mean_interval = np.mean(intervals)
-                std_interval = np.std(intervals)
-            else:
-                mean_interval = 0
-                std_interval = 0
-
-            # Update results summary
-            summary_text = (
-                f"Number of peaks detected: {len(peaks_x_filter)}\n"
-                f"Average peak area: {np.mean(peak_areas):.2f} ± {np.std(peak_areas):.2f}\n"
-                f"Average interval: {mean_interval:.2f} ± {std_interval:.2f} seconds\n"
-                f"Peak detection threshold: {height_lim_factor}"
-            )
-            self.update_results_summary(summary_text)
-            
-            # Update canvas
-            self.canvas.draw_idle()
-            
-            # Final progress update
-            self.update_progress_bar(3)
-            
-            self.preview_label.config(
-                text=f"Peak detection completed: {len(peaks_x_filter)} peaks detected", 
-                foreground="green"
-            )
-
-        except Exception as e:
-            self.show_error("Error during peak detection", e)
-            self.update_progress_bar(0)  # Reset on error
+        from plot_functions import run_peak_detection as run_peak_detection_function
+        return run_peak_detection_function(self, profile_function=profile_function)
 
     
     # Function to plot the detected filtered peaks
     @profile_function
     def plot_filtered_peaks(self):
-        if self.filtered_signal is None:
-            self.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
-            return
-
-        try:
-            # Get peaks and properties
-            width_values = self.width_p.get().strip().split(',')
-            width_p = [int(float(value.strip()) * 10) for value in width_values]
-            
-            peaks_x_filter, amp_x_filter = find_peaks_with_window(
-                self.filtered_signal, 
-                width=width_p,
-                prominence=self.height_lim.get(),
-                distance=self.distance.get(), 
-                rel_height=self.rel_height.get()
-            )
-
-            if len(peaks_x_filter) == 0:
-                self.preview_label.config(text="No peaks found with current parameters", foreground="red")
-                return
-
-            # Divide measurement into segments and select representative peaks
-            total_peaks = len(peaks_x_filter)
-            num_segments = 10  # We want 10 peaks from different segments
-            segment_size = total_peaks // num_segments
-
-            # Store the current segment offset in the class if it doesn't exist
-            if not hasattr(self, 'segment_offset'):
-                self.segment_offset = 0
-
-            # Select peaks from different segments
-            selected_peaks = []
-            for i in range(num_segments):
-                segment_start = (i * segment_size + self.segment_offset) % total_peaks
-                peak_idx = segment_start
-                if peak_idx < total_peaks:
-                    selected_peaks.append(peak_idx)
-
-            window = 3*np.round(amp_x_filter['widths'], 0).astype(int) 
-            
-            # Create new figure
-            new_figure = Figure(figsize=(10, 8))
-            axs = []
-            for i in range(2):
-                row = []
-                for j in range(5):
-                    row.append(new_figure.add_subplot(2, 5, i*5 + j + 1))
-                axs.append(row)
-
-            handles, labels = [], []
-
-            # Plot selected peaks
-            for idx, peak_idx in enumerate(selected_peaks):
-                i = peak_idx
-                start_idx = max(0, peaks_x_filter[i] - window[i])
-                end_idx = min(len(self.t_value*1e-4), peaks_x_filter[i] + window[i])
-                
-                xData = self.t_value[start_idx:end_idx]*1e-4
-                yData_sub = self.filtered_signal[start_idx:end_idx]
-                
-                if len(xData) == 0:
-                    continue
-                    
-                background = np.min(yData_sub)
-                yData = yData_sub - background
-
-                ax = axs[idx // 5][idx % 5]
-
-                # Plot filtered data
-                line1, = ax.plot((xData - xData[0]) * 1e3, yData, 
-                               color='blue', 
-                               label='Filtered', 
-                               alpha=0.8,
-                               linewidth=0.5)
-                
-                # Plot peak marker
-                peak_time = self.t_value[peaks_x_filter[i]]*1e-4
-                peak_height = self.filtered_signal[peaks_x_filter[i]] - background
-                line2, = ax.plot((peak_time - xData[0]) * 1e3, 
-                               peak_height,
-                               "x", 
-                               color='red', 
-                               ms=10, 
-                               label='Peak')
-
-                # Plot raw data
-                raw_data = self.x_value[start_idx:end_idx]
-                corrected_signal = raw_data - background
-                line3, = ax.plot((xData - xData[0]) * 1e3, 
-                               corrected_signal, 
-                               color='black', 
-                               label='Raw', 
-                               alpha=0.5,
-                               linewidth=0.3)
-
-                # Plot width lines
-                left_idx = int(amp_x_filter["left_ips"][i])
-                right_idx = int(amp_x_filter["right_ips"][i])
-                width_height = amp_x_filter["width_heights"][i] - background
-                
-                line4 = ax.hlines(y=width_height,
-                                xmin=(self.t_value[left_idx]*1e-4 - xData[0]) * 1e3,
-                                xmax=(self.t_value[right_idx]*1e-4 - xData[0]) * 1e3,
-                                color="red",
-                                linestyles='-',
-                                alpha=0.8)
-                line4 = Line2D([0], [0], color='red', linestyle='-', label='Peak Width')
-
-                # Add peak number label
-                ax.text(0.02, 0.98, f'Peak #{i+1}',  # i+1 to start counting from 1 instead of 0
-                        transform=ax.transAxes,
-                        fontsize=10,
-                        fontweight='bold',
-                        verticalalignment='top',
-                        bbox=dict(facecolor='white', 
-                                 edgecolor='none',
-                                 alpha=0.7))
-
-                # Customize subplot
-                ax.set_xlabel('Time (ms)', fontsize=10)
-                ax.set_ylabel('Counts', fontsize=10)
-                ax.grid(True, linestyle='--', alpha=0.3)
-                ax.tick_params(axis='both', labelsize=9)
-                
-                # Add padding to y-axis limits
-                ymin, ymax = ax.get_ylim()
-                y_padding = (ymax - ymin) * 0.15
-                ax.set_ylim(ymin - y_padding, ymax + y_padding)
-
-                if idx == 0:
-                    handles.extend([line3, line1, line2, line4])
-
-            # Remove individual legends from subplots (with check)
-            for ax_row in axs:
-                for ax in ax_row:
-                    legend = ax.get_legend()
-                    if legend is not None:  # Only remove if legend exists
-                        legend.remove()
-
-            # Create handles for the legend (move this before the legend creation)
-            handles = [
-                Line2D([0], [0], color='black', alpha=0.5, linewidth=0.3, label='Raw Data'),
-                Line2D([0], [0], color='blue', alpha=0.8, linewidth=0.5, label='Filtered Data'),
-                Line2D([0], [0], color='red', marker='x', linestyle='None', label='Peak'),
-                Line2D([0], [0], color='red', linestyle='-', alpha=0.8, label='Peak Width')
-            ]
-
-            # Add a single, optimized legend
-            new_figure.legend(
-                handles=handles,
-                labels=['Raw Data', 'Filtered Data', 'Peak', 'Peak Width'],
-                loc='center',
-                bbox_to_anchor=(0.5, 0.98),
-                ncol=4,
-                fontsize=8,
-                framealpha=0.9,
-                edgecolor='gray',
-                borderaxespad=0.5,
-                columnspacing=1.0,
-                handletextpad=0.5,
-            )
-
-            # Adjust the layout
-            new_figure.subplots_adjust(top=0.92)
-            new_figure.suptitle('Individual Peak Analysis', fontsize=12, y=0.96)
-            new_figure.tight_layout(rect=[0, 0, 1, 0.92])
-
-            # Update or create tab in plot_tab_control
-            tab_name = "Exemplary Peaks"  # Changed from "Filtered Peaks Plot"
-            tab_exists = False
-            
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == tab_name:
-                    self.plot_tab_control.forget(tab)  # Remove existing tab to update it
-                    break
-                    
-            new_tab = ttk.Frame(self.plot_tab_control)
-            self.plot_tab_control.add(new_tab, text=tab_name)
-            self.plot_tab_control.select(new_tab)
-            
-            new_canvas = FigureCanvasTkAgg(new_figure, new_tab)
-            new_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            new_canvas.draw_idle()
-
-            
-            #)
-
-        except Exception as e:
-            self.preview_label.config(text=f"Error plotting example peaks: {str(e)}", foreground="red")
-            print(f"Detailed error: {str(e)}")
-            traceback.print_exc()
+        from plot_functions import plot_filtered_peaks as plot_filtered_peaks_function
+        return plot_filtered_peaks_function(self, profile_function=profile_function)
 
     def show_next_peaks(self):
         """Show the next set of peaks in the filtered peaks plot"""
-        if not hasattr(self, 'segment_offset'):
-            self.segment_offset = 0
-        
-        # Increment the offset
-        self.segment_offset += 1
-        
-        # Reset to beginning if we've reached the end
-        if self.segment_offset >= len(self.filtered_signal):
-            self.segment_offset = 0
-            self.preview_label.config(
-                text="Reached end of peaks, returning to start", 
-                foreground="blue"
-            )
-        
-        # Replot with new offset
-        self.plot_filtered_peaks()
+        from plot_functions import show_next_peaks as show_next_peaks_function
+        return show_next_peaks_function(self)
 
     # Function to calculate the areas of detected peaks
     @profile_function
@@ -1613,37 +940,50 @@ class Application(tk.Tk):
             return
 
         try:
+            filtered_signal = self.filtered_signal
+            t = self.t_value
             height_lim_factor = self.height_lim.get()
             distance = self.distance.get()
             rel_height = self.rel_height.get()
-            
-            # Convert width values properly
-            width_values = [float(x) for x in self.width_p.get().split(',')]
-            width_p = [int(float(x) * 10) for x in width_values]  # Convert to samples
 
+            # First convert string to float, then multiply by 10 and convert to int
+            width_values = self.width_p.get().strip().split(',')
+            width_p = [int(float(value.strip()) * 10) for value in width_values]
+            
             peaks_x_filter, amp_x_filter = find_peaks_with_window(
-                self.filtered_signal, 
-                width=width_p, 
+                filtered_signal, 
+                width=width_p,
                 prominence=height_lim_factor,
                 distance=distance, 
                 rel_height=rel_height
             )
 
-            # Calculate peak areas
             window = np.round(amp_x_filter['widths'], 0).astype(int) + 40
-            peak_areas = np.zeros(len(peaks_x_filter))
+            events = len(peaks_x_filter)
             
-            for i in range(len(peaks_x_filter)):
-                yData = self.filtered_signal[peaks_x_filter[i] - window[i]:peaks_x_filter[i] + window[i]]
+            peak_area = np.zeros(events)
+            start = np.zeros(events)
+            end = np.zeros(events)
+            Datay = filtered_signal
+
+            for i in range(events):
+                start_idx = max(0, peaks_x_filter[i] - window[i]) 
+                end_idx = min(len(filtered_signal), peaks_x_filter[i] + window[i])
+                yData = filtered_signal[start_idx:end_idx]
                 background = np.min(yData)
+
                 st = int(amp_x_filter["left_ips"][i])
                 en = int(amp_x_filter["right_ips"][i])
-                peak_areas[i] = np.sum(self.filtered_signal[st:en] - background)
 
+                start[i] = st
+                end[i] = en
+
+                peak_area[i] = np.sum(filtered_signal[st:en] - background)
+        
             # Create DataFrame with results
             results_df = pd.DataFrame({
                 "Peak Time (min)": self.t_value[peaks_x_filter] / 60,  # Convert to minutes
-                "Peak Area": peak_areas,
+                "Peak Area": peak_area,
                 "Peak Width (ms)": amp_x_filter['widths'] / 10,  # Convert to milliseconds
                 "Peak Height": amp_x_filter['prominences'],
                 "Start Time": self.protocol_start_time.get(),
@@ -1719,143 +1059,8 @@ class Application(tk.Tk):
     # Function to plot processed data with detected peaks
     def plot_data(self):
         """Plot processed data with peaks in a new tab."""
-        if self.filtered_signal is None:
-            self.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
-            return
-
-        try:
-            print("Starting plot_data function...")
-            
-            # Create a new figure for data plot
-            self.data_figure = Figure(figsize=(10, 8))
-            
-            # Create subplots with proper spacing
-            axes = self.data_figure.subplots(nrows=4, ncols=1, sharex=True, 
-                                           gridspec_kw={'height_ratios': [1, 1, 1, 1.2],
-                                                       'hspace': 0.3})
-            
-            # Convert data to float32 for memory efficiency
-            t = np.asarray(self.t_value, dtype=np.float32)*1e-4
-            filtered_signal = np.asarray(self.filtered_signal, dtype=np.float32)
-            
-            # Find peaks with optimized parameters
-            width_values = self.width_p.get().strip().split(',')
-            width_p = [int(float(value.strip()) * 10) for value in width_values]
-            
-            peaks, properties = find_peaks_with_window(
-                filtered_signal,
-                width=width_p,
-                prominence=self.height_lim.get(),
-                distance=self.distance.get(),
-                rel_height=self.rel_height.get()
-            )
-            
-            # Calculate peak properties
-            widths = properties["widths"]
-            prominences = properties["prominences"]
-            peak_times = t[peaks]
-            
-            # Calculate areas under peaks
-            areas = []
-            for i, peak in enumerate(peaks):
-                left_idx = int(properties["left_ips"][i])
-                right_idx = int(properties["right_ips"][i])
-                if left_idx < right_idx:
-                    areas.append(np.trapz(filtered_signal[left_idx:right_idx]))
-                else:
-                    areas.append(0)
-            areas = np.array(areas)
-            
-            # Plot peak heights
-            axes[0].scatter(peak_times/60, prominences, s=1, alpha=0.5, color='black', label='Peak Heights')
-            axes[0].set_ylabel('Peak Heights')
-            axes[0].grid(True, alpha=0.3)
-            axes[0].legend(fontsize=8)
-            axes[0].set_yscale('log')
-            
-            # Plot peak widths
-            axes[1].scatter(peak_times/60, widths/10, s=1, alpha=0.5, color='black', label='Peak Widths (ms)')
-            axes[1].set_ylabel('Peak Widths (ms)')
-            axes[1].grid(True, alpha=0.3)
-            axes[1].legend(fontsize=8)
-            axes[1].set_yscale('log')
-            
-            # Plot peak areas
-            axes[2].scatter(peak_times/60, areas, s=1, alpha=0.5, color='black', label='Peak Areas')
-            axes[2].set_ylabel('Peak Areas')
-            axes[2].grid(True, alpha=0.3)
-            axes[2].legend(fontsize=8)
-            axes[2].set_yscale('log')
-            
-            # Calculate and plot throughput
-            interval = 10  # seconds
-            bins = np.arange(0, np.max(t), interval)
-            bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
-            throughput, _ = np.histogram(peak_times, bins=bins)
-            
-            # Plot throughput with proper styling
-            axes[3].bar(bin_centers/60, throughput, 
-                       width=(interval/60)*0.8,  # Adjust bar width
-                       color='black',
-                       alpha=0.5,
-                       label=f'Throughput ({interval}s bins)')
-            
-            # Add moving average line
-            window = 5  # Number of points for moving average
-            moving_avg = np.convolve(throughput, np.ones(window)/window, mode='valid')
-            moving_avg_times = bin_centers[window-1:]/60
-            axes[3].plot(moving_avg_times, moving_avg, 
-                        color='red', 
-                        linewidth=1, 
-                        label=f'{window}-point Moving Average')
-            
-            axes[3].set_ylabel(f'Peaks per {interval}s')
-            axes[3].set_xlabel('Time (min)')
-            axes[3].grid(True, alpha=0.3)
-            axes[3].legend(fontsize=8)
-            
-            # Add statistics annotation to throughput plot
-            stats_text = (f'Total Peaks: {len(peaks):,}\n'
-                         f'Avg Rate: {len(peaks)/(np.max(t)-np.min(t))*60:.1f} peaks/min\n'
-                         f'Max Rate: {np.max(throughput)/(interval/60):.1f} peaks/min')
-            axes[3].text(0.02, 0.98, stats_text,
-                        transform=axes[3].transAxes,
-                        verticalalignment='top',
-                        fontsize=8,
-                        bbox=dict(facecolor='white', alpha=0.8))
-            
-            # Update title and layout
-            self.data_figure.suptitle('Peak Analysis Over Time', y=0.95)
-            self.data_figure.tight_layout()
-            
-            # Create or update the tab in plot_tab_control
-            tab_name = "Peak Analysis"
-            tab_exists = False
-            
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == tab_name:
-                    self.plot_tab_control.forget(tab)  # Remove existing tab to update it
-                    break
-                    
-            new_tab = ttk.Frame(self.plot_tab_control)
-            self.plot_tab_control.add(new_tab, text=tab_name)
-            self.plot_tab_control.select(new_tab)
-            
-            # Create new canvas in the tab
-            self.data_canvas = FigureCanvasTkAgg(self.data_figure, new_tab)
-            self.data_canvas.draw()
-            self.data_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            
-            self.preview_label.config(text="Peak analysis plot created successfully", foreground="green")
-            
-        except Exception as e:
-            self.show_error("Error in plot_data", e)
-            raise  # Re-raise the exception for debugging
-
-    
-   
-
-    
+        from plot_functions import plot_data as plot_data_function
+        return plot_data_function(self, profile_function=profile_function)
 
     # Function to export the current plot
     def export_plot(self):
@@ -1871,8 +1076,21 @@ class Application(tk.Tk):
                 ]
             )
             if file_path:
+                # Get the currently selected tab
+                current_tab = self.plot_tab_control.select()
+                tab_text = self.plot_tab_control.tab(current_tab, "text")
+                print(f"Exporting from tab: {tab_text}")  # Debug output
+                
+                # Get figure from dictionary
+                figure_to_export = self.tab_figures.get(tab_text)
+                print(f"Found figure in dictionary: {figure_to_export is not None}")  # Debug output
+                
+                if figure_to_export is None:
+                    print("Warning: No figure found for this tab")
+                    return
+                
                 # Save with high DPI and tight layout
-                self.figure.savefig(
+                figure_to_export.savefig(
                     file_path,
                     dpi=Config.Plot.EXPORT_DPI,
                     bbox_inches='tight',
@@ -1884,9 +1102,13 @@ class Application(tk.Tk):
                     text=f"Plot exported successfully to {file_path}", 
                     foreground="green"
                 )
+                print(f"Successfully exported figure to {file_path}")  # Debug output
+                
         except Exception as e:
+            error_msg = f"Error exporting plot: {str(e)}"
+            print(f"Export error: {error_msg}")  # Debug output
             self.preview_label.config(
-                text=f"Error exporting plot: {e}", 
+                text=error_msg, 
                 foreground="red"
             )
 
@@ -1987,172 +1209,8 @@ class Application(tk.Tk):
     # Function to plot a scatter plot of peak area vs amplitude
     def plot_scatter(self):
         """Enhanced scatter plot for peak property correlations"""
-        if self.filtered_signal is None:
-            self.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
-            return
-
-        try:
-            # Get peaks and properties
-            width_values = self.width_p.get().strip().split(',')
-            width_p = [int(float(value.strip()) * 10) for value in width_values]
-            
-            peaks_x_filter, properties = find_peaks_with_window(
-                self.filtered_signal, 
-                width=width_p,
-                prominence=self.height_lim.get(),
-                distance=self.distance.get(), 
-                rel_height=self.rel_height.get()
-            )
-
-            # Calculate peak areas
-            window = np.round(properties['widths'], 0).astype(int) + 40
-            peak_areas = np.zeros(len(peaks_x_filter))
-            
-            for i in range(len(peaks_x_filter)):
-                yData = self.filtered_signal[peaks_x_filter[i] - window[i]:peaks_x_filter[i] + window[i]]
-                background = np.min(yData)
-                st = int(properties["left_ips"][i])
-                en = int(properties["right_ips"][i])
-                peak_areas[i] = np.sum(self.filtered_signal[st:en] - background)
-
-            # Create DataFrame with all peak properties
-            df_all = pd.DataFrame({
-                "width": properties['widths'] / 10,  # Convert to ms directly
-                "amplitude": properties['prominences'],
-                "area": peak_areas
-            })
-
-            # Create new figure with adjusted size and spacing
-            new_figure = Figure(figsize=(12, 10))
-            gs = new_figure.add_gridspec(2, 2, hspace=0.25, wspace=0.3)
-            ax = [new_figure.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
-
-            # Color map for density
-            cmap = plt.cm.viridis
-
-            # Plot 1: Width vs Amplitude
-            density1 = stats.gaussian_kde(np.vstack([df_all['width'], df_all['amplitude']]))
-            density1_points = density1(np.vstack([df_all['width'], df_all['amplitude']]))
-            
-            sc1 = ax[0].scatter(df_all['width'], df_all['amplitude'], 
-                              c=density1_points, 
-                              s=5, 
-                              alpha=0.6,
-                              cmap=cmap)
-            ax[0].set_xlabel('Width (ms)', fontsize=10)
-            ax[0].set_ylabel('Amplitude (counts)', fontsize=10)
-            ax[0].set_xscale('log')
-            ax[0].set_yscale('log')
-            ax[0].grid(True, alpha=0.3)
-            ax[0].set_title('Width vs Amplitude', fontsize=12)
-            
-            # Add correlation coefficient
-            corr1 = df_all['width'].corr(df_all['amplitude'])
-            ax[0].text(0.05, 0.95, f'r = {corr1:.2f}', 
-                      transform=ax[0].transAxes, 
-                      fontsize=10,
-                      bbox=dict(facecolor='white', alpha=0.8))
-
-            # Plot 2: Width vs Area
-            density2 = stats.gaussian_kde(np.vstack([df_all['width'], df_all['area']]))
-            density2_points = density2(np.vstack([df_all['width'], df_all['area']]))
-            
-            sc2 = ax[1].scatter(df_all['width'], df_all['area'], 
-                              c=density2_points, 
-                              s=5, 
-                              alpha=0.6,
-                              cmap=cmap)
-            ax[1].set_xlabel('Width (ms)', fontsize=10)
-            ax[1].set_ylabel('Area (counts)', fontsize=10)
-            ax[1].set_xscale('log')
-            ax[1].set_yscale('log')
-            ax[1].grid(True, alpha=0.3)
-            ax[1].set_title('Width vs Area', fontsize=12)
-            
-            corr2 = df_all['width'].corr(df_all['area'])
-            ax[1].text(0.05, 0.95, f'r = {corr2:.2f}', 
-                      transform=ax[1].transAxes, 
-                      fontsize=10,
-                      bbox=dict(facecolor='white', alpha=0.8))
-
-            # Plot 3: Amplitude vs Area
-            density3 = stats.gaussian_kde(np.vstack([df_all['amplitude'], df_all['area']]))
-            density3_points = density3(np.vstack([df_all['amplitude'], df_all['area']]))
-            
-            sc3 = ax[2].scatter(df_all['amplitude'], df_all['area'], 
-                              c=density3_points, 
-                              s=5, 
-                              alpha=0.6,
-                              cmap=cmap)
-            ax[2].set_xlabel('Amplitude (counts)', fontsize=10)
-            ax[2].set_ylabel('Area (counts)', fontsize=10)
-            ax[2].set_xscale('log')
-            ax[2].set_yscale('log')
-            ax[2].grid(True, alpha=0.3)
-            ax[2].set_title('Amplitude vs Area', fontsize=12)
-            
-            corr3 = df_all['amplitude'].corr(df_all['area'])
-            ax[2].text(0.05, 0.95, f'r = {corr3:.2f}', 
-                      transform=ax[2].transAxes, 
-                      fontsize=10,
-                      bbox=dict(facecolor='white', alpha=0.8))
-
-            # Plot 4: Width distribution with statistics
-            sns.histplot(data=df_all, x='width', bins=50, ax=ax[3], color='darkblue', alpha=0.6)
-            ax[3].set_xlabel('Width (ms)', fontsize=10)
-            ax[3].set_ylabel('Count', fontsize=10)
-            ax[3].grid(True, alpha=0.3)
-            ax[3].set_title('Width Distribution', fontsize=12)
-            
-            # Add statistics to histogram
-            stats_text = (
-                f'Mean: {df_all["width"].mean():.1f} ms\n'
-                f'Median: {df_all["width"].median():.1f} ms\n'
-                f'Std: {df_all["width"].std():.1f} ms\n'
-                f'N: {len(df_all):,}')
-            ax[3].text(0.95, 0.95, stats_text,
-                      transform=ax[3].transAxes,
-                      fontsize=9,
-                      bbox=dict(facecolor='white', alpha=0.8),
-                      verticalalignment='top',
-                      horizontalalignment='right')
-
-            # Add colorbar for density
-            cbar_ax = new_figure.add_axes([0.92, 0.15, 0.02, 0.7])
-            new_figure.colorbar(sc1, cax=cbar_ax, label='Density')
-
-            # Main title with summary statistics
-            summary_stats = (
-                f'Total Peaks: {len(peaks_x_filter):,} | '
-                f'Mean Area: {df_all["area"].mean():.1e} ± {df_all["area"].std():.1e} | '
-                f'Mean Amplitude: {df_all["amplitude"].mean():.1f} ± {df_all["amplitude"].std():.1f}'
-            )
-            new_figure.suptitle('Peak Property Correlations\n' + summary_stats, 
-                               y=0.95, fontsize=14)
-
-            # Update or create tab in plot_tab_control
-            tab_name = "Peak Properties"
-            tab_exists = False
-            
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == tab_name:
-                    self.plot_tab_control.forget(tab)
-                    break
-                    
-            new_tab = ttk.Frame(self.plot_tab_control)
-            self.plot_tab_control.add(new_tab, text=tab_name)
-            self.plot_tab_control.select(new_tab)
-            
-            new_canvas = FigureCanvasTkAgg(new_figure, new_tab)
-            new_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            new_canvas.draw_idle()
-
-            self.preview_label.config(text="Peak properties plotted successfully", foreground="green")
-
-        except Exception as e:
-            self.preview_label.config(text=f"Error creating scatter plot: {e}", foreground="red")
-            print(f"Detailed error: {str(e)}")
-            traceback.print_exc()
+        from plot_functions import plot_scatter as plot_scatter_function
+        return plot_scatter_function(self, profile_function=profile_function)
 
     # Function to update the results summary text box
     def update_results_summary(self, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
@@ -2205,6 +1263,99 @@ class Application(tk.Tk):
         except Exception as e:
             print(f"Error updating progress bar: {e}")
 
+   
+
+    def decimate_for_plot(self, x, y, max_points=10000):
+        """
+        Intelligently reduce number of points for plotting while preserving important features
+        
+        Args:
+            x: time array
+            y: signal array
+            max_points: maximum number of points to plot
+        
+        Returns:
+            x_decimated, y_decimated: decimated arrays for plotting
+        """
+        if len(x) <= max_points:
+            return x, y
+        
+        # Calculate decimation factor
+        stride = len(x) // max_points
+        
+        # Initialize masks for important points
+        mask = np.zeros(len(x), dtype=bool)
+        
+        # Include regularly spaced points
+        mask[::stride] = True
+        
+        # Find peaks and include points around them
+        peaks, _ = find_peaks(y, height=np.mean(y) + 3*np.std(y))
+        for peak in peaks:
+            start_idx = max(0, peak - 5)
+            end_idx = min(len(x), peak + 6)
+            mask[start_idx:end_idx] = True
+        
+        # Find significant changes in signal
+        diff = np.abs(np.diff(y))
+        significant_changes = np.where(diff > 5*np.std(diff))[0]
+        for idx in significant_changes:
+            mask[idx:idx+2] = True
+        
+        # Apply mask
+        return x[mask], y[mask]
+def resource_path(relative_path):
+    """ Get the absolute path to the resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)    
+
+def splash_screen():
+    splash = tk.Tk()
+    splash.overrideredirect(True)  # Remove window decorations
+
+    # Load and display the image
+    img_path = resource_path("images/startim.png")  # Adjust the path based on your structure
+    img = Image.open(img_path)
+    img = img.resize((400, 400), Image.LANCZOS)  # Resize to a larger square size
+    photo = ImageTk.PhotoImage(img)
+
+    label = tk.Label(splash, image=photo)
+    label.pack()
+
+    # Create a loading bar
+    loading_bar = ttk.Progressbar(splash, orient="horizontal", length=300, mode="indeterminate")
+    loading_bar.pack(pady=20)  # Add some vertical padding
+    loading_bar.start()  # Start the loading animation
+
+    # Set the size of the splash screen
+    splash.update_idletasks()  # Update "requested size" from geometry manager
+    width = splash.winfo_width()
+    height = splash.winfo_height()
+
+    # Get screen width and height
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+
+    # Calculate the position for centering
+    x = (screen_width // 2) - (width // 2)
+    y = (screen_height // 2) - (height // 2)
+
+    # Set the geometry of the splash screen
+    splash.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Show the splash screen for 3 seconds
+    splash.after(3000, lambda: [loading_bar.stop(), splash.destroy()])  # Stop the loading bar and destroy the splash screen
+    splash.mainloop()
+
+# Call the splash screen function
+#splash_screen()
+
+# Your main program code goes here
 
 if __name__ == "__main__":
     app = Application()
