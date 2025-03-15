@@ -57,7 +57,41 @@ sns.set_context("notebook", rc={"lines.linewidth": 1.0})
 
 
 class Application(tk.Tk):
+    """
+    Main application class for the Peak Analysis Tool.
+    
+    This class is the central component of the application, responsible for:
+    1. Creating and managing the user interface
+    2. Coordinating data loading and processing
+    3. Managing analysis workflows
+    4. Visualizing results with plots and reports
+    
+    The Application class inherits from tkinter.Tk to create the main window
+    and implements a comprehensive set of methods for peak analysis operations.
+    
+    Attributes:
+        theme_manager (ThemeManager): Manages application theming (light/dark)
+        detector (PeakDetector): Core peak detection engine
+        data_frame (pandas.DataFrame): Loaded and processed data
+        raw_data (numpy.ndarray): Original unprocessed signal data
+        current_protocol (dict): Information about the current analysis protocol
+        
+    Example:
+        >>> app = Application()
+        >>> app.mainloop()  # Start the application
+    """
+    
     def __init__(self):
+        """
+        Initialize the application instance and set up the main window.
+        
+        This method:
+        1. Sets up performance logging
+        2. Configures the application window
+        3. Initializes the theme manager
+        4. Creates the user interface
+        5. Sets up internal state variables
+        """
         super().__init__()
         # Initialize logger before other components
         self.setup_performance_logging()
@@ -153,6 +187,24 @@ class Application(tk.Tk):
         self.title(f"Peak Analysis Tool v{version} - Signal Processing and Analysis")
 
     def setup_performance_logging(self):
+        """
+        Set up performance logging for the application.
+        
+        This method configures the logging system to record performance metrics,
+        execution times, and debugging information during application runtime.
+        It creates a dedicated logger that writes to a performance.log file.
+        
+        The logged information is valuable for:
+        - Identifying performance bottlenecks
+        - Debugging complex operations
+        - Monitoring resource usage
+        
+        The log format includes timestamps, component names, log levels, and messages,
+        making it easier to trace the application's execution flow.
+        
+        Returns:
+            None - The logger is stored as self.logger for use throughout the application
+        """
         logging.basicConfig(
             filename='performance.log',
             level=logging.DEBUG,
@@ -1107,18 +1159,72 @@ for signal processing and scientific data analysis.
     # Function to run peak detection
     @profile_function
     def run_peak_detection(self):
-        """Run peak detection on the filtered signal"""
+        """
+        Run peak detection on the filtered signal data.
+        
+        This method performs peak detection on the previously filtered signal
+        using the PeakDetector engine. It analyzes the filtered signal to identify
+        peaks based on the current threshold and detection parameters.
+        
+        The method is performance-profiled to track execution time and resource usage.
+        Results are displayed in the UI and stored for further analysis.
+        
+        Note:
+            This method delegates the actual processing to the run_peak_detection_function
+            from the plotting.peak_visualization module, which handles both the computation
+            and visualization of results.
+        
+        Returns:
+            dict: Detection results containing peak indices, properties, and visualization elements
+        
+        Raises:
+            ValueError: If called before data is loaded and filtered
+        """
         return run_peak_detection_function(self, profile_function=profile_function)
 
-    
     # Function to plot the detected filtered peaks
     @profile_function
     def plot_filtered_peaks(self):
-        """Display individual peaks in a grid for detailed analysis"""
+        """
+        Display individual detected peaks in a grid layout for detailed analysis.
+        
+        This method creates a visualization of individual peaks, showing each peak
+        in its own subplot within a grid. This allows for detailed examination of
+        peak shapes, widths, and heights.
+        
+        Features:
+        - Grid layout with multiple peaks per page
+        - Navigation controls to browse through all peaks
+        - Consistent scaling for easy comparison
+        - Visual indicators for peak boundaries and properties
+        
+        The method is performance-profiled to track execution time and resource usage.
+        
+        Returns:
+            tuple: (figure, axes) containing the matplotlib figure and axes objects
+        
+        Raises:
+            ValueError: If called before peak detection is performed
+        """
         return plot_filtered_peaks_function(self, profile_function=profile_function)
 
     def show_next_peaks(self):
-        """Show the next set of example peaks"""
+        """
+        Navigate to the next set of peaks in the peaks grid visualization.
+        
+        This method updates the peak grid visualization to show the next page
+        of detected peaks. It is typically connected to a "Next" button in the UI.
+        
+        The method provides a convenient way to browse through all detected peaks
+        when there are too many to display on a single screen.
+        
+        Returns:
+            tuple: (figure, axes) containing the updated matplotlib figure and axes objects
+        
+        Raises:
+            ValueError: If called before the peak grid is initially created
+            IndexError: If there are no more peaks to display
+        """
         return show_next_peaks_function(self, profile_function=profile_function)
 
     # Function to calculate the areas of detected peaks

@@ -1,3 +1,19 @@
+"""
+Peak Analysis Utilities Module
+
+This module provides utility functions for signal processing, peak detection,
+and performance measurement in time series data analysis.
+
+Functions:
+    apply_butterworth_filter: Apply a Butterworth filter to a signal
+    find_nearest: Find the index of the nearest value in an array
+    binary_search_nearest: Fast binary search to find nearest value
+    timestamps_to_seconds: Convert timestamps to seconds from start
+    find_peaks_with_window: Detect peaks with specified window parameters
+    estimate_peak_widths: Estimate widths of peaks in a signal
+    adjust_lowpass_cutoff: Adjust cutoff frequency based on signal characteristics
+"""
+
 import os
 import time
 import logging
@@ -22,7 +38,25 @@ print("Lade peak_analysis_utils.py")
 
 # Butterworth filter application
 def apply_butterworth_filter(order, Wn, btype, fs, x):
-    b, a = butter(order, Wn, btype, fs=fs)
+    """
+    Apply a Butterworth filter to a signal.
+    
+    Parameters:
+        order (int): The order of the filter
+        Wn (float or tuple): The critical frequency or frequencies.
+            For lowpass and highpass filters, Wn is a scalar.
+            For bandpass and bandstop filters, Wn is a length-2 sequence.
+        btype (str): The type of filter: 'lowpass', 'highpass', 'bandpass', or 'bandstop'
+        fs (float): The sampling frequency of the signal
+        x (numpy.ndarray): The signal to be filtered
+        
+    Returns:
+        numpy.ndarray: The filtered signal
+        
+    Example:
+        >>> filtered_signal = apply_butterworth_filter(4, 0.1, 'lowpass', 100, raw_signal)
+    """
+    b, a = butter(order, Wn, btype=btype, fs=fs)
     x_f = filtfilt(b, a, x)
     print(f'Butterworth filter coefficients (b, a): {b}, {a}')
     print(f'Filtered signal: {x_f[:10]}...')  # Printing the first 10 values for brevity
@@ -32,20 +66,20 @@ def apply_butterworth_filter(order, Wn, btype, fs, x):
 @njit
 def find_nearest(array, value):
     """
-    Find the nearest value in an array using binary search if array is large,
-    or linear search for small arrays
+    Find the index of the nearest value in an array using linear search.
     
-    Parameters
-    ----------
-    array : ndarray
-        Array to search in
-    value : float
-        Value to find
+    This function is optimized with Numba for faster execution.
+    
+    Parameters:
+        array (numpy.ndarray): The array to search in
+        value (float): The value to find
         
-    Returns
-    -------
-    int
-        Index of the nearest value
+    Returns:
+        int: Index of the nearest value in the array
+        
+    Note:
+        For large arrays, consider using binary_search_nearest instead
+        as it has better performance for sorted arrays.
     """
     # For small arrays, linear search is faster
     if len(array) < 50:
@@ -81,19 +115,24 @@ def find_nearest(array, value):
 @njit
 def binary_search_nearest(array, value):
     """
-    Find index of the nearest value in a sorted array using binary search
+    Find the index of the nearest value in a sorted array using binary search.
     
-    Parameters
-    ----------
-    array : ndarray
-        Sorted array to search in
-    value : float
-        Value to find
+    This function is optimized with Numba for faster execution and provides
+    better performance than linear search for large sorted arrays.
+    
+    Parameters:
+        array (numpy.ndarray): The sorted array to search in
+        value (float): The value to find
         
-    Returns
-    -------
-    int
-        Index of the nearest value
+    Returns:
+        int: Index of the nearest value in the array
+        
+    Note:
+        The array must be sorted in ascending order for correct results.
+        
+    Example:
+        >>> idx = binary_search_nearest(time_array, target_time)
+        >>> nearest_time = time_array[idx]
     """
     if len(array) == 0:
         return -1
@@ -134,7 +173,21 @@ def binary_search_nearest(array, value):
 # Convert timestamps to seconds
 @njit
 def timestamps_to_seconds(timestamps, start_time):
-    """Convert timestamps to seconds from start time"""
+    """
+    Convert timestamps to seconds elapsed from the start time.
+    
+    This function is optimized with Numba for faster execution.
+    
+    Parameters:
+        timestamps (numpy.ndarray): Array of timestamps
+        start_time (float): Reference start time
+        
+    Returns:
+        numpy.ndarray: Array of elapsed seconds from start_time
+        
+    Example:
+        >>> time_in_seconds = timestamps_to_seconds(raw_timestamps, raw_timestamps[0])
+    """
     try:
         seconds = []
         start_min, start_sec = map(int, start_time.split(':'))
@@ -153,25 +206,26 @@ def timestamps_to_seconds(timestamps, start_time):
 @profile_function
 def find_peaks_with_window(signal, width, prominence, distance, rel_height):
     """
-    Optimized peak detection using scipy.signal.find_peaks
+    Detect peaks in a signal with specified window parameters.
     
-    Parameters
-    ----------
-    signal : ndarray
-        Input signal to find peaks in
-    width : list or tuple
-        Expected peak width range [min, max]
-    prominence : float
-        Minimum peak prominence
-    distance : int
-        Minimum distance between peaks
-    rel_height : float
-        Relative height for width calculation
+    This function wraps scipy.signal.find_peaks with additional parameters
+    for controlling the detection window and is performance-profiled.
+    
+    Parameters:
+        signal (numpy.ndarray): The signal to analyze
+        width (tuple): Tuple of (min_width, max_width) or None
+        prominence (float): Minimum prominence of peaks
+        distance (int): Minimum distance between peaks
+        rel_height (float): Relative height at which width is measured
         
-    Returns
-    -------
-    tuple
-        (peaks, properties) containing peak indices and properties
+    Returns:
+        tuple: (peaks, properties) where:
+            - peaks is a numpy array of indices where peaks were found
+            - properties is a dict containing peak properties (heights, widths, etc.)
+            
+    Example:
+        >>> peaks, properties = find_peaks_with_window(
+        ...     signal, width=(10, 50), prominence=0.1, distance=20, rel_height=0.5)
     """
     # Call the scipy function and return results
     # The find_peaks function is already highly optimized C code,
@@ -191,6 +245,17 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height):
 
 # Estimate the average peak width
 def estimate_peak_widths(signal, fs, big_counts):
+    """
+    Estimate appropriate peak widths based on signal characteristics.
+    
+    Parameters:
+        signal (numpy.ndarray): The signal to analyze
+        fs (float): Sampling frequency of the signal
+        big_counts (int): Number of major peaks expected
+        
+    Returns:
+        tuple: (min_width, max_width) suitable for peak detection
+    """
     peaks, _ = find_peaks(signal, width=[1, 2000], prominence=big_counts, distance=1000)
     widths = peak_widths(signal, peaks, rel_height=0.5)[0]
     avg_width = np.mean(widths) / fs
@@ -198,6 +263,26 @@ def estimate_peak_widths(signal, fs, big_counts):
 
 # Adjust the low-pass filter cutoff frequency
 def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor):
+    """
+    Adjust lowpass filter cutoff frequency based on signal characteristics.
+    
+    This function analyzes the signal spectrum and determines an appropriate
+    cutoff frequency for lowpass filtering to preserve important features
+    while reducing noise.
+    
+    Parameters:
+        signal (numpy.ndarray): The signal to analyze
+        fs (float): Sampling frequency of the signal
+        big_counts (int): Number of major peaks expected
+        normalization_factor (float): Factor to normalize the cutoff
+        
+    Returns:
+        float: Recommended cutoff frequency for lowpass filtering
+        
+    Example:
+        >>> cutoff = adjust_lowpass_cutoff(raw_signal, 100, 20, 0.5)
+        >>> filtered = apply_butterworth_filter(4, cutoff, 'lowpass', 100, raw_signal)
+    """
     print("\nDEBUG: Starting adjust_lowpass_cutoff")
     print(f"DEBUG: Input parameters:")
     print(f"- fs: {fs}")

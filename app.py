@@ -1,10 +1,22 @@
 """
 Peak Analysis Tool - Main Application
+==================================
 
 Created: 2024
 Authors: Lucjan & Silas
 
 This is the main entry point for the Peak Analysis Tool application.
+It initializes the application, shows a splash screen, and handles high-level
+error management.
+
+The application is designed for scientific peak analysis with a focus on:
+- Data loading and visualization
+- Peak detection algorithms
+- Statistical analysis of peak characteristics
+- Export of results and visualizations
+
+For configuration options, see the config module.
+For detailed usage instructions, refer to the README.md file.
 """
 
 import os
@@ -30,10 +42,18 @@ from main import Application  # Import the Application class from main.py
 
 def splash_screen():
     """
-    Show a splash screen while the application is loading
+    Display a splash screen while the application is loading.
     
-    This function displays a splash screen with a logo and loading bar
-    during the application startup process.
+    This function creates and displays a splash screen with the application logo, 
+    version information, and a loading bar. The splash screen is shown for 3 seconds
+    before automatically closing.
+    
+    The splash screen is centered on the user's display and provides visual feedback
+    that the application is starting up.
+    
+    Raises:
+        Exception: If there's an error loading or displaying the splash screen image,
+                  the error is logged but the application will continue to start.
     """
     splash = tk.Tk()
     splash.overrideredirect(True)  # Remove window decorations
@@ -86,10 +106,24 @@ def splash_screen():
 
 def main():
     """
-    Main entry point for the application
+    Main entry point for the application.
     
-    This function initializes the application components,
-    shows the splash screen, and starts the main event loop.
+    This function serves as the primary entry point for the Peak Analysis Tool.
+    It performs the following operations in sequence:
+    1. Initializes logging and records application startup
+    2. Displays the splash screen
+    3. Reports initial memory usage
+    4. Creates and runs the main application
+    5. Catches and handles any unhandled exceptions
+    
+    The function implements global error handling to prevent crashes and
+    provide user-friendly error messages when problems occur.
+    
+    Returns:
+        None
+        
+    Raises:
+        SystemExit: If the application exits normally through the main event loop
     """
     # Log application startup and environment info
     logger.info(f"Starting Peak Analysis Tool v{APP_VERSION}")
