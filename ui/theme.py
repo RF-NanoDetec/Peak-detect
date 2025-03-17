@@ -143,6 +143,12 @@ class ThemeManager:
         else:
             self._apply_light_theme(style)
             
+        # Add our accent frame style for highlighting important elements
+        style.configure('Accent.TFrame', 
+                      background='#e6f2ff', 
+                      borderwidth=2, 
+                      relief='solid')
+        
         # Configure common elements
         root.configure(background=self.COLORS['background'])
         

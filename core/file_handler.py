@@ -27,18 +27,21 @@ def get_memory_usage_wrapper():
     return get_memory_usage()
 
 @profile_function
-def load_single_file(file, timestamps=None, index=0):
+def load_single_file(file, timestamps=None, index=0, time_resolution=1e-4):
     """
     Helper function to load a single file
     Args:
         file (str): Path to the file to load
         timestamps (list, optional): List of timestamps for batch mode
         index (int, optional): Index of the file in the batch
+        time_resolution (float, optional): Time resolution factor to convert raw time values to seconds.
+                                         Default is 1e-4 (0.1 milliseconds per unit)
 
     Returns:
-        dict: Dictionary containing time, amplitude and index data
+        dict: Dictionary containing time, amplitude and index data with time converted to seconds
     """
     print(f"Loading file {index+1}: {file}")
+    print(f"Using time resolution factor: {time_resolution} (converts raw time values to seconds)")
 
     try:
         # Determine file type based on extension
@@ -84,28 +87,37 @@ def load_single_file(file, timestamps=None, index=0):
         
         # Extract numpy arrays directly for better performance
         # and use numpy.ascontiguousarray for faster array operations later
+        # Convert time values to seconds using the time_resolution factor
+        time_values = np.ascontiguousarray(df[time_col].values)
+        time_in_seconds = time_values * time_resolution
+        
         return {
-            'time': np.ascontiguousarray(df[time_col].values),
+            'time': time_in_seconds,  # Now in seconds
+            'time_raw': time_values,  # Keep raw values for reference if needed
             'amplitude': np.ascontiguousarray(df[amp_col].values),
-            'index': index
+            'index': index,
+            'time_resolution': time_resolution  # Store the resolution used
         }
     except Exception as e:
         print(f"Error loading file {file}: {str(e)}")
         raise
 
 @profile_function
-def browse_files(app):
+def browse_files(app, time_resolution=1e-4):
     """
     Browse and load file(s) based on current mode
     
     Args:
         app: Application instance
+        time_resolution (float, optional): Time resolution factor to convert raw time values to seconds.
+                                        Default is 1e-4 (0.1 milliseconds per unit)
         
     Returns:
-        tuple: (t_value, x_value, data, loaded_files) containing the loaded data
+        tuple: (t_value, x_value, data, loaded_files) containing the loaded data with time in seconds
     """
     print(f"Memory before loading: {get_memory_usage_wrapper():.2f} MB")
     print(f"Current file mode: {app.file_mode.get()}")
+    print(f"Using time resolution: {time_resolution} (converts raw time values to seconds)")
     
     try:
         # Set status indicator to loading
@@ -156,7 +168,7 @@ def browse_files(app):
         results = []
         with ThreadPoolExecutor(max_workers=min(len(files), os.cpu_count() * 2)) as executor:
             future_to_file = {
-                executor.submit(load_single_file, file, timestamps, i): i 
+                executor.submit(load_single_file, file, timestamps, i, time_resolution): i 
                 for i, file in enumerate(files)
             }
             
@@ -190,16 +202,16 @@ def browse_files(app):
         # Copy data into the pre-allocated arrays
         start_idx = 0
         for i, result in enumerate(results):
-            time_data = result['time']
+            time_data = result['time']  # Already in seconds
             amplitude_data = result['amplitude']
             n_points = len(time_data)
             
             # Apply time offset directly during copy
             if app.file_mode.get() == "batch" and timestamps and i > 0:
                 try:
-                    # Calculate time values
-                    start_time = timestamps_array_to_seconds([timestamps[0]], timestamps[0])[0]*1e4
-                    current_time = timestamps_array_to_seconds([timestamps[i]], timestamps[0])[0]*1e4
+                    # Calculate time values - timestamps are now in seconds
+                    start_time = timestamps_array_to_seconds([timestamps[0]], timestamps[0])[0]
+                    current_time = timestamps_array_to_seconds([timestamps[i]], timestamps[0])[0]
                     time_offset = current_time
                     combined_times[start_idx:start_idx + n_points] = time_data + time_offset
                 except Exception as e:
@@ -280,7 +292,7 @@ def browse_files(app):
 
 # Create a UI-integrated version of browse_files
 @profile_function
-def browse_files_with_ui(app):
+def browse_files_with_ui(app, time_resolution=1e-4):
     """
     Browse and load file(s) with integrated UI handling.
     
@@ -291,6 +303,9 @@ def browse_files_with_ui(app):
     ----------
     app : Application
         Application instance with UI elements and state
+    time_resolution : float, optional
+        Time resolution factor to convert raw time values to seconds.
+        Default is 1e-4 (0.1 milliseconds per unit)
         
     Returns
     -------
@@ -299,70 +314,27 @@ def browse_files_with_ui(app):
         or None if no files were loaded or an error occurred
     """
     try:
-        # Reset application state before loading new file
-        from core.data_utils import reset_application_state
-        reset_application_state(app)
+        result = browse_files(app, time_resolution)
         
-        # UI pre-processing: Update status
-        app.status_indicator.set_state('processing')
-        app.status_indicator.set_text("Loading files...")
-        app.update_idletasks()
-        
-        # Reset progress bar
-        app.update_progress_bar(0)
-        
-        # Use the core function to load files
-        result = browse_files(app)
-        
-        if not result:
-            app.status_indicator.set_state('idle')
-            app.status_indicator.set_text("No files selected")
-            return None
-            
-        # Unpack results
+        # Extract results
         t_value, x_value, data, loaded_files = result
         
-        # Return early if no data was loaded
-        if t_value is None:
-            return None
-            
-        # Store data in application
+        # Store data in app
         app.t_value = t_value
         app.x_value = x_value
         app.data = data
         app.loaded_files = loaded_files
+        app.time_resolution = time_resolution  # Store the resolution used
         
-        # Show success message with number of files loaded
-        num_files = len(loaded_files) if loaded_files else 0
-        file_text = "file" if num_files == 1 else "files"
+        # Set data_loaded flag
+        app.data_loaded = bool(data is not None)
         
-        # Update UI with success
-        app.status_indicator.set_state('success')
-        app.status_indicator.set_text(f"Loaded {num_files} {file_text} successfully")
-        
-        app.preview_label.config(
-            text=f"Successfully loaded {num_files} {file_text}",
-            foreground=app.theme_manager.get_color('success')
-        )
+        # Consolidate memory (reduce memory usage after loading)
+        if hasattr(app, 'consolidate_memory'):
+            app.consolidate_memory()
         
         return result
         
     except Exception as e:
-        # Handle errors
-        logger.error(f"Error loading files: {str(e)}\n{traceback.format_exc()}")
-        
-        # Update UI with error info
-        app.status_indicator.set_state('error')
-        app.status_indicator.set_text("Error loading files")
-        
-        # Show error dialog
-        from ui.ui_utils import show_error
-        show_error(app, "Error loading files", e)
-        
-        # Update preview label
-        app.preview_label.config(
-            text=f"Error loading files: {str(e)}",
-            foreground=app.theme_manager.get_color('error')
-        )
-        
-        return None 
+        app.show_error("Error browsing files", e)
+        return None, None, None, [] 

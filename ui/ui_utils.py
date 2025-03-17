@@ -6,7 +6,7 @@ user interface elements, including updating, validating, and displaying informat
 """
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 import traceback
 import logging
@@ -16,6 +16,7 @@ from config.settings import Config
 import matplotlib.pyplot as plt
 from functools import wraps
 from PIL import Image
+from config import resource_path, APP_VERSION
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -443,60 +444,286 @@ def ui_action(processing_message, success_message, error_message):
 
 def show_documentation_with_ui(app):
     """
-    Show application documentation with integrated UI handling.
+    Display comprehensive application documentation in a separate window.
     
-    This function directly integrates UI updates, eliminating the need
-    for a separate wrapper method in the Application class.
+    This function creates a scrollable text window with markdown-formatted
+    documentation that explains all aspects of the application in detail.
     
     Parameters
     ----------
     app : Application
-        The main application instance with UI elements and state
+        The main application instance
         
     Returns
     -------
-    object
+    Toplevel
         The documentation window object
     """
+    # Create a new window
+    doc_window = tk.Toplevel(app)
+    doc_window.title("Peak Analysis Tool - Comprehensive Documentation")
+    doc_window.geometry("900x700")
+    doc_window.minsize(800, 600)
+    
+    # Add a custom icon
     try:
-        # UI pre-processing: Update status
-        app.status_indicator.set_state('processing')
-        app.status_indicator.set_text("Loading documentation...")
-        app.update_idletasks()
+        doc_window.iconbitmap(app.get_icon_path())
+    except:
+        pass  # Ignore if icon can't be set
+    
+    # Create main frame with proper styling
+    main_frame = ttk.Frame(doc_window, padding=10)
+    main_frame.pack(fill=tk.BOTH, expand=True)
+    
+    # Add styled header
+    header_frame = ttk.Frame(main_frame)
+    header_frame.pack(fill=tk.X, pady=(0, 10))
+    
+    header_label = ttk.Label(
+        header_frame, 
+        text="Peak Analysis Tool Documentation",
+        font=('Helvetica', 16, 'bold'),
+        foreground=app.theme_manager.get_color('primary')
+    )
+    header_label.pack(pady=5)
+    
+    version_label = ttk.Label(
+        header_frame,
+        text=f"Version {APP_VERSION}",
+        font=('Helvetica', 10),
+        foreground=app.theme_manager.get_color('text_secondary')
+    )
+    version_label.pack()
+    
+    # Add separator
+    separator = ttk.Separator(main_frame, orient='horizontal')
+    separator.pack(fill=tk.X, pady=10)
+    
+    # Create notebook for tabbed documentation
+    notebook = ttk.Notebook(main_frame)
+    notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    
+    # Read documentation from markdown file
+    try:
+        with open(resource_path('docs/user_manual.md'), 'r') as f:
+            doc_content = f.read()
+    except:
+        doc_content = "Documentation file not found. Please reinstall the application."
+    
+    # Split the documentation into sections based on ## headers
+    sections = []
+    current_section = {"title": "Overview", "content": ""}
+    
+    for line in doc_content.split('\n'):
+        if line.startswith('## '):
+            # Save the previous section
+            if current_section["title"] != "Overview" or current_section["content"]:
+                sections.append(current_section)
+            
+            # Start a new section
+            current_section = {
+                "title": line.replace('## ', ''),
+                "content": ""
+            }
+        elif line.startswith('# '):
+            # This is the main title, skip it
+            continue
+        else:
+            # Add to current section content
+            current_section["content"] += line + "\n"
+    
+    # Add the last section
+    if current_section:
+        sections.append(current_section)
+    
+    # Create a tab for each major section
+    for section in sections:
+        tab = ttk.Frame(notebook)
+        notebook.add(tab, text=section["title"])
         
-        # Create the documentation window
-        help_window = show_documentation(app)
+        # Create scrollable text widget for the section
+        text_frame = ttk.Frame(tab)
+        text_frame.pack(fill=tk.BOTH, expand=True)
         
-        # UI post-processing: Update status with success
-        app.status_indicator.set_state('success')
-        app.status_indicator.set_text("Documentation displayed")
-        
-        # Update preview label
-        app.preview_label.config(
-            text="Documentation displayed",
-            foreground=app.theme_manager.get_color('success')
+        # Create text widget with scrollbar
+        text_widget = tk.Text(
+            text_frame,
+            wrap=tk.WORD,
+            font=('Helvetica', 11),
+            padx=10,
+            pady=10,
+            background=app.theme_manager.get_color('card_bg'),
+            foreground=app.theme_manager.get_color('text'),
+            highlightthickness=0,
+            relief=tk.FLAT
         )
+        scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
         
-        return help_window
+        # Pack the text widget and scrollbar
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-    except Exception as e:
-        # Handle errors
-        logger.error(f"Error showing documentation: {str(e)}\n{traceback.format_exc()}")
+        # Insert the section content with markdown-like formatting
+        text_widget.insert(tk.END, section["content"])
         
-        # Update UI with error info
-        app.status_indicator.set_state('error')
-        app.status_indicator.set_text("Error showing documentation")
+        # Apply simple markdown formatting
+        apply_markdown_formatting(text_widget)
         
-        # Show error dialog
-        show_error(app, "Error showing documentation", e)
+        # Make the text read-only
+        text_widget.configure(state=tk.DISABLED)
+    
+    # Add a search feature
+    search_frame = ttk.Frame(main_frame)
+    search_frame.pack(fill=tk.X, pady=10)
+    
+    search_label = ttk.Label(search_frame, text="Search: ")
+    search_label.pack(side=tk.LEFT, padx=5)
+    
+    search_var = tk.StringVar()
+    search_entry = ttk.Entry(search_frame, textvariable=search_var, width=30)
+    search_entry.pack(side=tk.LEFT, padx=5)
+    
+    def search_documentation():
+        """Search through all tabs for the search term"""
+        search_term = search_var.get().lower()
+        if not search_term:
+            return
         
-        # Update preview label
-        app.preview_label.config(
-            text=f"Error showing documentation: {str(e)}",
-            foreground=app.theme_manager.get_color('error')
-        )
-        
-        return None 
+        # Search through all tabs
+        for tab_idx in range(notebook.index('end')):
+            tab = notebook.winfo_children()[tab_idx]
+            for child in tab.winfo_children():
+                if isinstance(child, ttk.Frame):
+                    for widget in child.winfo_children():
+                        if isinstance(widget, tk.Text):
+                            # Reset any previous tags
+                            widget.tag_remove('search', '1.0', tk.END)
+                            
+                            # Search for the term
+                            start_pos = '1.0'
+                            while True:
+                                start_pos = widget.search(search_term, start_pos, tk.END, nocase=True)
+                                if not start_pos:
+                                    break
+                                
+                                end_pos = f"{start_pos}+{len(search_term)}c"
+                                widget.tag_add('search', start_pos, end_pos)
+                                widget.tag_config('search', background='yellow', foreground='black')
+                                
+                                # Move to the next position
+                                start_pos = end_pos
+                            
+                            # If found, switch to this tab
+                            if widget.tag_ranges('search'):
+                                notebook.select(tab_idx)
+                                # Scroll to the first occurrence
+                                widget.see(widget.tag_nextrange('search', '1.0')[0])
+                                return
+    
+    search_button = ttk.Button(search_frame, text="Find", command=search_documentation)
+    search_button.pack(side=tk.LEFT, padx=5)
+    
+    # Bind Enter key to search
+    search_entry.bind('<Return>', lambda e: search_documentation())
+    
+    # Add a close button
+    close_button = ttk.Button(main_frame, text="Close", command=doc_window.destroy)
+    close_button.pack(pady=10)
+    
+    # Make the window modal
+    doc_window.transient(app)
+    doc_window.grab_set()
+    
+    return doc_window
+
+def apply_markdown_formatting(text_widget):
+    """
+    Apply basic markdown-like formatting to a text widget.
+    
+    Parameters
+    ----------
+    text_widget : tk.Text
+        The text widget to format
+    """
+    # Configure tags for different markdown elements
+    text_widget.tag_configure('h1', font=('Helvetica', 16, 'bold'))
+    text_widget.tag_configure('h2', font=('Helvetica', 14, 'bold'))
+    text_widget.tag_configure('h3', font=('Helvetica', 12, 'bold'))
+    text_widget.tag_configure('h4', font=('Helvetica', 11, 'bold'))
+    text_widget.tag_configure('code', font=('Courier', 10), background='#f0f0f0')
+    text_widget.tag_configure('bold', font=('Helvetica', 11, 'bold'))
+    text_widget.tag_configure('italic', font=('Helvetica', 11, 'italic'))
+    text_widget.tag_configure('bullet', lmargin1=20, lmargin2=30)
+    text_widget.tag_configure('link', foreground='blue', underline=True)
+    
+    # Process the content line by line
+    content = text_widget.get('1.0', tk.END)
+    text_widget.delete('1.0', tk.END)
+    
+    for line in content.split('\n'):
+        # Handle headers
+        if line.startswith('### '):
+            text_widget.insert(tk.END, line[4:] + '\n', 'h3')
+        elif line.startswith('#### '):
+            text_widget.insert(tk.END, line[5:] + '\n', 'h4')
+        # Handle bullet points
+        elif line.strip().startswith('- '):
+            text_widget.insert(tk.END, line + '\n', 'bullet')
+        # Handle numbered lists
+        elif line.strip() and line.strip()[0].isdigit() and line.strip()[1:].startswith('. '):
+            text_widget.insert(tk.END, line + '\n', 'bullet')
+        # Handle code blocks
+        elif line.strip().startswith('```') and line.strip().endswith('```'):
+            code_content = line.strip()[3:-3]
+            text_widget.insert(tk.END, code_content + '\n', 'code')
+        else:
+            # Process inline formatting
+            processed_line = ""
+            i = 0
+            while i < len(line):
+                # Bold text
+                if i+1 < len(line) and line[i:i+2] == '**' and '**' in line[i+2:]:
+                    end = line.find('**', i+2)
+                    text_widget.insert(tk.END, processed_line)
+                    processed_line = ""
+                    text_widget.insert(tk.END, line[i+2:end], 'bold')
+                    i = end + 2
+                # Italic text
+                elif i < len(line) and line[i] == '*' and '*' in line[i+1:]:
+                    end = line.find('*', i+1)
+                    text_widget.insert(tk.END, processed_line)
+                    processed_line = ""
+                    text_widget.insert(tk.END, line[i+1:end], 'italic')
+                    i = end + 1
+                # Inline code
+                elif i < len(line) and line[i] == '`' and '`' in line[i+1:]:
+                    end = line.find('`', i+1)
+                    text_widget.insert(tk.END, processed_line)
+                    processed_line = ""
+                    text_widget.insert(tk.END, line[i+1:end], 'code')
+                    i = end + 1
+                else:
+                    processed_line += line[i]
+                    i += 1
+            
+            if processed_line:
+                text_widget.insert(tk.END, processed_line + '\n')
+    
+    # Handle table formatting
+    content = text_widget.get('1.0', tk.END)
+    lines = content.split('\n')
+    for i, line in enumerate(lines):
+        if '|' in line:
+            # Check if this is a table header separator
+            if line.strip().startswith('|') and all(c in '|-:' for c in line.strip()):
+                continue
+                
+            # Format table rows
+            text_widget.delete(f"{i+1}.0", f"{i+1}.end")
+            cells = [cell.strip() for cell in line.split('|')]
+            formatted_line = "  ".join(cells)
+            text_widget.insert(f"{i+1}.0", formatted_line)
 
 def show_about_dialog_with_ui(app):
     """

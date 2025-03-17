@@ -70,7 +70,7 @@ class PeakDetector:
         self.logger.debug("Peak detector reset")
     
     @profile_function
-    def detect_peaks(self, signal, time_values, height_lim, distance, rel_height=0.5, width_range=None):
+    def detect_peaks(self, signal, time_values, height_lim, distance, rel_height=0.5, width_range=None, time_resolution=1e-4):
         """
         Detect peaks in the provided signal data.
         
@@ -84,8 +84,10 @@ class PeakDetector:
             distance (int): Minimum number of samples between peaks
             rel_height (float, optional): Relative height at which peak width is measured.
                 Defaults to 0.5 (half height).
-            width_range (tuple, optional): Tuple of (min_width, max_width) to filter peaks.
+            width_range (tuple, optional): Tuple of (min_width, max_width) in milliseconds to filter peaks.
                 If None, no width filtering is applied.
+            time_resolution (float, optional): Time resolution in seconds per unit.
+                Defaults to 1e-4 (0.1 milliseconds per unit).
                 
         Returns:
             tuple: (indices, properties) where:
@@ -97,8 +99,21 @@ class PeakDetector:
             accessed via the peaks_indices and peaks_properties attributes.
         """
         try:
-            # Convert width range to milliseconds
-            width_p = [int(float(value) * 10) for value in width_range] if width_range else None
+            # Use time_resolution directly instead of calculating from time differences
+            rate = time_resolution  # Time between samples in seconds
+            sampling_rate = 1 / rate  # Samples per second
+            
+            # Convert width range from milliseconds to samples
+            if width_range:
+                # Convert from milliseconds to samples using time resolution
+                width_p = [int(float(value) * sampling_rate / 1000) for value in width_range]
+                print(f"DEBUG - Width conversion in detect_peaks:")
+                print(f"  Original width values (ms): {width_range}")
+                print(f"  Time resolution: {time_resolution} seconds per unit")
+                print(f"  Sampling rate: {sampling_rate:.1f} Hz")
+                print(f"  Converted width_p (samples): {width_p}")
+            else:
+                width_p = None
             
             # Find peaks with specified parameters
             peaks, properties = find_peaks_with_window(
@@ -245,38 +260,50 @@ class PeakDetector:
             self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise ValueError(error_msg)
     
-    def create_peak_dataframe(self, time_values, protocol_info=None):
+    def create_peak_dataframe(self, time_values, protocol_info=None, time_resolution=1e-4):
         """
-        Create a pandas DataFrame containing all peak information.
+        Create a DataFrame containing peak detection results.
         
-        This method compiles all detected peak properties into a structured
-        DataFrame for easier analysis and export.
+        This method organizes all detected peak information into a structured DataFrame,
+        optionally adding protocol information.
         
         Parameters:
             time_values (numpy.ndarray): Time values corresponding to the signal
-            protocol_info (dict, optional): Additional information to include
-                in the DataFrame, such as sample information, experimental
-                conditions, etc.
+            protocol_info (dict, optional): Additional protocol information to include
+                in the DataFrame. Defaults to None.
+            time_resolution (float, optional): Time resolution in seconds per unit.
+                Defaults to 1e-4 (0.1 milliseconds per unit).
                 
         Returns:
-            pandas.DataFrame: DataFrame containing:
-                - Peak Index: Index of each peak in the original signal
-                - Time (s): Time position of each peak
-                - Height: Peak height/prominence
-                - Width: Peak width at half maximum (in ms)
-                - Area: Integrated area under each peak
-                - Interval: Time interval between consecutive peaks
-                - Additional columns from protocol_info if provided
+            pandas.DataFrame: DataFrame containing peak information including:
+                - Peak Index: The index of each peak in the original signal
+                - Time: The time at which each peak occurs (in minutes)
+                - Height: Peak heights (prominences)
+                - Width: Peak widths (in milliseconds)
+                - Area: Area under each peak
+                - Interval: Time intervals between consecutive peaks
+                - Any additional protocol information provided
                 
-        Raises:
-            ValueError: If peaks have not been detected before calling this method
+        Notes:
+            This method requires that peak detection and area calculation have been
+            performed beforehand.
         """
-        if self.peaks_indices is None or self.peaks_properties is None or self.peaks_properties.get('areas') is None:
-            raise ValueError("Missing peak data. Ensure detect_peaks and calculate_peak_areas have been run.")
-        
-        if self.peaks_properties.get('intervals') is None:
-            raise ValueError("Missing interval data. Ensure calculate_peak_intervals has been run.")
-        
+        # Validate inputs
+        if self.peaks_indices is None:
+            raise ValueError("No peaks detected. Run detect_peaks first.")
+            
+        if 'prominences' not in self.peaks_properties:
+            raise ValueError("Peak prominences not available")
+            
+        if 'widths' not in self.peaks_properties:
+            raise ValueError("Peak widths not available")
+            
+        if 'areas' not in self.peaks_properties:
+            raise ValueError("Peak areas not available. Run calculate_peak_areas first.")
+            
+        if 'intervals' not in self.peaks_properties:
+            self.calculate_peak_intervals(time_values)
+            
         try:
             # Check if all arrays have the same length
             expected_length = len(self.peaks_indices)
@@ -291,12 +318,15 @@ class PeakDetector:
                         self.logger.error(error_msg)
                         raise ValueError(error_msg)
             
+            # Use time_resolution directly instead of calculating from time differences
+            rate = time_resolution  # Time between samples in seconds
+            
             # Create basic DataFrame with peak measurements
             results_df = pd.DataFrame({
                 "Peak Index": self.peaks_indices,
                 "Time (s)": time_values[self.peaks_indices] / 60,  # Convert to minutes
                 "Height": self.peaks_properties['prominences'],
-                "Width": self.peaks_properties['widths'] / 10,  # Convert to milliseconds
+                "Width (ms)": self.peaks_properties['widths'] * rate * 1000,  # Convert from samples to milliseconds
                 "Area": self.peaks_properties['areas'],
                 "Interval": self.peaks_properties['intervals']
             })

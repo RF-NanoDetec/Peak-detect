@@ -12,6 +12,7 @@ import logging
 import matplotlib.pyplot as plt
 from tkinter import filedialog
 from config.settings import Config
+import numpy as np
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -113,6 +114,9 @@ def save_peak_information_to_csv(app):
         
         # Check if peaks are already detected
         if not hasattr(app.peak_detector, 'peaks_indices') or app.peak_detector.peaks_indices is None:
+            # Get time resolution - handle both Tkinter variable and float value
+            time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+            
             # Detect peaks
             app.peak_detector.detect_peaks(
                 app.filtered_signal,
@@ -120,7 +124,8 @@ def save_peak_information_to_csv(app):
                 height_lim_factor,
                 distance,
                 rel_height,
-                width_values
+                width_values,
+                time_resolution=time_res
             )
         
         # Calculate areas if not already calculated
@@ -151,11 +156,18 @@ def save_peak_information_to_csv(app):
         # Time values at peaks
         peak_times = app.t_value[peak_indices]
         
+        # Use time_resolution directly instead of calculating from time differences
+        rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution  # Time between samples in seconds
+        
+        # Convert widths from samples to milliseconds
+        peak_widths_ms = peak_widths * rate * 1000  # Convert samples to ms
+        
         # Create the DataFrame
         data = {
             'Time (s)': peak_times,
             'Amplitude': peak_heights,
-            'Width (samples)': peak_widths
+            'Width (ms)': peak_widths_ms,
+            'Width (samples)': peak_widths  # Keep original width in samples for reference
         }
         
         # Add areas if available

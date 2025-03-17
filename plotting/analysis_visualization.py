@@ -34,13 +34,31 @@ def plot_data(app, profile_function=None):
                                                    'hspace': 0.3})
 
         # Convert data to float32 for memory efficiency
-        t = np.asarray(app.t_value, dtype=np.float32)*1e-4
+        t = np.asarray(app.t_value, dtype=np.float32)  # Time already in seconds
         filtered_signal = np.asarray(app.filtered_signal, dtype=np.float32)
 
         # Find peaks with optimized parameters
         width_values = app.width_p.get().strip().split(',')
-        width_p = [int(float(value.strip()) * 10) for value in width_values]
-
+        
+        # Use time_resolution directly instead of calculating from time differences
+        rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+        if rate <= 0:
+            print(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
+            rate = 0.0001  # Default to 0.1ms sampling if invalid value
+        
+        sampling_rate = 1 / rate
+        print(f"DEBUG - plot_data sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
+        
+        # Convert width values from ms to samples using the actual sampling rate
+        # For example, 50ms at 10kHz sampling rate would be 500 samples
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+        
+        # Debug output for width parameters
+        print(f"\nDEBUG - Width parameter information:")
+        print(f"Original width values: {app.width_p.get()} (ms)")
+        print(f"Sampling rate: {sampling_rate:.1f} Hz")
+        print(f"Converted width_p (in samples): {width_p}")
+        
         peaks, properties = find_peaks_with_window(
             filtered_signal,
             width=width_p,
@@ -48,12 +66,40 @@ def plot_data(app, profile_function=None):
             distance=app.distance.get(),
             rel_height=app.rel_height.get()
         )
-
+        
+        # Additional debug information after peak detection
+        print(f"DEBUG - Peak detection results:")
+        print(f"Found {len(peaks)} peaks")
+        if len(peaks) > 0:
+            print(f"Peak properties keys: {list(properties.keys())}")
+            print(f"First few peak positions: {peaks[:5]}")
+            if 'widths' in properties:
+                print(f"First few peak widths (in samples): {properties['widths'][:5]}")
+                print(f"Peak widths in seconds (min/mean/max): {np.min(properties['widths']*rate):.6f}/{np.mean(properties['widths']*rate):.6f}/{np.max(properties['widths']*rate):.6f}")
+                print(f"Peak widths in ms (min/mean/max): {np.min(properties['widths']*rate*1000):.2f}/{np.mean(properties['widths']*rate*1000):.2f}/{np.max(properties['widths']*rate*1000):.2f}")
+        
         # Calculate peak properties
-        widths = properties["widths"]
+        widths = properties["widths"]  # Width in samples
+        widths_in_seconds = widths * rate  # Convert from samples to seconds
+        widths_in_ms = widths_in_seconds * 1000  # Convert from seconds to milliseconds
+        
         prominences = properties["prominences"]
         peak_times = t[peaks]
-
+        
+        # Debug output for peak widths
+        if len(widths) > 0:
+            print(f"\nDEBUG - Peak width information:")
+            print(f"Raw widths (samples): {np.min(widths):.1f}/{np.mean(widths):.1f}/{np.max(widths):.1f}")
+            print(f"Widths in seconds: {np.min(widths_in_seconds):.6f}/{np.mean(widths_in_seconds):.6f}/{np.max(widths_in_seconds):.6f}")
+            print(f"Widths in ms: {np.min(widths_in_ms):.2f}/{np.mean(widths_in_ms):.2f}/{np.max(widths_in_ms):.2f}")
+            
+            # Calculate sampling rate for verification
+            print(f"Median time difference between samples: {rate:.8f} seconds")
+            print(f"Sampling rate: {sampling_rate:.1f} Hz")
+            
+            # Calculate average width in sample points
+            print(f"Average width in sample points: {np.mean(widths):.2f}")
+        
         # Calculate areas under peaks
         areas = []
         for i, peak in enumerate(peaks):
@@ -73,7 +119,7 @@ def plot_data(app, profile_function=None):
         axes[0].set_yscale('log')
 
         # Plot peak widths
-        axes[1].scatter(peak_times/60, widths/10, s=1, alpha=0.5, color='black', label='Peak Widths (ms)')
+        axes[1].scatter(peak_times/60, widths_in_ms, s=1, alpha=0.5, color='black', label='Peak Widths (ms)')
         axes[1].set_ylabel('Peak Widths (ms)')
         axes[1].grid(True, alpha=0.3)
         axes[1].legend(fontsize=8)
@@ -163,7 +209,24 @@ def plot_scatter(app, profile_function=None):
     try:
         # Get peaks and properties
         width_values = app.width_p.get().strip().split(',')
-        width_p = [int(float(value.strip()) * 10) for value in width_values]
+        
+        # Use time_resolution directly instead of calculating from time differences
+        rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+        if rate <= 0:
+            print(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
+            rate = 0.0001  # Default to 0.1ms sampling if invalid value
+        
+        sampling_rate = 1 / rate
+        print(f"DEBUG - plot_scatter sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
+        
+        # Convert width values from ms to samples using the actual sampling rate
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+        
+        # Debug output
+        print(f"\nDEBUG - Width parameter information in plot_scatter:")
+        print(f"Original width values: {app.width_p.get()} (ms)")
+        print(f"Sampling rate: {sampling_rate:.1f} Hz")
+        print(f"Converted width_p (in samples): {width_p}")
 
         peaks_x_filter, properties = find_peaks_with_window(
             app.filtered_signal,
@@ -172,9 +235,28 @@ def plot_scatter(app, profile_function=None):
             distance=app.distance.get(),
             rel_height=app.rel_height.get()
         )
-
+        
+        # Additional debug information after peak detection
+        print(f"DEBUG - Peak detection results in plot_scatter:")
+        print(f"Found {len(peaks_x_filter)} peaks")
+        if len(peaks_x_filter) > 0:
+            print(f"Peak properties keys: {list(properties.keys())}")
+            print(f"First few peak positions: {peaks_x_filter[:5]}")
+            if 'widths' in properties:
+                print(f"First few peak widths (in samples): {properties['widths'][:5]}")
+                print(f"Peak widths in seconds (min/mean/max): {np.min(properties['widths']*rate):.6f}/{np.mean(properties['widths']*rate):.6f}/{np.max(properties['widths']*rate):.6f}")
+                print(f"Peak widths in ms (min/mean/max): {np.min(properties['widths']*rate*1000):.2f}/{np.mean(properties['widths']*rate*1000):.2f}/{np.max(properties['widths']*rate*1000):.2f}")
+        
+        # Calculate peak properties
+        widths = properties["widths"]  # Width in samples
+        widths_in_seconds = widths * rate  # Convert from samples to seconds
+        widths_in_ms = widths_in_seconds * 1000  # Convert from seconds to milliseconds
+        
+        prominences = properties["prominences"]
+        peak_times = app.t_value[peaks_x_filter]
+        
         # Calculate peak areas
-        window = np.round(properties['widths'], 0).astype(int) + 40
+        window = np.round(widths, 0).astype(int) + 40
         peak_areas = np.zeros(len(peaks_x_filter))
 
         for i in range(len(peaks_x_filter)):
@@ -186,10 +268,25 @@ def plot_scatter(app, profile_function=None):
 
         # Create DataFrame with all peak properties
         df_all = pd.DataFrame({
-            "width": properties['widths'] / 10,  # Convert to ms directly
-            "amplitude": properties['prominences'],
+            "width": widths_in_ms,  # Use widths_in_ms directly
+            "amplitude": prominences,
             "area": peak_areas
         })
+        
+        # Debug output for peak widths
+        if len(widths) > 0:
+            print(f"\nDEBUG - Peak width information in plot_scatter:")
+            print(f"Raw widths (samples): {np.min(widths):.1f}/{np.mean(widths):.1f}/{np.max(widths):.1f}")
+            print(f"Widths in seconds: {np.min(widths_in_seconds):.6f}/{np.mean(widths_in_seconds):.6f}/{np.max(widths_in_seconds):.6f}")
+            print(f"Widths in ms: {np.min(widths_in_ms):.2f}/{np.mean(widths_in_ms):.2f}/{np.max(widths_in_ms):.2f}")
+            print(f"Widths in DataFrame (ms): {df_all['width'].min():.2f}/{df_all['width'].mean():.2f}/{df_all['width'].max():.2f}")
+            
+            # Calculate sampling rate for verification
+            print(f"Median time difference between samples: {rate:.8f} seconds")
+            print(f"Sampling rate: {sampling_rate:.1f} Hz")
+            
+            # Calculate average width in sample points
+            print(f"Average width in sample points: {np.mean(widths):.2f}")
 
         # Create new figure with adjusted size and spacing
         new_figure = Figure(figsize=(12, 10))
@@ -279,7 +376,9 @@ def plot_scatter(app, profile_function=None):
             f'Mean: {df_all["width"].mean():.1f} ms\n'
             f'Median: {df_all["width"].median():.1f} ms\n'
             f'Std: {df_all["width"].std():.1f} ms\n'
-            f'N: {len(df_all):,}')
+            f'Min: {df_all["width"].min():.1f} ms\n'
+            f'Max: {df_all["width"].max():.1f} ms\n'
+            f'N: {len(df_all):,} peaks')
         ax[3].text(0.95, 0.95, stats_text,
                   transform=ax[3].transAxes,
                   fontsize=9,

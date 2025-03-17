@@ -27,22 +27,44 @@ def start_analysis(app, profile_function=None):
         big_counts = app.big_counts.get()
         current_cutoff = app.cutoff_value.get()
 
-        t = app.data['Time - Plot 0'].values * 1e-4
+        # Time values are already in seconds, no need for scaling
+        t = app.data['Time - Plot 0'].values  # No 1e-4 scaling needed
         x = app.data['Amplitude - Plot 0'].values
-        rate = np.median(np.diff(t))
+        
+        # Use time_resolution directly instead of calculating from time differences
+        rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution  # Time between samples in seconds
         app.fs = 1 / rate
+        
+        print(f"Time samples range: {t.min():.6f} to {t.max():.6f} seconds")
+        print(f"Time resolution: {rate:.6f} seconds")
+        print(f"Calculated sampling frequency (fs): {app.fs:.2f} Hz")
 
         # Update progress
         app.update_progress_bar(1)
 
-        # Apply filtering
-        if current_cutoff > 0:
-            app.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', app.fs, x)
-            calculated_cutoff = current_cutoff
+        # Apply filtering only if enabled
+        if app.filter_enabled.get():
+            # Apply filtering
+            if current_cutoff > 0:
+                print(f"\n--> Using manual cutoff frequency: {current_cutoff} Hz")
+                app.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', app.fs, x)
+                calculated_cutoff = current_cutoff
+            else:
+                print(f"\n--> Auto-calculating cutoff frequency using adjust_lowpass_cutoff")
+                print(f"--> Parameters: big_counts={big_counts}, normalization_factor={normalization_factor}")
+                # Handle both Tkinter variable and float value
+                time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+                print(f"--> Time resolution: {time_res} seconds per unit")
+                app.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
+                    x, app.fs, big_counts, normalization_factor, time_resolution=time_res
+                )
+                print(f"--> Auto-calculated cutoff frequency: {calculated_cutoff:.2f} Hz")
+                app.cutoff_value.set(calculated_cutoff)
         else:
-            app.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
-                x, app.fs, big_counts, normalization_factor
-            )
+            # Use raw signal without filtering
+            print("\n--> Using raw signal (no filtering)")
+            app.filtered_signal = x
+            calculated_cutoff = 0
             app.cutoff_value.set(calculated_cutoff)
 
         # Update progress
@@ -113,28 +135,41 @@ def start_analysis(app, profile_function=None):
             alpha=0.4,
         )
 
-        ax.plot(
-            t_plot,
-            filtered_plot,
-            color='blue',
-            linewidth=0.05,
-            label=f'Filtered Data ({len(filtered_plot):,} points)',
-            alpha=0.9,
-        )
+        # Adjust plot based on filtering status
+        if app.filter_enabled.get():
+            ax.plot(
+                t_plot,
+                filtered_plot,
+                color='blue',
+                linewidth=0.05,
+                label=f'Filtered Data ({len(filtered_plot):,} points)',
+                alpha=0.9,
+            )
+            title = 'Raw and Filtered Signals (Optimized View)'
+        else:
+            title = 'Raw Signal Data (Processing Only)'
 
         # Customize plot
         ax.set_xlabel('Time (min)', fontsize=12)
         ax.set_ylabel('Amplitude (counts)', fontsize=12)
-        ax.set_title('Raw and Filtered Signals (Optimized View)', fontsize=14)
+        ax.set_title(title, fontsize=14)
         ax.grid(True, linestyle='--', alpha=0.7)
         ax.legend(fontsize=10)
 
         # Add filtering parameters annotation
-        filter_text = (
-            f'Cutoff: {calculated_cutoff:.1f} Hz\n'
-            f'Total points: {len(app.filtered_signal):,}\n'
-            f'Plotted points: {len(filtered_plot):,}'
-        )
+        if app.filter_enabled.get():
+            filter_text = (
+                f'Cutoff: {calculated_cutoff:.1f} Hz\n'
+                f'Total points: {len(app.filtered_signal):,}\n'
+                f'Plotted points: {len(filtered_plot):,}'
+            )
+        else:
+            filter_text = (
+                f'Filtering: Disabled\n'
+                f'Processing raw data only\n'
+                f'Total points: {len(app.filtered_signal):,}'
+            )
+            
         ax.text(
             0.02,
             0.98,
@@ -149,7 +184,7 @@ def start_analysis(app, profile_function=None):
         app.update_progress_bar(3)
 
         # Update or create tab
-        tab_name = "Smoothed Data"
+        tab_name = "Processed Data"
         tab_exists = False
 
         for tab in app.plot_tab_control.tabs():
@@ -172,15 +207,20 @@ def start_analysis(app, profile_function=None):
         app.update_progress_bar(4)
 
         # Update status
-        app.preview_label.config(
-            text=(
+        if app.filter_enabled.get():
+            status_msg = (
                 f"Analysis completed (Cutoff: {calculated_cutoff:.1f} Hz, "
                 f"Decimated from {len(app.filtered_signal):,} to {len(filtered_plot):,} points)"
-            ),
+            )
+        else:
+            status_msg = f"Processing completed (Filtering disabled, using {len(filtered_plot):,} raw data points)"
+            
+        app.preview_label.config(
+            text=status_msg,
             foreground="green",
         )
 
-        app.tab_figures["Smoothed Data"] = app.figure
+        app.tab_figures["Processed Data"] = app.figure
 
     except Exception as e:
         app.show_error("Error during analysis", e)

@@ -44,7 +44,7 @@ def run_peak_detection(app, profile_function=None):
         for collection in ax.collections:
             collection.remove()
 
-        # Get parameters
+        # Get peak detection parameters
         height_lim_factor = app.height_lim.get()
         distance = app.distance.get()
         rel_height = app.rel_height.get()
@@ -56,6 +56,9 @@ def run_peak_detection(app, profile_function=None):
         # Reset PeakDetector
         app.peak_detector.reset()
         
+        # Get time resolution - handle both Tkinter variable and float value
+        time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+        
         # Use PeakDetector instance to detect peaks
         app.peak_detector.detect_peaks(
             app.filtered_signal,
@@ -63,7 +66,8 @@ def run_peak_detection(app, profile_function=None):
             height_lim_factor,
             distance,
             rel_height,
-            width_values
+            width_values,
+            time_resolution=time_res
         )
         
         # Calculate peak areas using the PeakDetector
@@ -82,7 +86,7 @@ def run_peak_detection(app, profile_function=None):
         app.update_progress_bar(2)
 
         # Add peak markers to the existing plot
-        ax.plot(app.t_value[peaks_x_filter]*1e-4 / 60,
+        ax.plot(app.t_value[peaks_x_filter] / 60,  # Convert to minutes for plotting
                 app.filtered_signal[peaks_x_filter],
                 'rx',
                 markersize=5,
@@ -92,7 +96,7 @@ def run_peak_detection(app, profile_function=None):
         ax.legend(fontsize=10)
 
         # Calculate peak intervals
-        peak_times = app.t_value[peaks_x_filter]*1e-4
+        peak_times = app.t_value[peaks_x_filter]  # Time values already in seconds
         intervals = np.diff(peak_times)
 
         if len(intervals) > 0:
@@ -194,9 +198,9 @@ def plot_filtered_peaks(app, profile_function=None):
         for idx, peak_idx in enumerate(selected_peaks):
             i = peak_idx
             start_idx = max(0, peaks_x_filter[i] - window[i])
-            end_idx = min(len(app.t_value*1e-4), peaks_x_filter[i] + window[i])
+            end_idx = min(len(app.t_value), peaks_x_filter[i] + window[i])
 
-            xData = app.t_value[start_idx:end_idx]*1e-4
+            xData = app.t_value[start_idx:end_idx]
             yData_sub = app.filtered_signal[start_idx:end_idx]
 
             if len(xData) == 0:
@@ -215,7 +219,7 @@ def plot_filtered_peaks(app, profile_function=None):
                            linewidth=0.5)
 
             # Plot peak marker
-            peak_time = app.t_value[peaks_x_filter[i]]*1e-4
+            peak_time = app.t_value[peaks_x_filter[i]]
             peak_height = app.filtered_signal[peaks_x_filter[i]] - background
             line2, = ax.plot((peak_time - xData[0]) * 1e3,
                            peak_height,
@@ -240,8 +244,8 @@ def plot_filtered_peaks(app, profile_function=None):
             width_height = amp_x_filter["width_heights"][i] - background
 
             line4 = ax.hlines(y=width_height,
-                            xmin=(app.t_value[left_idx]*1e-4 - xData[0]) * 1e3,
-                            xmax=(app.t_value[right_idx]*1e-4 - xData[0]) * 1e3,
+                            xmin=(app.t_value[left_idx] - xData[0]) * 1e3,
+                            xmax=(app.t_value[right_idx] - xData[0]) * 1e3,
                             color="red",
                             linestyles='-',
                             alpha=0.8)

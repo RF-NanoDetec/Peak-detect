@@ -57,8 +57,7 @@ from core.file_handler import browse_files_with_ui
 from core.data_analysis import (
     calculate_peak_areas as calculate_peak_areas_function,
     calculate_peak_intervals,
-    calculate_auto_threshold,
-    calculate_auto_cutoff_frequency
+    calculate_auto_threshold
 )
 from core.data_utils import (
     decimate_for_plot as decimate_for_plot_function,
@@ -67,7 +66,7 @@ from core.data_utils import (
     find_nearest,
     timestamps_to_seconds  # For single timestamp conversion
 )
-from core.peak_analysis_utils import timestamps_array_to_seconds  # For array of timestamps
+from core.peak_analysis_utils import timestamps_array_to_seconds, adjust_lowpass_cutoff, calculate_lowpass_cutoff  # For array of timestamps
 from core.file_export import (
     export_plot as export_plot_function,
     save_peak_information_to_csv as save_peak_information_to_csv_function
@@ -169,7 +168,9 @@ class Application(tk.Tk):
         self.distance = tk.IntVar(value=30)  # Renamed to Min. Distance Peaks
         self.rel_height = tk.DoubleVar(value=0.85)
         self.width_p = tk.StringVar(value="1,200")
+        self.time_resolution = tk.DoubleVar(value=1e-4)  # Time resolution factor (default: 0.1ms)
         self.cutoff_value = tk.DoubleVar(value=0)  # Default 0 means auto-detect
+        self.filter_enabled = tk.BooleanVar(value=True)  # Toggle for filtering (True=enabled)
         self.filtered_signal = None
         self.rect_selector = None
 
@@ -286,8 +287,8 @@ class Application(tk.Tk):
     )
     def calculate_auto_cutoff_frequency(self):
         """
-        Wrapper around the core.data_analysis.calculate_auto_cutoff_frequency function.
-        This method handles the UI updates and error handling for cutoff frequency calculation.
+        Calculate an appropriate cutoff frequency based on signal characteristics.
+        This method uses the same algorithm as in the filtering process when cutoff is set to 0.
         """
         if self.x_value is None:
             self.preview_label.config(
@@ -298,27 +299,55 @@ class Application(tk.Tk):
             self.status_indicator.set_text("No data available")
             return None
         
-        # Get current parameters
-        big_counts = self.big_counts.get()
-        norm_factor = self.normalization_factor.get()
-        
-        # Calculate cutoff using the core module function
-        suggested_cutoff = calculate_auto_cutoff_frequency(
-            self.t_value,
-            self.x_value,
-            factor=norm_factor/10.0  # Convert the normalization factor to a reasonable range
-        )
-        
-        # Update the cutoff value in GUI
-        self.cutoff_value.set(suggested_cutoff)
-        
-        # Custom success message with the calculated value
-        self.preview_label.config(
-            text=f"Cutoff frequency set to {suggested_cutoff:.1f} Hz",
-            foreground=self.theme_manager.get_color('success')
-        )
-        
-        return suggested_cutoff
+        try:
+            # Get current parameters and add debug prints
+            print("DEBUG: Starting calculate_auto_cutoff_frequency")
+            print(f"DEBUG: time_resolution type: {type(self.time_resolution)}")
+            print(f"DEBUG: Does time_resolution have get method: {hasattr(self.time_resolution, 'get')}")
+            
+            big_counts = self.big_counts.get()
+            norm_factor = self.normalization_factor.get()
+            
+            # Ensure time_resolution is properly handled
+            try:
+                time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
+                print(f"DEBUG: Successfully retrieved time_resolution: {time_res}")
+            except Exception as e:
+                print(f"DEBUG: Error getting time_resolution: {str(e)}")
+                print(f"DEBUG: Falling back to default value 0.0001")
+                time_res = 0.0001  # Default fallback value
+            
+            # Calculate sampling rate using time resolution
+            fs = 1 / time_res
+            print(f"DEBUG: Calculated sampling rate (fs): {fs} Hz from time_res: {time_res}")
+            
+            # Use calculate_lowpass_cutoff to get the cutoff frequency
+            print("DEBUG: Calling calculate_lowpass_cutoff with parameters:")
+            print(f"DEBUG: signal length: {len(self.x_value)}, fs: {fs}, big_counts: {big_counts}, norm_factor: {norm_factor}, time_resolution: {time_res}")
+            
+            suggested_cutoff = calculate_lowpass_cutoff(
+                self.x_value, fs, big_counts, norm_factor, time_resolution=time_res
+            )
+            
+            print(f"DEBUG: Received suggested_cutoff: {suggested_cutoff}")
+            
+            # Update the cutoff value in GUI
+            self.cutoff_value.set(suggested_cutoff)
+            
+            # Custom success message with the calculated value
+            self.preview_label.config(
+                text=f"Cutoff frequency set to {suggested_cutoff:.1f} Hz",
+                foreground=self.theme_manager.get_color('success')
+            )
+            
+            return suggested_cutoff
+            
+        except Exception as e:
+            print(f"DEBUG: Exception in calculate_auto_cutoff_frequency: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.show_error("Error calculating cutoff frequency", str(e))
+            return None
 
     # Create all the GUI widgets
     def create_widgets(self):
@@ -393,7 +422,9 @@ class Application(tk.Tk):
         Browse and load file(s) based on current mode.
         This method now uses the integrated UI function from core.file_handler.
         """
-        return browse_files_with_ui(self)
+        time_res = self.time_resolution.get()
+        print(f"Using time resolution: {time_res}")
+        return browse_files_with_ui(self, time_resolution=time_res)
 
     @ui_action(
         processing_message="Resetting application...",
@@ -518,6 +549,7 @@ class Application(tk.Tk):
         distance = self.distance.get()
         rel_height = self.rel_height.get()
         width_values = self.width_p.get().strip().split(',')
+        time_res = self.time_resolution.get()
         
         # Use the core module function
         result = calculate_peak_areas_function(
@@ -527,7 +559,8 @@ class Application(tk.Tk):
             height_lim_factor,
             distance,
             rel_height,
-            width_values
+            width_values,
+            time_resolution=time_res
         )
         
         if result:
@@ -710,7 +743,8 @@ class Application(tk.Tk):
                                 child.draw()
         
         # Recreate the menu bar to update the theme toggle label
-        self.create_menu_bar()
+        from ui.components import create_menu_bar
+        self.menu_bar = create_menu_bar(self)
         
         # Custom success message with theme name
         theme_name = "Dark" if new_theme == "dark" else "Light"

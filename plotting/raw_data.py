@@ -67,7 +67,7 @@ def plot_raw_data(app, profiler=None):
         
         # Decimate data for plotting
         t_plot, x_plot = app.decimate_for_plot(
-            app.data['Time - Plot 0'].values * 1e-4 / 60,  # Convert to minutes
+            app.data['Time - Plot 0'].values / 60,  # Convert to minutes (time already in seconds)
             app.data['Amplitude - Plot 0'].values
         )
         

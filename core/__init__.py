@@ -14,8 +14,7 @@ from core.peak_analysis_utils import find_peaks_with_window, adjust_lowpass_cuto
 from core.data_analysis import (
     calculate_peak_areas, 
     calculate_peak_intervals, 
-    calculate_auto_threshold, 
-    calculate_auto_cutoff_frequency
+    calculate_auto_threshold
 )
 from core.data_utils import (
     decimate_for_plot, 

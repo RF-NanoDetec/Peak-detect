@@ -19,46 +19,39 @@ from core.peak_detection import calculate_auto_threshold as peak_detection_auto_
 logger = logging.getLogger(__name__)
 
 @profile_function
-def calculate_peak_areas(detector, filtered_signal, t_value, height_lim_factor, 
-                         distance, rel_height, width_values):
+def calculate_peak_areas(detector, signal, time_values, height_lim, distance, rel_height, width_values, time_resolution=1e-4):
     """
-    Calculate the areas of detected peaks.
+    Calculate areas under detected peaks.
     
-    Parameters
-    ----------
-    detector : PeakDetector
-        Instance of PeakDetector for peak detection
-    filtered_signal : array-like
-        The filtered signal data
-    t_value : array-like
-        Time values
-    height_lim_factor : float
-        Height limit factor for peak detection
-    distance : int
-        Minimum distance between peaks
-    rel_height : float
-        Relative height for peak width calculation
-    width_values : list
-        Minimum and maximum width values for filtering peaks
+    Args:
+        detector (PeakDetector): Instance of PeakDetector class
+        signal (numpy.ndarray): The filtered signal data
+        time_values (numpy.ndarray): Corresponding time values
+        height_lim (float): Minimum height threshold for peaks
+        distance (int): Minimum number of samples between peaks
+        rel_height (float): Relative height at which peak width is measured (0-1)
+        width_values (list): List of min and max width values for filtering
+        time_resolution (float, optional): Time resolution in seconds per unit.
+            Defaults to 1e-4 (0.1 milliseconds per unit).
         
-    Returns
-    -------
-    tuple
-        (peak_area, start, end) if successful, None otherwise
+    Returns:
+        tuple: (peak_areas, start_indices, end_indices) if peaks are detected, None otherwise
     """
     try:
-        # Detect peaks using the PeakDetector
-        detector.detect_peaks(
-            filtered_signal,
-            t_value,
-            height_lim_factor,
-            distance,
-            rel_height,
-            width_values
-        )
+        # Detect peaks if not already detected
+        if detector.peaks_indices is None:
+            detector.detect_peaks(
+                signal,
+                time_values,
+                height_lim,
+                distance,
+                rel_height,
+                width_values,
+                time_resolution=time_resolution
+            )
         
         # Calculate areas using the PeakDetector
-        peak_area, start, end = detector.calculate_peak_areas(filtered_signal)
+        peak_area, start, end = detector.calculate_peak_areas(signal)
         
         return peak_area, start, end 
 
@@ -128,42 +121,6 @@ def calculate_auto_threshold(signal, percentile=95):
         logger.error(f"Error calculating auto threshold: {str(e)}\n{traceback.format_exc()}")
         return 20.0  # Return a default value
 
-@profile_function
-def calculate_auto_cutoff_frequency(t_value, signal, factor=0.1):
-    """
-    Automatically calculate a suitable cutoff frequency for filtering.
-    
-    Parameters
-    ----------
-    t_value : array-like
-        Time values
-    signal : array-like
-        Signal data
-    factor : float, optional
-        Factor to adjust the calculated frequency (default: 0.1)
-        
-    Returns
-    -------
-    float
-        Calculated cutoff frequency
-    """
-    try:
-        # Estimate sampling frequency
-        if len(t_value) > 1:
-            # Calculate average sampling rate
-            sampling_rate = 1.0 / (t_value[1] - t_value[0])
-            
-            # Calculate cutoff as a fraction of Nyquist frequency
-            nyquist = 0.5 * sampling_rate
-            cutoff = factor * nyquist
-            
-            return cutoff
-        else:
-            return 10.0  # Default if insufficient data
-            
-    except Exception as e:
-        logger.error(f"Error calculating auto cutoff frequency: {str(e)}\n{traceback.format_exc()}")
-        return 10.0  # Return a default value 
 
 def with_error_handling(error_msg):
     def decorator(func):
