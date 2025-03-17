@@ -174,16 +174,43 @@ def reset_application_state(app):
         app.x_value = None
         app.filtered_signal = None
         app.segment_offset = 0
+        
+        # Reset peak detector if it exists
+        if hasattr(app, 'peak_detector'):
+            app.peak_detector.reset()
+            
+        # Clear loaded files list
+        app.loaded_files = []
 
         # Reset variables to default values
-        app.normalization_factor.set(1.0)
         app.start_time.set("0:00")
-        app.big_counts.set(100)
         app.height_lim.set(20)
         app.distance.set(30)
         app.rel_height.set(0.85)
         app.width_p.set("1,200")
         app.cutoff_value.set(0)
+        app.filter_enabled.set(True)  # Reset filter toggle to enabled
+        
+        # Clear file path
+        app.file_path.set("")
+        
+        # Reset protocol variables
+        if hasattr(app, 'protocol_start_time'):
+            app.protocol_start_time.set("")
+        if hasattr(app, 'protocol_particle'):
+            app.protocol_particle.set("")
+        if hasattr(app, 'protocol_concentration'):
+            app.protocol_concentration.set("")
+        if hasattr(app, 'protocol_stamp'):
+            app.protocol_stamp.set("")
+        if hasattr(app, 'protocol_laser_power'):
+            app.protocol_laser_power.set("")
+        if hasattr(app, 'protocol_setup'):
+            app.protocol_setup.set("")
+        if hasattr(app, 'protocol_notes'):
+            app.protocol_notes.set("")
+        if hasattr(app, 'protocol_files'):
+            app.protocol_files.set("")
 
         # Clear results summary
         app.update_results_summary(preview_text="")
