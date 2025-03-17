@@ -14,6 +14,7 @@ import traceback
 import matplotlib.pyplot as plt
 from tkinter import messagebox
 from functools import wraps
+import tkinter as tk
 
 from core.performance import profile_function, get_memory_usage
 from core.peak_analysis_utils import timestamps_array_to_seconds
@@ -324,7 +325,14 @@ def browse_files_with_ui(app, time_resolution=1e-4):
         app.x_value = x_value
         app.data = data
         app.loaded_files = loaded_files
-        app.time_resolution = time_resolution  # Store the resolution used
+        
+        # Store the resolution used - but don't overwrite the Tkinter variable
+        if hasattr(app.time_resolution, 'set'):
+            app.time_resolution.set(time_resolution)
+        else:
+            app.time_resolution = tk.DoubleVar(value=time_resolution)
+            
+        print(f"Using time resolution: {time_resolution}")
         
         # Set data_loaded flag
         app.data_loaded = bool(data is not None)

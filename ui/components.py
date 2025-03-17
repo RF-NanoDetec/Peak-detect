@@ -289,7 +289,11 @@ def create_data_loading_tab(app, tab_control):
     
     # Function to initialize the ms display from the seconds value
     def init_time_resolution_ms():
-        seconds_value = app.time_resolution.get()
+        # Check if time_resolution is a Tkinter variable or a float
+        if hasattr(app.time_resolution, 'get'):
+            seconds_value = app.time_resolution.get()
+        else:
+            seconds_value = app.time_resolution
         app.time_resolution_ms.set(f"{seconds_value * 1000:.1f}")
     
     # Set up the trace to update the seconds value when ms changes
@@ -313,7 +317,13 @@ def create_data_loading_tab(app, tab_control):
     
     # Create a "Reset to Default" button
     def reset_to_default():
-        app.time_resolution.set(1e-4)  # 0.1 ms in seconds
+        # Check if time_resolution is a Tkinter variable or a float
+        if hasattr(app.time_resolution, 'set'):
+            app.time_resolution.set(1e-4)  # 0.1 ms in seconds
+        else:
+            # If it's a float, recreate it as a Tkinter variable
+            app.time_resolution = tk.DoubleVar(value=1e-4)
+            print("Recreated time_resolution as a Tkinter variable")
         init_time_resolution_ms()
     
     reset_button = ttk.Button(

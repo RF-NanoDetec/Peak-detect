@@ -57,7 +57,6 @@ def start_analysis(app, profile_function=None):
                 print(f"DEBUG: Using 70% threshold: {threshold}")
                 
                 # Detect peaks above the 70% threshold to measure their widths
-                from scipy.signal import find_peaks
                 peaks, _ = find_peaks(x, height=threshold)
                 
                 if len(peaks) == 0:

@@ -333,7 +333,6 @@ class Application(tk.Tk):
             print(f"DEBUG: Using 70% threshold: {threshold}")
             
             # Detect peaks above the 70% threshold to measure their widths
-            from scipy.signal import find_peaks
             peaks, _ = find_peaks(self.x_value, height=threshold)
             
             if len(peaks) == 0:
@@ -344,7 +343,6 @@ class Application(tk.Tk):
                 
                 # Use the existing core functions but with our calculated threshold
                 # instead of the big_counts and normalization_factor parameters
-                from core.peak_analysis_utils import calculate_lowpass_cutoff
                 suggested_cutoff = calculate_lowpass_cutoff(
                     self.x_value, fs, threshold, 1.0, time_resolution=time_res
                 )
