@@ -459,7 +459,7 @@ def create_preprocessing_tab(app, tab_control):
     filter_color = ttk.Label(
         mode_selector,
         text="   ",
-        background=app.theme_manager.get_color('primary'),
+        background="#0078D7",  # Use blue directly instead of primary theme color
         relief=tk.RAISED,
         borderwidth=2
     )
@@ -478,7 +478,7 @@ def create_preprocessing_tab(app, tab_control):
     raw_color = ttk.Label(
         mode_selector,
         text="   ",
-        background="#FF6B6B",
+        background="#333333",  # Change from #FF6B6B to dark gray
         relief=tk.RAISED,
         borderwidth=2
     )
@@ -520,7 +520,7 @@ def create_preprocessing_tab(app, tab_control):
         raw_points.append(int(y))
     
     # Create raw data curve
-    comparison.create_line(raw_points, fill="#FF6B6B", width=1.5, smooth=False)
+    comparison.create_line(raw_points, fill="#333333", width=1.5, smooth=False)
     
     # Draw filtered data (smooth)
     filtered_points = []
@@ -531,20 +531,20 @@ def create_preprocessing_tab(app, tab_control):
         filtered_points.append(int(y))
     
     # Create filtered data curve
-    comparison.create_line(filtered_points, fill=app.theme_manager.get_color('primary'), width=2, smooth=True)
+    comparison.create_line(filtered_points, fill="#0078D7", width=2, smooth=True)
     
     # Add labels
     comparison.create_text(
         30, 15, 
         text="Filtered: Smoother signal, reduced noise", 
-        fill=app.theme_manager.get_color('primary'), 
+        fill="#0078D7",  # Use blue directly 
         anchor=tk.W,
         font=("TkDefaultFont", 8, "bold")
     )
     comparison.create_text(
         30, 30, 
         text="Raw: Original signal with noise", 
-        fill="#FF6B6B", 
+        fill="#333333",  # Change from #FF6B6B to dark gray
         anchor=tk.W,
         font=("TkDefaultFont", 8, "bold")
     )
@@ -638,7 +638,7 @@ def create_preprocessing_tab(app, tab_control):
         justify=tk.LEFT
     )
     cutoff_help.pack(fill=tk.X, padx=15, pady=(0, 5))
-    
+
     # Add auto-calculation explanation frame with more details
     auto_calc_explanation = ttk.LabelFrame(filtering_frame, text="Auto-Calculation Method")
     auto_calc_explanation.pack(fill=tk.X, padx=5, pady=5)
@@ -761,80 +761,110 @@ def create_peak_detection_tab(app, tab_control):
     diagram.pack()
     
     # Draw a sine-like signal to represent data
-    signal_color = app.theme_manager.get_color('primary')
-    baseline_y = canvas_height // 2
+    signal_color = "#0078D7"  # Use blue directly instead of theme's primary color
+    baseline_y = canvas_height // 2 + 15  # Move baseline down to show peaks better
     
-    # Draw signal baseline
-    diagram.create_line(
-        10, baseline_y, canvas_width-10, baseline_y,
-        fill="#aaaaaa", dash=(4, 4), width=1
-    )
-    
-    # Draw signal with peaks
-    points = []
+    # Create a single data line with baseline noise and peaks
+    data_points = []
+    np.random.seed(42)  # For consistent noise pattern
     for x in range(10, canvas_width-10, 4):
-        # Create a noisy sine wave with some peaks
-        noise = np.random.normal(0, 3)
-        if 100 <= x <= 120 or 220 <= x <= 240 or 300 <= x <= 320:
-            # Add larger peaks at specific x positions
-            y = baseline_y - 25 * np.sin((x-10) / 40) - 10 + noise
-        else:
-            # Regular signal with noise
-            y = baseline_y - 10 * np.sin((x-10) / 20) + noise
-        points.append(x)
-        points.append(int(y))
+        y = baseline_y
+        
+        # Add peaks at specific locations
+        if 70 <= x <= 90:
+            # First peak
+            peak_height = 35
+            y = baseline_y - peak_height * np.exp(-0.02 * (x - 80) ** 2)
+        elif 180 <= x <= 200:
+            # Second peak (taller)
+            peak_height = 45
+            y = baseline_y - peak_height * np.exp(-0.02 * (x - 190) ** 2)
+        elif 270 <= x <= 290:
+            # Third peak (medium)
+            peak_height = 25
+            y = baseline_y - peak_height * np.exp(-0.02 * (x - 280) ** 2)
+        
+        # Add noise to the entire signal
+        y += np.random.normal(0, 3)
+            
+        data_points.append(x)
+        data_points.append(int(y))
     
-    # Create signal curve
-    diagram.create_line(points, fill=signal_color, width=2, smooth=True)
+    # Create the single signal curve
+    diagram.create_line(data_points, fill=signal_color, width=2, smooth=True)
     
-    # Draw thresholds for different sigma values
-    low_thresh_y = baseline_y - 15
-    med_thresh_y = baseline_y - 25
-    high_thresh_y = baseline_y - 40
+    # Draw threshold lines for different sigma values
+    low_thresh_y = baseline_y - 15  # Low threshold (catches small peaks too)
+    med_thresh_y = baseline_y - 25  # Medium threshold (balanced)
+    high_thresh_y = baseline_y - 40  # High threshold (only the largest peaks)
     
-    # Low sigma (e.g., σ=2)
+    # Low sigma (e.g., σ=2) - will detect all peaks including some noise
     diagram.create_line(
         10, low_thresh_y, canvas_width-10, low_thresh_y,
         fill="#4CAF50", width=1, dash=(2, 2)
     )
     diagram.create_text(
-        20, low_thresh_y-8, 
+        canvas_width-15, low_thresh_y-8, 
         text="σ=2", 
         fill="#4CAF50", 
-        anchor=tk.W,
+        anchor=tk.E,
         font=("TkDefaultFont", 8)
     )
     
-    # Medium sigma (e.g., σ=5)
+    # Medium sigma (e.g., σ=5) - balanced threshold
     diagram.create_line(
         10, med_thresh_y, canvas_width-10, med_thresh_y,
         fill="#FF9800", width=1, dash=(2, 2)
     )
     diagram.create_text(
-        20, med_thresh_y-8, 
+        canvas_width-15, med_thresh_y-8, 
         text="σ=5", 
         fill="#FF9800", 
-        anchor=tk.W,
+        anchor=tk.E,
         font=("TkDefaultFont", 8)
     )
     
-    # High sigma (e.g., σ=8)
+    # High sigma (e.g., σ=8) - only detects the largest peak
     diagram.create_line(
         10, high_thresh_y, canvas_width-10, high_thresh_y,
         fill="#F44336", width=1, dash=(2, 2)
     )
     diagram.create_text(
-        20, high_thresh_y-8, 
+        canvas_width-15, high_thresh_y-8, 
         text="σ=8", 
         fill="#F44336", 
-        anchor=tk.W,
+        anchor=tk.E,
         font=("TkDefaultFont", 8)
+    )
+    
+    # Add markers to show which peaks are detected at each threshold
+    # For low threshold (detects all peaks)
+    for x_pos in [80, 190, 280]:
+        diagram.create_oval(
+            x_pos-3, low_thresh_y-3, 
+            x_pos+3, low_thresh_y+3, 
+            fill="#4CAF50", outline=""
+        )
+        
+    # For medium threshold (detects medium and large peaks)
+    for x_pos in [190, 280]:
+        diagram.create_oval(
+            x_pos-3, med_thresh_y-3, 
+            x_pos+3, med_thresh_y+3, 
+            fill="#FF9800", outline=""
+        )
+        
+    # For high threshold (detects only the largest peak)
+    diagram.create_oval(
+        190-3, high_thresh_y-3, 
+        190+3, high_thresh_y+3, 
+        fill="#F44336", outline=""
     )
     
     # Add explanatory caption
     caption = ttk.Label(
         diagram_frame,
-        text="Visualization: Lower threshold (green) detects more peaks, higher threshold (red) is more selective.",
+        text="Lower threshold (green) detects more peaks including noise, higher threshold (red) detects only prominent peaks.",
         wraplength=380,
         justify=tk.CENTER,
         font=("TkDefaultFont", 8)
@@ -928,7 +958,7 @@ def create_peak_detection_tab(app, tab_control):
         font=("TkDefaultFont", 9, "bold")
     )
     threshold_entry.pack(side=tk.LEFT, padx=5)
-    
+
     # Calculation button with improved style
     auto_calc_button = ttk.Button(
         buttons_container, 
