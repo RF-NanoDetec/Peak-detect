@@ -246,18 +246,18 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height):
     return peaks, properties
 
 # Estimate the average peak width
-def estimate_peak_widths(signal, fs, big_counts, time_resolution=1e-4):
+def estimate_peak_widths(signal, fs, prominence_threshold, time_resolution=1e-4):
     """
     Estimate the average width of peaks in a signal.
     
-    This function finds significant peaks and calculates their average
-    width at half prominence, which is useful for determining an appropriate
+    This function finds significant peaks above the specified threshold and calculates 
+    their average width at half prominence, which is useful for determining an appropriate
     cutoff frequency for low-pass filtering.
     
     Parameters:
         signal (numpy.ndarray): The signal to analyze
         fs (float): Sampling frequency of the signal
-        big_counts (int): Threshold for peak prominence
+        prominence_threshold (float): Threshold for peak prominence or height
         time_resolution (float, optional): Time resolution in seconds per unit.
             Defaults to 1e-4 (0.1 milliseconds per unit).
         
@@ -273,11 +273,11 @@ def estimate_peak_widths(signal, fs, big_counts, time_resolution=1e-4):
     print("\n---- DEBUG: Starting estimate_peak_widths ----")
     print(f"Input signal shape: {signal.shape}")
     print(f"Sampling frequency (fs): {fs} Hz")
-    print(f"Big counts (prominence): {big_counts}")
+    print(f"Prominence threshold: {prominence_threshold}")
     print(f"Time resolution: {time_resolution} seconds per unit")
     
     # Find significant peaks for width estimation
-    peaks, _ = find_peaks(signal, width=[1, 20000], prominence=big_counts, distance=1000)
+    peaks, _ = find_peaks(signal, width=[1, 20000], prominence=prominence_threshold, distance=1000)
     
     # If no peaks found, use default width
     if len(peaks) == 0:
@@ -289,7 +289,7 @@ def estimate_peak_widths(signal, fs, big_counts, time_resolution=1e-4):
     
     # Calculate widths at half-prominence
     width_results = peak_widths(signal, peaks, rel_height=0.5)
-    widths = width_results[0]  # width values in samples
+    widths = width_results[0]
     
     # Calculate average width and convert to seconds using time_resolution
     avg_samples = np.mean(widths)
@@ -312,7 +312,7 @@ def estimate_peak_widths(signal, fs, big_counts, time_resolution=1e-4):
     return avg_width
 
 # Adjust the low-pass filter cutoff frequency
-def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_resolution=1e-4):
+def adjust_lowpass_cutoff(signal, fs, prominence_threshold, normalization_factor=1.0, time_resolution=1e-4):
     """
     Adjust lowpass filter cutoff frequency based on signal characteristics.
     
@@ -323,8 +323,9 @@ def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_res
     Parameters:
         signal (numpy.ndarray): The signal to analyze
         fs (float): Sampling frequency of the signal
-        big_counts (int): Number of major peaks expected
-        normalization_factor (float): Factor to normalize the cutoff
+        prominence_threshold (float): Threshold for peak prominence or height
+        normalization_factor (float, optional): Factor to normalize the cutoff.
+            Defaults to 1.0.
         time_resolution (float, optional): Time resolution in seconds per unit.
             Defaults to 1e-4 (0.1 milliseconds per unit).
             
@@ -340,11 +341,11 @@ def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_res
     print("\n==== DEBUG: Starting adjust_lowpass_cutoff ====")
     print(f"DEBUG: Input parameters:")
     print(f"- fs: {fs}")
-    print(f"- big_counts: {big_counts}")
+    print(f"- prominence_threshold: {prominence_threshold}")
     print(f"- normalization_factor: {normalization_factor}")
     print(f"- time_resolution: {time_resolution}")
     
-    avg_width = estimate_peak_widths(signal, fs, big_counts, time_resolution)
+    avg_width = estimate_peak_widths(signal, fs, prominence_threshold, time_resolution)
     print(f'\nDEBUG: Average width of peaks: {avg_width} seconds')
     print(f'DEBUG: 1/avg_width: {1/avg_width:.2f}')
     
@@ -353,7 +354,7 @@ def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_res
     print(f'DEBUG: Base cutoff frequency (1/avg_width): {base_cutoff:.2f} Hz')
     
     # Apply normalization factor to adjust the cutoff
-    cutoff = base_cutoff * float(normalization_factor)  # Ensure normalization_factor is float
+    cutoff = base_cutoff * float(normalization_factor)
     print(f'DEBUG: After normalization:')
     print(f'- Base cutoff: {base_cutoff:.2f} Hz')
     print(f'- Normalization factor: {normalization_factor}')
@@ -372,15 +373,16 @@ def adjust_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_res
 
     return filtered_signal, cutoff
 
-def calculate_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_resolution=1e-4):
+def calculate_lowpass_cutoff(signal, fs, prominence_threshold, normalization_factor=1.0, time_resolution=1e-4):
     """
     Calculate appropriate cutoff frequency for lowpass filtering.
     
     Parameters:
         signal (numpy.ndarray): The signal to analyze
         fs (float): Sampling frequency of the signal
-        big_counts (int): Number of major peaks expected (used for prominence)
-        normalization_factor (float): Factor to normalize the cutoff
+        prominence_threshold (float): Threshold for peak prominence or height
+        normalization_factor (float, optional): Factor to normalize the cutoff. 
+            Defaults to 1.0.
         time_resolution (float, optional): Time resolution in seconds per unit.
             Defaults to 1e-4 (0.1 milliseconds per unit).
             
@@ -390,11 +392,11 @@ def calculate_lowpass_cutoff(signal, fs, big_counts, normalization_factor, time_
     print("\n==== DEBUG: Starting calculate_lowpass_cutoff ====")
     print(f"DEBUG: Input parameters:")
     print(f"- fs: {fs}")
-    print(f"- big_counts: {big_counts}")
+    print(f"- prominence_threshold: {prominence_threshold}")
     print(f"- normalization_factor: {normalization_factor}")
     print(f"- time_resolution: {time_resolution}")
     
-    avg_width = estimate_peak_widths(signal, fs, big_counts, time_resolution)
+    avg_width = estimate_peak_widths(signal, fs, prominence_threshold, time_resolution)
     print(f'\nDEBUG: Average width of peaks: {avg_width} seconds')
     
     # Calculate base cutoff frequency from average width (in Hz)

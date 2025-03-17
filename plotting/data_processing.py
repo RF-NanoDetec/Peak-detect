@@ -23,8 +23,6 @@ def start_analysis(app, profile_function=None):
         app.update_progress_bar(0, total_steps)
 
         # Get parameters and prepare data
-        normalization_factor = app.normalization_factor.get()
-        big_counts = app.big_counts.get()
         current_cutoff = app.cutoff_value.get()
 
         # Time values are already in seconds, no need for scaling
@@ -50,15 +48,34 @@ def start_analysis(app, profile_function=None):
                 app.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', app.fs, x)
                 calculated_cutoff = current_cutoff
             else:
-                print(f"\n--> Auto-calculating cutoff frequency using adjust_lowpass_cutoff")
-                print(f"--> Parameters: big_counts={big_counts}, normalization_factor={normalization_factor}")
-                # Handle both Tkinter variable and float value
-                time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
-                print(f"--> Time resolution: {time_res} seconds per unit")
-                app.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
-                    x, app.fs, big_counts, normalization_factor, time_resolution=time_res
-                )
-                print(f"--> Auto-calculated cutoff frequency: {calculated_cutoff:.2f} Hz")
+                print(f"\n--> Auto-calculating cutoff frequency")
+                
+                # Find the highest signal value and calculate 70% threshold
+                signal_max = np.max(x)
+                threshold = signal_max * 0.7  # 70% of max value (30% below max)
+                print(f"DEBUG: Maximum signal value: {signal_max}")
+                print(f"DEBUG: Using 70% threshold: {threshold}")
+                
+                # Detect peaks above the 70% threshold to measure their widths
+                from scipy.signal import find_peaks
+                peaks, _ = find_peaks(x, height=threshold)
+                
+                if len(peaks) == 0:
+                    print("DEBUG: No peaks found above 70% threshold, using default cutoff")
+                    calculated_cutoff = 10.0  # Default cutoff if no peaks found
+                    app.filtered_signal = apply_butterworth_filter(2, calculated_cutoff, 'lowpass', app.fs, x)
+                else:
+                    print(f"DEBUG: Found {len(peaks)} peaks above 70% threshold")
+                    
+                    # Use the core functions with our calculated threshold
+                    time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+                    print(f"--> Time resolution: {time_res} seconds per unit")
+                    
+                    app.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
+                        x, app.fs, threshold, 1.0, time_resolution=time_res
+                    )
+                    print(f"--> Auto-calculated cutoff frequency: {calculated_cutoff:.2f} Hz")
+                
                 app.cutoff_value.set(calculated_cutoff)
         else:
             # Use raw signal without filtering

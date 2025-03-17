@@ -93,11 +93,13 @@ def calculate_peak_intervals(t_value, peaks_indices):
         return []
 
 @profile_function
-def calculate_auto_threshold(signal, percentile=95):
+def calculate_auto_threshold(signal, percentile=95, sigma_multiplier=None):
     """
-    Wrapper for the auto threshold calculation that uses percentile method.
+    Wrapper for the auto threshold calculation.
+    
     This function maintains compatibility with existing code but delegates
-    to the implementation in peak_detection.py.
+    to the implementation in peak_detection.py. It now supports direct sigma
+    specification, which takes precedence over percentile-based selection.
     
     Parameters
     ----------
@@ -105,6 +107,9 @@ def calculate_auto_threshold(signal, percentile=95):
         Signal data
     percentile : float, optional
         Percentile to use for threshold calculation (default: 95)
+    sigma_multiplier : float, optional
+        If provided, this value is used directly as the sigma multiplier,
+        overriding the percentile-based selection.
         
     Returns
     -------
@@ -112,10 +117,14 @@ def calculate_auto_threshold(signal, percentile=95):
         Calculated threshold value
     """
     try:
-        # Use sigma multiplier equivalent to percentile value
-        # For 95th percentile, ~1.65 sigma is roughly equivalent
-        sigma_multiplier = 1.65 if percentile == 95 else 5
-        return peak_detection_auto_threshold(signal, sigma_multiplier)
+        # If sigma_multiplier is directly provided, use it
+        if sigma_multiplier is not None:
+            sigma = sigma_multiplier
+        else:
+            # Otherwise use percentile-based selection as before
+            sigma = 1.65 if percentile == 95 else 5
+            
+        return peak_detection_auto_threshold(signal, sigma)
         
     except Exception as e:
         logger.error(f"Error calculating auto threshold: {str(e)}\n{traceback.format_exc()}")

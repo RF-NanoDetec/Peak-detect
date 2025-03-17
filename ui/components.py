@@ -409,239 +409,555 @@ def create_preprocessing_tab(app, tab_control):
     preprocessing_tab = ttk.Frame(tab_control)
     tab_control.add(preprocessing_tab, text="Preprocessing")
 
-    # First create the sliding toggle frame at the top
-    toggle_frame = ttk.LabelFrame(preprocessing_tab, text="Processing Mode")
+    # Create a more compact and modern processing mode selector
+    mode_frame = ttk.LabelFrame(preprocessing_tab, text="Signal Processing Mode")
+    mode_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Add description text
+    description_text = (
+        "Signal preprocessing helps improve peak detection by reducing noise and enhancing signal quality.\n"
+        "You can choose between filtered data (recommended for most signals) or raw data (preserves original characteristics)."
+    )
+    description_label = ttk.Label(
+        mode_frame, 
+        text=description_text,
+        wraplength=380, 
+        justify=tk.LEFT,
+        padding=(5, 5)
+    )
+    description_label.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Create a more compact toggle switch
+    toggle_frame = ttk.Frame(mode_frame)
     toggle_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    # Create a container for the toggle switch
-    switch_container = ttk.Frame(toggle_frame)
-    switch_container.pack(pady=10, padx=5, fill=tk.X)
+    # Create horizontal layout for mode selection
+    mode_selector = ttk.Frame(toggle_frame)
+    mode_selector.pack(pady=5)
     
-    # Create a track-like container
-    track_frame = tk.Frame(
-        switch_container, 
-        background="#e0e0e0", 
-        borderwidth=1, 
-        relief=tk.SUNKEN,
-        height=36
+    # Radio buttons with icons/colors for better visual representation
+    filter_radio = ttk.Radiobutton(
+        mode_selector,
+        text="Filtered Data",
+        variable=app.filter_enabled,
+        value=True,
+        command=lambda: update_filter_state(True)
     )
-    track_frame.pack(fill=tk.X, padx=20)
+    filter_radio.pack(side=tk.LEFT, padx=20)
     
-    # Define button styles
-    active_style = {
-        "background": app.theme_manager.get_color('primary'), 
-        "foreground": "white", 
-        "relief": tk.RAISED,
-        "borderwidth": 2,
-        "font": ("Arial", 10, "bold"),
-        "cursor": "hand2",
-        "height": 2,
-        "width": 18
-    }
+    # Create a color chip to show filtered data is smoothed
+    filter_color = ttk.Label(
+        mode_selector,
+        text="   ",
+        background=app.theme_manager.get_color('primary'),
+        relief=tk.RAISED,
+        borderwidth=2
+    )
+    filter_color.pack(side=tk.LEFT, padx=(0, 30))
     
-    inactive_style = {
-        "background": "#f0f0f0", 
-        "foreground": "#555555", 
-        "relief": tk.GROOVE,
-        "borderwidth": 1,
-        "font": ("Arial", 10),
-        "cursor": "hand2",
-        "height": 2,
-        "width": 18
-    }
+    raw_radio = ttk.Radiobutton(
+        mode_selector,
+        text="Raw Data",
+        variable=app.filter_enabled,
+        value=False,
+        command=lambda: update_filter_state(False)
+    )
+    raw_radio.pack(side=tk.LEFT, padx=20)
     
-    # Create the toggle buttons
-    filter_btn = tk.Button(track_frame, text="Filtered Data")
-    raw_btn = tk.Button(track_frame, text="Raw Data")
+    # Create a color chip to show raw data is noisy
+    raw_color = ttk.Label(
+        mode_selector,
+        text="   ",
+        background="#FF6B6B",
+        relief=tk.RAISED,
+        borderwidth=2
+    )
+    raw_color.pack(side=tk.LEFT)
     
-    # Pack buttons side by side
-    filter_btn.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    raw_btn.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    # Add visual comparison of filtered vs raw data
+    comparison_frame = ttk.Frame(mode_frame)
+    comparison_frame.pack(fill=tk.X, padx=10, pady=5)
     
-    # Then create the filtering frame (before using it in any functions)
-    filtering_frame = ttk.LabelFrame(preprocessing_tab, text="Signal Filtering")
-    filtering_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Create canvas for comparison visualization
+    canvas_height = 80
+    canvas_width = 380
+    comparison = tk.Canvas(
+        comparison_frame, 
+        height=canvas_height, 
+        width=canvas_width,
+        bg=app.theme_manager.get_color('card_bg'),
+        highlightthickness=0
+    )
+    comparison.pack(pady=5)
+    
+    # Draw a comparison of raw vs filtered data
+    baseline_y = canvas_height // 2
+    
+    # Draw axis
+    comparison.create_line(
+        10, baseline_y, canvas_width-10, baseline_y,
+        fill="#aaaaaa", dash=(4, 4), width=1
+    )
+    
+    # Draw raw data (noisy)
+    raw_points = []
+    np.random.seed(42)  # For consistent random noise
+    for x in range(10, canvas_width-10, 3):
+        # Create a noisy sine wave
+        noise = np.random.normal(0, 6) if x % 9 != 0 else np.random.normal(0, 2)
+        y = baseline_y - 15 * np.sin((x-10) / 30) + noise
+        raw_points.append(x)
+        raw_points.append(int(y))
+    
+    # Create raw data curve
+    comparison.create_line(raw_points, fill="#FF6B6B", width=1.5, smooth=False)
+    
+    # Draw filtered data (smooth)
+    filtered_points = []
+    for x in range(10, canvas_width-10, 3):
+        # Create a smooth sine wave
+        y = baseline_y - 15 * np.sin((x-10) / 30)
+        filtered_points.append(x)
+        filtered_points.append(int(y))
+    
+    # Create filtered data curve
+    comparison.create_line(filtered_points, fill=app.theme_manager.get_color('primary'), width=2, smooth=True)
+    
+    # Add labels
+    comparison.create_text(
+        30, 15, 
+        text="Filtered: Smoother signal, reduced noise", 
+        fill=app.theme_manager.get_color('primary'), 
+        anchor=tk.W,
+        font=("TkDefaultFont", 8, "bold")
+    )
+    comparison.create_text(
+        30, 30, 
+        text="Raw: Original signal with noise", 
+        fill="#FF6B6B", 
+        anchor=tk.W,
+        font=("TkDefaultFont", 8, "bold")
+    )
+    
+    # Function to update UI based on filter state
+    def update_filter_state(is_filtered):
+        app.filter_enabled.set(is_filtered)
+        
+        # Update button text
+        if is_filtered:
+            process_btn.configure(text="Apply Filtering")
+        else:
+            process_btn.configure(text="Process Raw Data")
+            
+        # Update filtering section visibility
+        if is_filtered:
+            filtering_frame.pack(fill=tk.X, padx=5, pady=5)
+        else:
+            filtering_frame.pack_forget()
+    
+    # Add tooltips for radio buttons
+    app.add_tooltip(
+        filter_radio, 
+        "Apply Butterworth low-pass filter to smooth the signal and reduce noise.\n"
+        "Recommended for most signals to improve peak detection."
+    )
+    app.add_tooltip(
+        raw_radio,
+        "Use raw unprocessed data without any filtering.\n"
+        "Preserves original signal characteristics but may include more noise."
+    )
+    
+    # Create a horizontal separator
+    ttk.Separator(preprocessing_tab, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
+    
+    # Filtering parameters section in its own frame
+    filtering_frame = ttk.LabelFrame(preprocessing_tab, text="Filtering Parameters")
+    
+    # Add explanation text for filtering
+    filter_description = (
+        "Signal filtering uses a Butterworth low-pass filter to remove high-frequency noise while\n"
+        "preserving important signal features. The cutoff frequency determines which frequencies are removed."
+    )
+    ttk.Label(
+        filtering_frame, 
+        text=filter_description,
+        wraplength=380, 
+        justify=tk.LEFT,
+        padding=(5, 5)
+    ).pack(fill=tk.X, padx=5, pady=5)
 
-    # Cutoff Frequency section
+    # Cutoff Frequency section with better layout
     cutoff_frame = ttk.Frame(filtering_frame)
-    cutoff_frame.pack(fill=tk.X, padx=5, pady=2)
+    cutoff_frame.pack(fill=tk.X, padx=5, pady=5)
 
-    ttk.Label(cutoff_frame, text="Cutoff Frequency (Hz)").pack(side=tk.LEFT)
-    cutoff_entry = ttk.Entry(cutoff_frame, textvariable=app.cutoff_value, width=10)
-    cutoff_entry.pack(side=tk.LEFT, padx=5)
+    ttk.Label(
+        cutoff_frame, 
+        text="Cutoff Frequency (Hz):",
+        font=("TkDefaultFont", 10, "bold")
+    ).pack(side=tk.LEFT, padx=(5, 10))
+    
+    cutoff_entry = ttk.Entry(
+        cutoff_frame, 
+        textvariable=app.cutoff_value, 
+        width=8,
+        font=("TkDefaultFont", 10)
+    )
+    cutoff_entry.pack(side=tk.LEFT)
+    
+    ttk.Label(
+        cutoff_frame, 
+        text="Hz",
+        font=("TkDefaultFont", 10)
+    ).pack(side=tk.LEFT, padx=(2, 10))
 
     auto_cutoff_button = ttk.Button(
         cutoff_frame, 
-        text="Auto Calculate", 
+        text="Auto Calculate",
+        style="Accent.TButton", 
         command=app.calculate_auto_cutoff_frequency
     )
     auto_cutoff_button.pack(side=tk.LEFT, padx=5)
-
-    # Parameters for auto calculation
-    auto_params_frame = ttk.LabelFrame(filtering_frame, text="Auto Calculation Parameters")
-    auto_params_frame.pack(fill=tk.X, padx=5, pady=5)
-
-    ttk.Label(auto_params_frame, text="Biggest Peaks").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-    big_counts_entry = ttk.Entry(auto_params_frame, textvariable=app.big_counts)
-    big_counts_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-
-    ttk.Label(auto_params_frame, text="Normalization Factor").grid(row=1, column=0, sticky="w", padx=5, pady=2)
-    norm_entry = ttk.Entry(
-        auto_params_frame, 
-        textvariable=app.normalization_factor,
-        validate='key',
-        validatecommand=(app.register(app.validate_float), '%P')
+    
+    # Help text for cutoff frequency with improved explanation of automatic calculation
+    cutoff_help = ttk.Label(
+        filtering_frame,
+        text="Set to 0 for automatic calculation. Auto-calculation finds the highest signal value and uses 70% of this as a threshold to determine appropriate peak frequency.",
+        wraplength=380,
+        foreground=app.theme_manager.get_color('secondary'),
+        font=("TkDefaultFont", 8),
+        justify=tk.LEFT
     )
-    norm_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+    cutoff_help.pack(fill=tk.X, padx=15, pady=(0, 5))
     
-    # Now that filtering_frame exists, define the toggle state function
-    def update_toggle_state():
-        if app.filter_enabled.get():
-            # Filter is enabled
-            filter_btn.config(**active_style)
-            raw_btn.config(**inactive_style)
-            # Enable filtering options
-            for child in filtering_frame.winfo_children():
-                if hasattr(child, 'state'):
-                    child.state(['!disabled'])
-                elif hasattr(child, 'configure') and 'state' in child.config():
-                    child.configure(state='normal')
-        else:
-            # Filter is disabled
-            filter_btn.config(**inactive_style)
-            raw_btn.config(**active_style)
-            # Disable filtering options
-            for child in filtering_frame.winfo_children():
-                if hasattr(child, 'state'):
-                    child.state(['disabled'])
-                elif hasattr(child, 'configure') and 'state' in child.config():
-                    child.configure(state='disabled')
+    # Add auto-calculation explanation frame with more details
+    auto_calc_explanation = ttk.LabelFrame(filtering_frame, text="Auto-Calculation Method")
+    auto_calc_explanation.pack(fill=tk.X, padx=5, pady=5)
     
-    # Define button click handlers
-    def set_filter_mode():
-        app.filter_enabled.set(True)
-        update_toggle_state()
-        
-    def set_raw_mode():
-        app.filter_enabled.set(False)
-        update_toggle_state()
-    
-    # Configure button commands
-    filter_btn.config(command=set_filter_mode)
-    raw_btn.config(command=set_raw_mode)
-    
-    # Initialize toggle state
-    update_toggle_state()
-    
-    # Add tooltips for the toggle buttons
-    app.add_tooltip(
-        filter_btn, 
-        "Enable signal filtering (Butterworth filter) for noise reduction and smoother signals"
-    )
-    app.add_tooltip(
-        raw_btn,
-        "Use raw data without filtering - preserves original signal characteristics"
+    auto_calc_text = (
+        "The automatic cutoff frequency is calculated by:\n\n"
+        "1. Finding the highest signal value in the data\n"
+        "2. Using 70% of this value as a threshold (30% below maximum)\n"
+        "3. Detecting peaks above this threshold\n"
+        "4. Measuring the average width of these peaks\n"
+        "5. Setting the cutoff frequency based on this width\n\n"
+        "This approach ensures that the filter preserves actual signal peaks while removing noise."
     )
     
-    # Add tooltips for filter controls
+    ttk.Label(
+        auto_calc_explanation,
+        text=auto_calc_text,
+        wraplength=380,
+        justify=tk.LEFT,
+        padding=(5, 5)
+    ).pack(fill=tk.X, padx=5, pady=5)
+
+    # Add enhanced tooltips
     app.add_tooltip(
         cutoff_entry,
-        "Frequency cutoff for the Butterworth low-pass filter (Hz)\nSet to 0 for automatic calculation"
+        "Cutoff frequency for the low-pass filter in Hertz.\n\n"
+        "• Lower values (1-5 Hz): More aggressive filtering, smoother signals\n"
+        "• Medium values (10-50 Hz): Balanced filtering for most data\n"
+        "• Higher values (>100 Hz): Light filtering, preserves most signal details\n\n"
+        "Set to 0 for automatic calculation based on signal characteristics."
     )
 
     app.add_tooltip(
         auto_cutoff_button,
-        "Calculate optimal cutoff frequency based on peak widths"
+        "Automatically calculate the optimal cutoff frequency based on signal characteristics.\n"
+        "The calculation finds the highest peaks in the signal and determines the ideal cutoff frequency."
     )
 
-    app.add_tooltip(
-        big_counts_entry,
-        "Threshold for identifying largest peaks\nUsed for automatic cutoff calculation"
-    )
+    # Show/hide filtering frame based on current mode
+    if app.filter_enabled.get():
+        filtering_frame.pack(fill=tk.X, padx=5, pady=5)
+    else:
+        filtering_frame.pack_forget()
 
-    app.add_tooltip(
-        norm_entry,
-        "Factor for normalizing signal amplitude\nTypically between 0.1 and 10"
-    )
+    # Action Buttons with improved layout
+    action_frame = ttk.LabelFrame(preprocessing_tab, text="Processing Actions")
+    action_frame.pack(fill=tk.X, padx=5, pady=(10, 5))
 
-    # Action Buttons
-    action_frame = ttk.Frame(preprocessing_tab)
-    action_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Button container for better spacing
+    button_container = ttk.Frame(action_frame)
+    button_container.pack(fill=tk.X, padx=5, pady=10)
 
     view_raw_btn = ttk.Button(
-        action_frame,
+        button_container,
         text="View Raw Data",
         command=app.plot_raw_data,
         style="Primary.TButton"
     )
-    view_raw_btn.pack(side=tk.LEFT, padx=5, pady=5)
+    view_raw_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
     process_btn = ttk.Button(
-        action_frame,
-        text="Apply Processing",
+        button_container,
+        text="Apply Filtering" if app.filter_enabled.get() else "Process Raw Data",
         command=app.start_analysis,
         style="Accent.TButton"
     )
-    process_btn.pack(side=tk.LEFT, padx=5, pady=5)
-
-    # Update button text based on filter toggle
-    def update_process_button_text(*args):
-        if app.filter_enabled.get():
-            process_btn.config(text="Apply Filtering")
-        else:
-            process_btn.config(text="Process Raw Data")
-    
-    # Initialize button text and trace variable changes
-    update_process_button_text()
-    app.filter_enabled.trace_add("write", update_process_button_text)
+    process_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
     # Add tooltips for action buttons
     app.add_tooltip(
         view_raw_btn,
-        "Display the original unprocessed data"
+        "Display the original unprocessed data without any filtering"
     )
     
     app.add_tooltip(
         process_btn,
-        "Apply the selected processing mode (filtered or raw) to the data"
+        "Apply the selected processing mode to the data:\n"
+        "• Filtered: Applies Butterworth filter with specified cutoff\n"
+        "• Raw: Processes data without filtering"
     )
-
-    # Configure grid weights
-    auto_params_frame.columnconfigure(1, weight=1)
 
 def create_peak_detection_tab(app, tab_control):
     """Create the peak detection tab"""
     peak_detection_tab = ttk.Frame(tab_control)
     tab_control.add(peak_detection_tab, text="Peak Detection")
 
-    # Peak Parameters Frame
-    peak_params_frame = ttk.LabelFrame(peak_detection_tab, text="Peak Parameters")
-    peak_params_frame.pack(fill=tk.X, padx=5, pady=5)
-
-    # Threshold frame with auto-calculate button
-    row = 0
-    threshold_frame = ttk.Frame(peak_params_frame)
-    threshold_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
-
-    ttk.Label(threshold_frame, text="Counts Threshold").pack(side=tk.LEFT)
-    threshold_entry = ttk.Entry(threshold_frame, textvariable=app.height_lim, width=10)
-    threshold_entry.pack(side=tk.LEFT, padx=5)
-
-    auto_calc_button = ttk.Button(
-        threshold_frame, 
-        text="Auto Calculate", 
-        command=app.calculate_auto_threshold
+    # Create a dedicated Auto Threshold frame with clear explanation
+    auto_threshold_frame = ttk.LabelFrame(peak_detection_tab, text="Automatic Threshold Detection")
+    auto_threshold_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Add description text
+    description_text = (
+        "The automatic threshold is calculated using statistical properties of the signal:\n\n"
+        "Threshold = σ × Standard Deviation of Signal\n\n"
+        "where σ (sigma) controls sensitivity. Higher values make peak detection more selective,\n"
+        "requiring larger peaks to exceed the threshold. Lower values detect more peaks including smaller ones."
     )
-    auto_calc_button.pack(side=tk.LEFT, padx=5)
-
-    # Add tooltip for Auto Calculate button
+    description_label = ttk.Label(
+        auto_threshold_frame, 
+        text=description_text,
+        wraplength=380, 
+        justify=tk.LEFT,
+        padding=(5, 5)
+    )
+    description_label.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Add visual diagram to help explain the concept
+    diagram_frame = ttk.Frame(auto_threshold_frame)
+    diagram_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+    canvas_height = 80
+    canvas_width = 380
+    diagram = tk.Canvas(
+        diagram_frame, 
+        height=canvas_height, 
+        width=canvas_width,
+        bg=app.theme_manager.get_color('card_bg'),
+        highlightthickness=0
+    )
+    diagram.pack()
+    
+    # Draw a sine-like signal to represent data
+    signal_color = app.theme_manager.get_color('primary')
+    baseline_y = canvas_height // 2
+    
+    # Draw signal baseline
+    diagram.create_line(
+        10, baseline_y, canvas_width-10, baseline_y,
+        fill="#aaaaaa", dash=(4, 4), width=1
+    )
+    
+    # Draw signal with peaks
+    points = []
+    for x in range(10, canvas_width-10, 4):
+        # Create a noisy sine wave with some peaks
+        noise = np.random.normal(0, 3)
+        if 100 <= x <= 120 or 220 <= x <= 240 or 300 <= x <= 320:
+            # Add larger peaks at specific x positions
+            y = baseline_y - 25 * np.sin((x-10) / 40) - 10 + noise
+        else:
+            # Regular signal with noise
+            y = baseline_y - 10 * np.sin((x-10) / 20) + noise
+        points.append(x)
+        points.append(int(y))
+    
+    # Create signal curve
+    diagram.create_line(points, fill=signal_color, width=2, smooth=True)
+    
+    # Draw thresholds for different sigma values
+    low_thresh_y = baseline_y - 15
+    med_thresh_y = baseline_y - 25
+    high_thresh_y = baseline_y - 40
+    
+    # Low sigma (e.g., σ=2)
+    diagram.create_line(
+        10, low_thresh_y, canvas_width-10, low_thresh_y,
+        fill="#4CAF50", width=1, dash=(2, 2)
+    )
+    diagram.create_text(
+        20, low_thresh_y-8, 
+        text="σ=2", 
+        fill="#4CAF50", 
+        anchor=tk.W,
+        font=("TkDefaultFont", 8)
+    )
+    
+    # Medium sigma (e.g., σ=5)
+    diagram.create_line(
+        10, med_thresh_y, canvas_width-10, med_thresh_y,
+        fill="#FF9800", width=1, dash=(2, 2)
+    )
+    diagram.create_text(
+        20, med_thresh_y-8, 
+        text="σ=5", 
+        fill="#FF9800", 
+        anchor=tk.W,
+        font=("TkDefaultFont", 8)
+    )
+    
+    # High sigma (e.g., σ=8)
+    diagram.create_line(
+        10, high_thresh_y, canvas_width-10, high_thresh_y,
+        fill="#F44336", width=1, dash=(2, 2)
+    )
+    diagram.create_text(
+        20, high_thresh_y-8, 
+        text="σ=8", 
+        fill="#F44336", 
+        anchor=tk.W,
+        font=("TkDefaultFont", 8)
+    )
+    
+    # Add explanatory caption
+    caption = ttk.Label(
+        diagram_frame,
+        text="Visualization: Lower threshold (green) detects more peaks, higher threshold (red) is more selective.",
+        wraplength=380,
+        justify=tk.CENTER,
+        font=("TkDefaultFont", 8)
+    )
+    caption.pack(pady=(0, 5))
+    
+    # Sigma multiplier slider in its own container
+    sigma_container = ttk.Frame(auto_threshold_frame)
+    sigma_container.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Enhance sigma slider with better layout
+    ttk.Label(
+        sigma_container, 
+        text="Sensitivity (σ):",
+        font=("TkDefaultFont", 10, "bold")
+    ).pack(side=tk.LEFT, padx=5)
+    
+    # Current value display with higher visibility
+    sigma_value_label = ttk.Label(
+        sigma_container, 
+        text=f"{app.sigma_multiplier.get():.1f}",
+        width=4,
+        font=("TkDefaultFont", 10, "bold"),
+        foreground=app.theme_manager.get_color('primary')
+    )
+    sigma_value_label.pack(side=tk.LEFT, padx=5)
+    
+    # Create a container for the slider to allow better styling
+    slider_frame = ttk.Frame(sigma_container)
+    slider_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    # Improved slider with labels for values
+    sigma_slider = tk.Scale(
+        slider_frame, 
+        from_=1.0, 
+        to=10.0, 
+        resolution=0.1,
+        orient=tk.HORIZONTAL,
+        variable=app.sigma_multiplier,
+        length=250,
+        bg=app.theme_manager.get_color('card_bg'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False  # Hide the default value display
+    )
+    sigma_slider.pack(fill=tk.X, expand=True)
+    
+    # Add min/max labels under slider
+    slider_labels = ttk.Frame(slider_frame)
+    slider_labels.pack(fill=tk.X, expand=True)
+    
+    ttk.Label(
+        slider_labels, 
+        text="Lower (1.0)\nMore peaks",
+        font=("TkDefaultFont", 8),
+        justify=tk.LEFT
+    ).pack(side=tk.LEFT)
+    
+    ttk.Label(
+        slider_labels, 
+        text="Higher (10.0)\nFewer peaks",
+        font=("TkDefaultFont", 8),
+        justify=tk.RIGHT
+    ).pack(side=tk.RIGHT)
+    
+    # Update label when slider changes
+    def update_sigma_label(*args):
+        sigma_value_label.config(text=f"{app.sigma_multiplier.get():.1f}")
+    
+    app.sigma_multiplier.trace_add("write", update_sigma_label)
+    
+    # Add buttons container
+    buttons_container = ttk.Frame(auto_threshold_frame)
+    buttons_container.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Current threshold display
+    threshold_display = ttk.Frame(buttons_container)
+    threshold_display.pack(side=tk.LEFT, padx=5)
+    
+    ttk.Label(
+        threshold_display, 
+        text="Current Threshold:",
+        font=("TkDefaultFont", 9)
+    ).pack(side=tk.LEFT)
+    
+    threshold_entry = ttk.Entry(
+        threshold_display, 
+        textvariable=app.height_lim, 
+        width=8,
+        font=("TkDefaultFont", 9, "bold")
+    )
+    threshold_entry.pack(side=tk.LEFT, padx=5)
+    
+    # Calculation button with improved style
+    auto_calc_button = ttk.Button(
+        buttons_container, 
+        text="Calculate Threshold",
+        command=app.calculate_auto_threshold,
+        style="Accent.TButton"
+    )
+    auto_calc_button.pack(side=tk.RIGHT, padx=5)
+    
+    # Add tooltips with detailed explanations
+    app.add_tooltip(
+        sigma_slider,
+        "Adjust sensitivity of peak detection:\n"
+        "• Lower values (1-3): More sensitive, detects smaller peaks\n"
+        "• Medium values (4-6): Balanced detection for most data\n"
+        "• Higher values (7-10): Less sensitive, only detects prominent peaks"
+    )
+    
     app.add_tooltip(
         auto_calc_button,
-        "Automatically calculate optimal threshold based on 5σ (sigma) of the filtered signal"
+        "Calculate threshold based on the current sigma value and signal statistics.\n"
+        "The formula used is: Threshold = σ × Standard Deviation of Signal"
     )
+    
+    app.add_tooltip(
+        threshold_entry,
+        "Current threshold value for peak detection.\n"
+        "You can manually edit this value or use auto-calculation."
+    )
+    
+    # Horizontal separator to visually separate auto threshold from other parameters
+    ttk.Separator(peak_detection_tab, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
+    
+    # Peak Parameters Frame - now separate from auto threshold
+    peak_params_frame = ttk.LabelFrame(peak_detection_tab, text="Manual Peak Detection Parameters")
+    peak_params_frame.pack(fill=tk.X, padx=5, pady=5)
 
     # Other peak parameters
-    row += 1
+    row = 0
     ttk.Label(peak_params_frame, text="Min. Distance Peaks").grid(row=row, column=0, sticky="w", padx=5, pady=2)
     distance_entry = ttk.Entry(peak_params_frame, textvariable=app.distance)
     distance_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=2)
@@ -657,70 +973,78 @@ def create_peak_detection_tab(app, tab_control):
     width_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=2)
 
     # Action Buttons Frame
-    peak_detection_frame = ttk.Frame(peak_detection_tab)
+    peak_detection_frame = ttk.LabelFrame(peak_detection_tab, text="Peak Detection Actions")
     peak_detection_frame.pack(fill=tk.X, padx=5, pady=10)
 
-    ttk.Button(
-        peak_detection_frame, 
-        text="Detect Peaks",
-        command=app.run_peak_detection
-    ).pack(side=tk.LEFT, padx=5)
+    # Create a more visually appealing button layout
+    buttons_frame = ttk.Frame(peak_detection_frame)
+    buttons_frame.pack(fill=tk.X, padx=5, pady=10)
 
-    ttk.Button(
-        peak_detection_frame, 
+    detect_btn = ttk.Button(
+        buttons_frame, 
+        text="Detect Peaks",
+        command=app.run_peak_detection,
+        style="Primary.TButton"
+    )
+    detect_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+
+    view_btn = ttk.Button(
+        buttons_frame, 
         text="View Peaks",
         command=app.plot_filtered_peaks
-    ).pack(side=tk.LEFT, padx=5)
+    )
+    view_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
-    ttk.Button(
-        peak_detection_frame,
+    next_btn = ttk.Button(
+        buttons_frame,
         text="Next Peaks",
         command=app.show_next_peaks
-    ).pack(side=tk.LEFT, padx=5)
-
-    ttk.Button(
-        peak_detection_frame, 
-        text="Quick Save Results",
-        command=app.save_peak_information_to_csv
-    ).pack(side=tk.LEFT, padx=5)
-
-    # Add tooltips
-    app.add_tooltip(
-        peak_detection_frame.winfo_children()[-2],  # Next Peaks button
-        "Show next set of individual peaks"
     )
+    next_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+
+    save_btn = ttk.Button(
+        buttons_frame, 
+        text="Save Results",
+        command=app.save_peak_information_to_csv
+    )
+    save_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
     # Configure grid weights
     peak_params_frame.columnconfigure(1, weight=1)
 
     # Add tooltips for better user guidance
     app.add_tooltip(
-        threshold_entry,
-        "Minimum height threshold for peak detection"
-    )
-    app.add_tooltip(
         distance_entry,
-        "Minimum number of points between peaks"
+        "Minimum number of points between peaks.\n"
+        "Higher values prevent detecting multiple peaks too close together."
     )
     app.add_tooltip(
         rel_height_entry,
-        "Relative height from peak maximum for width calculation (0-1)"
+        "Relative height (0-1) at which peak width is measured.\n"
+        "Example: 0.5 = width at half maximum height, 0.9 = width near peak top"
     )
     app.add_tooltip(
         width_entry,
-        "Expected peak width range in milliseconds (min,max)"
+        "Expected peak width range in milliseconds (min,max).\n"
+        "Example: '1,200' means only keep peaks between 1-200ms wide"
     )
     app.add_tooltip(
-        peak_detection_frame.winfo_children()[0],  # Detect Peaks button
-        "Run peak detection algorithm with current parameters"
+        detect_btn,
+        "Run peak detection algorithm with current parameters.\n"
+        "This will identify peaks based on threshold and other settings."
     )
     app.add_tooltip(
-        peak_detection_frame.winfo_children()[1],  # View Peaks button
-        "Display detailed view of selected individual peaks"
+        view_btn,
+        "Display detailed view of selected individual peaks.\n"
+        "This helps validate your peak detection settings."
     )
     app.add_tooltip(
-        peak_detection_frame.winfo_children()[2],  # Quick Save Results button
-        "Save current peak detection results to CSV file"
+        next_btn,
+        "Navigate to the next set of peaks in the visualization."
+    )
+    app.add_tooltip(
+        save_btn,
+        "Save current peak detection results to CSV file for further analysis."
     )
 
 def create_peak_analysis_tab(app, tab_control):

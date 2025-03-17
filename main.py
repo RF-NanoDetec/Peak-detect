@@ -161,9 +161,7 @@ class Application(tk.Tk):
         self.canvas = None
 
         self.file_path = tk.StringVar()
-        self.normalization_factor = tk.DoubleVar(value=1.0)  # Changed from IntVar for more precise control
         self.start_time = tk.StringVar(value="0:00")
-        self.big_counts = tk.IntVar(value=100)  # Renamed to Biggest Peaks
         self.height_lim = tk.DoubleVar(value=20)
         self.distance = tk.IntVar(value=30)  # Renamed to Min. Distance Peaks
         self.rel_height = tk.DoubleVar(value=0.85)
@@ -171,6 +169,7 @@ class Application(tk.Tk):
         self.time_resolution = tk.DoubleVar(value=1e-4)  # Time resolution factor (default: 0.1ms)
         self.cutoff_value = tk.DoubleVar(value=0)  # Default 0 means auto-detect
         self.filter_enabled = tk.BooleanVar(value=True)  # Toggle for filtering (True=enabled)
+        self.sigma_multiplier = tk.DoubleVar(value=5.0)  # Sigma multiplier for auto threshold detection (1-10)
         self.filtered_signal = None
         self.rect_selector = None
 
@@ -271,11 +270,20 @@ class Application(tk.Tk):
             self.status_indicator.set_text("No data available")
             return None
             
-        # Use the core module function
-        suggested_threshold = calculate_auto_threshold(self.filtered_signal)
+        # Get the current sigma multiplier value from the slider
+        sigma_multiplier = self.sigma_multiplier.get()
+        
+        # Use the core module function with current sigma value
+        suggested_threshold = calculate_auto_threshold(self.filtered_signal, sigma_multiplier=sigma_multiplier)
         
         # Update the UI component
         self.height_lim.set(suggested_threshold)
+        
+        # Update status with the sigma value used
+        self.preview_label.config(
+            text=f"Threshold calculated using {sigma_multiplier:.1f}σ = {suggested_threshold:.2f}",
+            foreground=self.theme_manager.get_color('success')
+        )
         
         # Return the result
         return suggested_threshold
@@ -288,7 +296,10 @@ class Application(tk.Tk):
     def calculate_auto_cutoff_frequency(self):
         """
         Calculate an appropriate cutoff frequency based on signal characteristics.
-        This method uses the same algorithm as in the filtering process when cutoff is set to 0.
+        
+        This method finds the highest signal value and uses 70% of that value as a 
+        threshold for determining the appropriate cutoff frequency. This approach
+        ensures that the filter preserves the most important peaks while removing noise.
         """
         if self.x_value is None:
             self.preview_label.config(
@@ -300,15 +311,9 @@ class Application(tk.Tk):
             return None
         
         try:
-            # Get current parameters and add debug prints
             print("DEBUG: Starting calculate_auto_cutoff_frequency")
-            print(f"DEBUG: time_resolution type: {type(self.time_resolution)}")
-            print(f"DEBUG: Does time_resolution have get method: {hasattr(self.time_resolution, 'get')}")
             
-            big_counts = self.big_counts.get()
-            norm_factor = self.normalization_factor.get()
-            
-            # Ensure time_resolution is properly handled
+            # Get time resolution
             try:
                 time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
                 print(f"DEBUG: Successfully retrieved time_resolution: {time_res}")
@@ -317,26 +322,41 @@ class Application(tk.Tk):
                 print(f"DEBUG: Falling back to default value 0.0001")
                 time_res = 0.0001  # Default fallback value
             
-            # Calculate sampling rate using time resolution
+            # Calculate sampling rate
             fs = 1 / time_res
             print(f"DEBUG: Calculated sampling rate (fs): {fs} Hz from time_res: {time_res}")
             
-            # Use calculate_lowpass_cutoff to get the cutoff frequency
-            print("DEBUG: Calling calculate_lowpass_cutoff with parameters:")
-            print(f"DEBUG: signal length: {len(self.x_value)}, fs: {fs}, big_counts: {big_counts}, norm_factor: {norm_factor}, time_resolution: {time_res}")
+            # Find the highest signal value and calculate 70% threshold
+            signal_max = np.max(self.x_value)
+            threshold = signal_max * 0.7  # 70% of max value (30% below max)
+            print(f"DEBUG: Maximum signal value: {signal_max}")
+            print(f"DEBUG: Using 70% threshold: {threshold}")
             
-            suggested_cutoff = calculate_lowpass_cutoff(
-                self.x_value, fs, big_counts, norm_factor, time_resolution=time_res
-            )
+            # Detect peaks above the 70% threshold to measure their widths
+            from scipy.signal import find_peaks
+            peaks, _ = find_peaks(self.x_value, height=threshold)
             
-            print(f"DEBUG: Received suggested_cutoff: {suggested_cutoff}")
+            if len(peaks) == 0:
+                print("DEBUG: No peaks found above 70% threshold, using default cutoff")
+                suggested_cutoff = 10.0  # Default cutoff if no peaks found
+            else:
+                print(f"DEBUG: Found {len(peaks)} peaks above 70% threshold")
+                
+                # Use the existing core functions but with our calculated threshold
+                # instead of the big_counts and normalization_factor parameters
+                from core.peak_analysis_utils import calculate_lowpass_cutoff
+                suggested_cutoff = calculate_lowpass_cutoff(
+                    self.x_value, fs, threshold, 1.0, time_resolution=time_res
+                )
+            
+            print(f"DEBUG: Calculated cutoff frequency: {suggested_cutoff} Hz")
             
             # Update the cutoff value in GUI
             self.cutoff_value.set(suggested_cutoff)
             
             # Custom success message with the calculated value
             self.preview_label.config(
-                text=f"Cutoff frequency set to {suggested_cutoff:.1f} Hz",
+                text=f"Cutoff frequency set to {suggested_cutoff:.1f} Hz (using 70% of max signal)",
                 foreground=self.theme_manager.get_color('success')
             )
             
@@ -719,6 +739,20 @@ class Application(tk.Tk):
                     background=self.theme_manager.get_color('background')
                 )
         
+        # Update visual elements on all tabs
+        for tab in self.tab_control.winfo_children():
+            if isinstance(tab, ttk.Frame):
+                # Search for visual elements that need theme updates
+                for frame in tab.winfo_children():
+                    if isinstance(frame, ttk.LabelFrame):
+                        # Look for canvas elements (diagrams)
+                        self._update_frame_theme_elements(frame)
+                        
+                        # Also look in child frames
+                        for child in frame.winfo_children():
+                            if isinstance(child, ttk.Frame):
+                                self._update_frame_theme_elements(child)
+        
         # Update all existing figures to match the new theme
         for tab_name, figure in self.tab_figures.items():
             if figure:
@@ -754,6 +788,43 @@ class Application(tk.Tk):
         )
         
         return new_theme
+        
+    def _update_frame_theme_elements(self, frame):
+        """Helper method to update theme-aware elements within a frame"""
+        # Update canvases
+        for widget in frame.winfo_children():
+            if isinstance(widget, tk.Canvas):
+                widget.config(bg=self.theme_manager.get_color('card_bg'))
+                
+                # Try to find and update texts with primary color
+                for item_id in widget.find_all():
+                    if widget.type(item_id) == "text":
+                        # Check if this is a label for filtered data
+                        text = widget.itemcget(item_id, "text")
+                        if "Filtered:" in text:
+                            widget.itemconfig(item_id, fill=self.theme_manager.get_color('primary'))
+                        
+                    # Update line colors for filtered data
+                    if widget.type(item_id) == "line":
+                        # Get the current color
+                        fill = widget.itemcget(item_id, "fill")
+                        # If it's the primary color, update it
+                        if fill == "#4285f4" or fill == "#3949ab" or fill.lower() == "#3f51b5":  # Common primary colors
+                            widget.itemconfig(item_id, fill=self.theme_manager.get_color('primary'))
+            
+            # Update Scale widgets
+            elif isinstance(widget, tk.Scale):
+                widget.config(
+                    bg=self.theme_manager.get_color('card_bg'),
+                    fg=self.theme_manager.get_color('text'),
+                    troughcolor=self.theme_manager.get_color('background')
+                )
+                
+            # Update color indicators
+            elif isinstance(widget, ttk.Label) and widget.cget("text").strip() == "":
+                if widget.cget("background") == self.theme_manager.colors['light']['primary'] or \
+                   widget.cget("background") == self.theme_manager.colors['dark']['primary']:
+                    widget.config(background=self.theme_manager.get_color('primary'))
 
 # Your main program code goes here
 
