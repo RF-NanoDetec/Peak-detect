@@ -14,7 +14,7 @@ import tkinter as tk
 from tkinter import ttk
 
 # Import utilities from reorganized structure
-from utils.performance import profile_function as profile_func
+from core.performance import profile_function as profile_func
 
 def plot_raw_data(app, profiler=None):
     """
@@ -28,9 +28,8 @@ def plot_raw_data(app, profiler=None):
     -----------
     app : Application instance
         The main application instance containing necessary attributes and methods
-    profiler : decorator, optional
-        Performance profiling decorator if available. If None, will use
-        the default profiler from utils.performance
+    profiler : function, optional
+        Profiling decorator, defaults to the default profiler from core.performance
         
     Returns:
     --------

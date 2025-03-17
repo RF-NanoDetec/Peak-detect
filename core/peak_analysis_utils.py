@@ -27,8 +27,8 @@ import psutil
 from numba import njit
 from scipy.signal import find_peaks, butter, filtfilt, peak_widths
 
-# Import profiling utilities from the utils package
-from utils.performance import profile_function, get_memory_usage
+# Import profiling utilities from the performance module
+from core.performance import profile_function, get_memory_usage
 
 # Set default seaborn style
 sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
@@ -171,22 +171,22 @@ def binary_search_nearest(array, value):
         return high
 
 # Convert timestamps to seconds
-@njit
-def timestamps_to_seconds(timestamps, start_time):
+def timestamps_array_to_seconds(timestamps, start_time):
     """
-    Convert timestamps to seconds elapsed from the start time.
+    Convert an array of timestamps to seconds elapsed from the start time.
     
-    This function is optimized with Numba for faster execution.
+    This function works on arrays of timestamps.
+    For converting a single timestamp, use timestamps_to_seconds from data_utils.
     
     Parameters:
-        timestamps (numpy.ndarray): Array of timestamps
-        start_time (float): Reference start time
+        timestamps (list or numpy.ndarray): Array of timestamps in "MM:SS" format
+        start_time (str): Reference start time in "MM:SS" format
         
     Returns:
-        numpy.ndarray: Array of elapsed seconds from start_time
+        list: Array of elapsed seconds from start_time
         
     Example:
-        >>> time_in_seconds = timestamps_to_seconds(raw_timestamps, raw_timestamps[0])
+        >>> time_in_seconds = timestamps_array_to_seconds(raw_timestamps, raw_timestamps[0])
     """
     try:
         seconds = []
@@ -199,6 +199,8 @@ def timestamps_to_seconds(timestamps, start_time):
             
         return seconds
     except Exception as e:
+        print(f"Error in timestamps_array_to_seconds: {e}")
+        print(f"Timestamps: {timestamps}, Start time: {start_time}")
         raise ValueError(f"Error converting timestamps: {e}\n"
                         f"Format should be 'MM:SS' (e.g., '01:30')")
 

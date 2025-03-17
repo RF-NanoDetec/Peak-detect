@@ -206,10 +206,11 @@ class PeakDetector:
         
         Parameters:
             time_values (numpy.ndarray): Time values corresponding to the signal
-            interval (float, optional): Time interval for grouping peaks.
-                Defaults to 10 seconds.
+            interval (float, optional): Not used in new implementation.
+                Kept for backwards compatibility.
                 
         Returns:
+            numpy.ndarray: Array of peak times
             numpy.ndarray: Array of time intervals between consecutive peaks
             
         Notes:
@@ -223,29 +224,21 @@ class PeakDetector:
             # Get time values at peak positions
             peak_times = time_values[self.peaks_indices]
             
-            # Create position array
-            position = np.arange(1, int(max(time_values)), interval)
-            points = len(position)
+            # Calculate intervals between consecutive peaks
+            # First interval is the time to first peak
+            peaks_interval = np.zeros_like(peak_times)
+            peaks_interval[0] = peak_times[0]
             
-            # Initialize arrays for results
-            peaks = np.zeros(points)
-            peaks_interval = np.zeros(points)
-            
-            # Calculate peaks and intervals
-            for i, pos in enumerate(position):
-                peaks[i] = find_nearest(peak_times, pos)
-                
-                if i == 0:
-                    peaks_interval[i] = peaks[i]
-                else:
-                    peaks_interval[i] = peaks[i] - peaks[i - 1]
+            # Remaining intervals are differences between consecutive peaks
+            if len(peak_times) > 1:
+                peaks_interval[1:] = np.diff(peak_times)
             
             # Store results
             self.peaks_properties['intervals'] = peaks_interval
             
-            self.logger.info(f"Calculated {points} peak intervals")
+            self.logger.info(f"Calculated {len(peaks_interval)} peak intervals")
             
-            return peaks, peaks_interval
+            return peak_times, peaks_interval
             
         except Exception as e:
             error_msg = f"Error calculating peak intervals: {str(e)}"
@@ -261,17 +254,18 @@ class PeakDetector:
         
         Parameters:
             time_values (numpy.ndarray): Time values corresponding to the signal
-            protocol_info (dict, optional): Additional protocol information to include
-                in the DataFrame. Defaults to None.
+            protocol_info (dict, optional): Additional information to include
+                in the DataFrame, such as sample information, experimental
+                conditions, etc.
                 
         Returns:
-            pandas.DataFrame: DataFrame containing peak information with columns:
-                - 'Peak Index': Index of the peak in the original signal
-                - 'Time (s)': Time of the peak occurrence
-                - 'Height': Peak height
-                - 'Width': Peak width at half-height
-                - 'Area': Area under the peak
-                - 'Interval': Time since previous peak
+            pandas.DataFrame: DataFrame containing:
+                - Peak Index: Index of each peak in the original signal
+                - Time (s): Time position of each peak
+                - Height: Peak height/prominence
+                - Width: Peak width at half maximum (in ms)
+                - Area: Integrated area under each peak
+                - Interval: Time interval between consecutive peaks
                 - Additional columns from protocol_info if provided
                 
         Raises:
@@ -280,7 +274,23 @@ class PeakDetector:
         if self.peaks_indices is None or self.peaks_properties is None or self.peaks_properties.get('areas') is None:
             raise ValueError("Missing peak data. Ensure detect_peaks and calculate_peak_areas have been run.")
         
+        if self.peaks_properties.get('intervals') is None:
+            raise ValueError("Missing interval data. Ensure calculate_peak_intervals has been run.")
+        
         try:
+            # Check if all arrays have the same length
+            expected_length = len(self.peaks_indices)
+            
+            # Validate array lengths
+            props_to_check = ['prominences', 'widths', 'areas', 'intervals']
+            for prop in props_to_check:
+                if prop in self.peaks_properties:
+                    actual_length = len(self.peaks_properties[prop])
+                    if actual_length != expected_length:
+                        error_msg = f"Array length mismatch: {prop} has length {actual_length}, expected {expected_length}"
+                        self.logger.error(error_msg)
+                        raise ValueError(error_msg)
+            
             # Create basic DataFrame with peak measurements
             results_df = pd.DataFrame({
                 "Peak Index": self.peaks_indices,

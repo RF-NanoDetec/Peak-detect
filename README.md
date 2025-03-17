@@ -41,7 +41,7 @@ A robust Python application for scientific peak analysis in time series data. De
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/peak-analysis-tool.git
+   git clone https://github.com/RF-NanoDetec/Peak-detect.git
    cd peak-analysis-tool
    ```
 

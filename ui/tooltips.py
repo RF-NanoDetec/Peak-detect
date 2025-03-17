@@ -224,4 +224,76 @@ def create_tooltip(widget, text, **kwargs):
     EnhancedTooltip
         The created tooltip instance
     """
-    return EnhancedTooltip(widget, text, **kwargs) 
+    return EnhancedTooltip(widget, text, **kwargs)
+
+def setup_tooltips(app):
+    """
+    Set up tooltips for the application's widgets.
+    
+    This function adds tooltips to all the important UI elements
+    in the application to provide guidance to users.
+    
+    Parameters
+    ----------
+    app : Application
+        The main application instance
+    
+    Returns
+    -------
+    None
+    """
+    # Control panel tooltips
+    if hasattr(app, 'normalization_factor_entry'):
+        create_tooltip(app.normalization_factor_entry, "Scaling factor for normalization")
+    
+    if hasattr(app, 'start_time_entry'):
+        create_tooltip(app.start_time_entry, "Starting time in MM:SS format")
+    
+    if hasattr(app, 'big_counts_entry'):
+        create_tooltip(app.big_counts_entry, "Number of largest peaks to consider")
+    
+    if hasattr(app, 'height_lim_entry'):
+        create_tooltip(app.height_lim_entry, "Minimum height threshold for peak detection")
+    
+    if hasattr(app, 'distance_entry'):
+        create_tooltip(app.distance_entry, "Minimum distance between peaks (in samples)")
+    
+    if hasattr(app, 'rel_height_entry'):
+        create_tooltip(app.rel_height_entry, "Relative height for width calculation (0-1)")
+    
+    if hasattr(app, 'width_p_entry'):
+        create_tooltip(app.width_p_entry, "Width range for peak filtering (min,max)")
+    
+    if hasattr(app, 'cutoff_value_entry'):
+        create_tooltip(app.cutoff_value_entry, "Cutoff frequency for signal filtering")
+    
+    # Button tooltips
+    if hasattr(app, 'browse_button'):
+        create_tooltip(app.browse_button, "Browse and load data files")
+    
+    if hasattr(app, 'plot_raw_button'):
+        create_tooltip(app.plot_raw_button, "Plot the raw, unprocessed data")
+    
+    if hasattr(app, 'start_analysis_button'):
+        create_tooltip(app.start_analysis_button, "Start data analysis with current settings")
+    
+    if hasattr(app, 'run_peak_detection_button'):
+        create_tooltip(app.run_peak_detection_button, "Detect peaks using current parameters")
+    
+    if hasattr(app, 'show_next_peaks_button'):
+        create_tooltip(app.show_next_peaks_button, "Show next segment of detected peaks")
+    
+    if hasattr(app, 'plot_data_button'):
+        create_tooltip(app.plot_data_button, "Create data visualization plot")
+    
+    if hasattr(app, 'plot_scatter_button'):
+        create_tooltip(app.plot_scatter_button, "Create scatter plot of peak properties")
+    
+    if hasattr(app, 'export_plot_button'):
+        create_tooltip(app.export_plot_button, "Export current plot as image file")
+    
+    if hasattr(app, 'save_csv_button'):
+        create_tooltip(app.save_csv_button, "Save peak information to CSV file")
+    
+    if hasattr(app, 'reset_button'):
+        create_tooltip(app.reset_button, "Reset application to initial state") 

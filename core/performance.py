@@ -8,7 +8,11 @@ performance optimization.
 import os
 import time
 import psutil
+import logging
 from functools import wraps
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 def profile_function(func):
     """
@@ -39,6 +43,7 @@ def profile_function(func):
         except Exception as e:
             end_time = time.time()
             elapsed_time = end_time - start_time
+            logger.error(f"ERROR in {func.__name__}: {str(e)} (took {elapsed_time:.2f} seconds)")
             print(f"ERROR in {func.__name__}: {str(e)} (took {elapsed_time:.2f} seconds)")
             raise
         
@@ -51,6 +56,7 @@ def profile_function(func):
         memory_diff = memory_after - memory_before
         
         # Print profiling information
+        logger.debug(f"{func.__name__} took {elapsed_time:.2f} seconds and used {memory_diff:.1f} MB of memory")
         print(f"DEBUG: {func.__name__} took {elapsed_time:.2f} seconds and used {memory_diff:.1f} MB of memory")
         
         return result

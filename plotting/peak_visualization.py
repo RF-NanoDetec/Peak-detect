@@ -48,45 +48,35 @@ def run_peak_detection(app, profile_function=None):
         height_lim_factor = app.height_lim.get()
         distance = app.distance.get()
         rel_height = app.rel_height.get()
-        width_p = [int(float(x) * 10) for x in app.width_p.get().split(',')]
+        width_values = app.width_p.get().strip().split(',')
 
         # Update progress
         app.update_progress_bar(1)
 
-        # Find peaks
-        peaks_x_filter, amp_x_filter = find_peaks_with_window(
+        # Reset PeakDetector
+        app.peak_detector.reset()
+        
+        # Use PeakDetector instance to detect peaks
+        app.peak_detector.detect_peaks(
             app.filtered_signal,
-            width=width_p,
-            prominence=height_lim_factor,
-            distance=distance,
-            rel_height=rel_height
+            app.t_value,
+            height_lim_factor,
+            distance,
+            rel_height,
+            width_values
         )
+        
+        # Calculate peak areas using the PeakDetector
+        peak_areas, start_indices, end_indices = app.peak_detector.calculate_peak_areas(app.filtered_signal)
+        
+        # Get detected peaks
+        peaks_x_filter = app.peak_detector.peaks_indices
+        amp_x_filter = app.peak_detector.peaks_properties
 
         # Check if any peaks were found
         if len(peaks_x_filter) == 0:
             app.show_error("No peaks found with current parameters. Try adjusting threshold or width range.")
             return
-
-        # Calculate peak areas
-        window = np.round(amp_x_filter['widths'], 0).astype(int) + 40
-        peak_areas = np.zeros(len(peaks_x_filter))
-        start_indices = np.zeros(len(peaks_x_filter))
-        end_indices = np.zeros(len(peaks_x_filter))
-
-        for i in range(len(peaks_x_filter)):
-            # Get window indices
-            start_idx = max(0, peaks_x_filter[i] - window[i])
-            end_idx = min(len(app.filtered_signal), peaks_x_filter[i] + window[i])
-
-            yData = app.filtered_signal[start_idx:end_idx]
-            background = np.min(yData)
-
-            st = int(amp_x_filter["left_ips"][i])
-            en = int(amp_x_filter["right_ips"][i])
-
-            start_indices[i] = st
-            end_indices[i] = en
-            peak_areas[i] = np.sum(app.filtered_signal[st:en] - background)
 
         # Update progress
         app.update_progress_bar(2)
@@ -119,22 +109,32 @@ def run_peak_detection(app, profile_function=None):
             f"Average interval: {mean_interval:.2f} ± {std_interval:.2f} seconds\n"
             f"Peak detection threshold: {height_lim_factor}"
         )
-        app.update_results_summary(summary_text)
 
-        # Update canvas
-        app.canvas.draw_idle()
+        app.update_results_summary(events=len(peaks_x_filter), peak_areas=peak_areas, preview_text=summary_text)
 
-        # Final progress update
+        # Set or update app.peaks property for use in other functions
+        app.peaks = peaks_x_filter
+        app.peak_heights = amp_x_filter['prominences']
+        app.peak_widths = amp_x_filter['widths']
+
+        # Update figure
+        app.canvas.draw()
+
+        # Update progress and status
         app.update_progress_bar(3)
+        app.status_indicator.set_state('success')
+        app.status_indicator.set_text(f"Peak detection completed, found {len(peaks_x_filter)} peaks")
 
-        app.preview_label.config(
-            text=f"Peak detection completed: {len(peaks_x_filter)} peaks detected",
-            foreground="green"
-        )
+        # Return peaks data
+        return peaks_x_filter, amp_x_filter, peak_areas
 
     except Exception as e:
-        app.show_error("Error during peak detection", e)
-        app.update_progress_bar(0)  # Reset on error
+        # Show error in status and provide traceback
+        error_msg = str(e)
+        app.status_indicator.set_state('error')
+        app.status_indicator.set_text(f"Error: {error_msg}")
+        app.show_error("Peak Detection Error", traceback.format_exc())
+        return None
 
 
 def plot_filtered_peaks(app, profile_function=None):

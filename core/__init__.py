@@ -1,13 +1,37 @@
 """
-Core functionality for the Peak Analysis Tool.
+Core modules for the Peak Analysis Tool.
 
-This package contains the essential analysis and processing algorithms:
-- peak_detection: Peak detection algorithms and filtering
-- peak_analysis_utils: Utility functions for peak analysis
-- data_processing: Core data processing functions
+These modules provide the fundamental data processing, analysis, 
+and manipulation capabilities for the application.
 """
 
+# Import main functionality from modules
+from core.peak_detection import PeakDetector
+from core.file_handler import browse_files
+from core.peak_analysis_utils import find_peaks_with_window, adjust_lowpass_cutoff, timestamps_array_to_seconds
+
+# Import new refactored modules
+from core.data_analysis import (
+    calculate_peak_areas, 
+    calculate_peak_intervals, 
+    calculate_auto_threshold, 
+    calculate_auto_cutoff_frequency
+)
+from core.data_utils import (
+    decimate_for_plot, 
+    get_width_range, 
+    reset_application_state,
+    find_nearest,
+    timestamps_to_seconds
+)
+from core.file_export import (
+    export_plot,
+    save_peak_information_to_csv
+)
+from core.performance import (
+    profile_function,
+    get_memory_usage
+)
+
 # These imports will be uncommented as we move the modules
-from .peak_detection import PeakDetector, calculate_auto_threshold
-from .peak_analysis_utils import profile_function, find_peaks_with_window, find_nearest, timestamps_to_seconds, get_memory_usage, adjust_lowpass_cutoff
 # from .peak_analysis_utils import * 
