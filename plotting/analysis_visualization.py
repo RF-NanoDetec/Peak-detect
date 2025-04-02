@@ -116,21 +116,21 @@ def plot_data(app, profile_function=None):
         axes[0].set_ylabel('Peak Heights')
         axes[0].grid(True, alpha=0.3)
         axes[0].legend(fontsize=8)
-        axes[0].set_yscale('log')
+        axes[0].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
         # Plot peak widths
         axes[1].scatter(peak_times/60, widths_in_ms, s=1, alpha=0.5, color='black', label='Peak Widths (ms)')
         axes[1].set_ylabel('Peak Widths (ms)')
         axes[1].grid(True, alpha=0.3)
         axes[1].legend(fontsize=8)
-        axes[1].set_yscale('log')
+        axes[1].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
         # Plot peak areas
         axes[2].scatter(peak_times/60, areas, s=1, alpha=0.5, color='black', label='Peak Areas')
         axes[2].set_ylabel('Peak Areas')
         axes[2].grid(True, alpha=0.3)
         axes[2].legend(fontsize=8)
-        axes[2].set_yscale('log')
+        axes[2].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
         # Calculate and plot throughput
         interval = 10  # seconds

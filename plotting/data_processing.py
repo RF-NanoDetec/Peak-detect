@@ -47,6 +47,7 @@ def start_analysis(app, profile_function=None):
                 print(f"\n--> Using manual cutoff frequency: {current_cutoff} Hz")
                 app.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', app.fs, x)
                 calculated_cutoff = current_cutoff
+                app.filter_bandwidth.set(calculated_cutoff)  # Store manual cutoff
             else:
                 print(f"\n--> Auto-calculating cutoff frequency")
                 
@@ -63,6 +64,7 @@ def start_analysis(app, profile_function=None):
                     print("DEBUG: No peaks found above 70% threshold, using default cutoff")
                     calculated_cutoff = 10.0  # Default cutoff if no peaks found
                     app.filtered_signal = apply_butterworth_filter(2, calculated_cutoff, 'lowpass', app.fs, x)
+                    app.filter_bandwidth.set(calculated_cutoff)  # Store default cutoff
                 else:
                     print(f"DEBUG: Found {len(peaks)} peaks above 70% threshold")
                     
@@ -74,6 +76,7 @@ def start_analysis(app, profile_function=None):
                         x, app.fs, threshold, 1.0, time_resolution=time_res
                     )
                     print(f"--> Auto-calculated cutoff frequency: {calculated_cutoff:.2f} Hz")
+                    app.filter_bandwidth.set(calculated_cutoff)  # Store auto-calculated cutoff
                 
                 app.cutoff_value.set(calculated_cutoff)
         else:

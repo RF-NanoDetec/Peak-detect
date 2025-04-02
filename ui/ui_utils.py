@@ -864,72 +864,29 @@ def take_screenshot_with_ui(app):
 
 def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
     """
-    Update the results summary with integrated UI handling.
-    
-    This function directly integrates UI updates, eliminating the need
-    for a separate wrapper method in the Application class.
-    
-    Parameters
-    ----------
-    app : Application
-        The main application instance with UI elements and state
-    events : int, optional
-        Number of detected peaks
-    max_amp : float, optional
-        Maximum peak amplitude
-    peak_areas : list, optional
-        List of peak areas
-    peak_intervals : list, optional
-        List of peak intervals
-    preview_text : str, optional
-        Text to display in the preview section
-        
-    Returns
-    -------
-    bool
-        True if the update was successful, False otherwise
+    Update the results summary text widget with analysis results.
+    This is a UI wrapper around the core update_results_summary function.
     """
     try:
-        # UI pre-processing: Update status (only if doing substantial updates)
-        if events is not None or max_amp is not None or peak_areas is not None:
-            app.status_indicator.set_state('processing')
-            app.status_indicator.set_text("Updating results summary...")
-            app.update_idletasks()
-        
-        # Call the core function to update results
-        update_results_summary(app, events, max_amp, peak_areas, peak_intervals, preview_text)
-        
-        # UI post-processing: Update status with success (only for substantial updates)
-        if events is not None or max_amp is not None or peak_areas is not None:
-            app.status_indicator.set_state('success')
-            app.status_indicator.set_text("Results summary updated")
-            
-            # Update preview label
-            app.preview_label.config(
-                text="Results summary updated",
-                foreground=app.theme_manager.get_color('success')
-            )
+        # Only update preview label if it exists
+        if hasattr(app, 'preview_label'):
+            if preview_text:
+                app.preview_label.config(text=preview_text, foreground=app.theme_manager.get_color('success'))
+            elif events is not None:
+                app.preview_label.config(
+                    text=f"Found {events} peaks",
+                    foreground=app.theme_manager.get_color('success')
+                )
+            elif peak_areas is not None:
+                app.preview_label.config(
+                    text=f"Calculated peak areas",
+                    foreground=app.theme_manager.get_color('success')
+                )
         
         return True
-        
     except Exception as e:
-        # Handle errors
-        logger.error(f"Error updating results summary: {str(e)}\n{traceback.format_exc()}")
-        
-        # Update UI with error info
-        app.status_indicator.set_state('error')
-        app.status_indicator.set_text("Error updating results summary")
-        
-        # Show error dialog
-        show_error(app, "Error updating results summary", e)
-        
-        # Update preview label
-        app.preview_label.config(
-            text=f"Error updating results summary: {str(e)}",
-            foreground=app.theme_manager.get_color('error')
-        )
-        
-        return False 
+        app.show_error("Error updating results summary", str(e))
+        return False
 
 def validate_float_with_ui(app, value):
     """

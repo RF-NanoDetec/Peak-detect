@@ -323,8 +323,14 @@ def browse_files_with_ui(app, time_resolution=1e-4):
         # Store data in app
         app.t_value = t_value
         app.x_value = x_value
-        app.data = data
+        app.data = data  # This is critical for plot_raw_data to work
         app.loaded_files = loaded_files
+        
+        # Debugging: check if data was properly set
+        if not hasattr(app, 'data') or app.data is None:
+            print("WARNING: app.data is not properly set!")
+        else:
+            print(f"Data successfully set with {len(app.data)} rows")
         
         # Store the resolution used - but don't overwrite the Tkinter variable
         if hasattr(app.time_resolution, 'set'):
@@ -341,8 +347,13 @@ def browse_files_with_ui(app, time_resolution=1e-4):
         if hasattr(app, 'consolidate_memory'):
             app.consolidate_memory()
         
+        # Check if double peak analysis is enabled
+        if hasattr(app, 'double_peak_analysis') and app.double_peak_analysis.get() == "1":
+            app.status_indicator.set_state('info')
+            app.status_indicator.set_text("Double Peak Analysis Mode Active")
+        
         return result
         
     except Exception as e:
-        app.show_error("Error browsing files", e)
+        app.show_error("Error loading files", e)
         return None, None, None, [] 

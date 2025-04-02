@@ -85,6 +85,11 @@ from plotting.peak_visualization import plot_filtered_peaks as plot_filtered_pea
 from plotting.peak_visualization import show_next_peaks as show_next_peaks_function
 from plotting.analysis_visualization import plot_data as plot_data_function
 from plotting.analysis_visualization import plot_scatter as plot_scatter_function
+from plotting.double_peak_analysis import (
+    analyze_double_peaks as analyze_double_peaks_function,
+    show_next_double_peaks_page as show_next_double_peaks_page_function,
+    show_prev_double_peaks_page as show_prev_double_peaks_page_function
+)
 
 # Set default seaborn style
 sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
@@ -163,13 +168,14 @@ class Application(tk.Tk):
         self.file_path = tk.StringVar()
         self.start_time = tk.StringVar(value="0:00")
         self.height_lim = tk.DoubleVar(value=20)
-        self.distance = tk.IntVar(value=30)  # Renamed to Min. Distance Peaks
-        self.rel_height = tk.DoubleVar(value=0.85)
-        self.width_p = tk.StringVar(value="1,200")
+        self.distance = tk.IntVar(value=5)  # Default value for minimum distance between peaks
+        self.rel_height = tk.DoubleVar(value=0.8)  # Default value for relative height
+        self.width_p = tk.StringVar(value="0.1,50")  # Default value for width range
         self.time_resolution = tk.DoubleVar(value=1e-4)  # Time resolution factor (default: 0.1ms)
         self.cutoff_value = tk.DoubleVar(value=0)  # Default 0 means auto-detect
         self.filter_enabled = tk.BooleanVar(value=True)  # Toggle for filtering (True=enabled)
         self.sigma_multiplier = tk.DoubleVar(value=5.0)  # Sigma multiplier for auto threshold detection (1-10)
+        self.filter_bandwidth = tk.DoubleVar(value=0)  # Store the current filter bandwidth
         self.filtered_signal = None
         self.rect_selector = None
 
@@ -185,6 +191,24 @@ class Application(tk.Tk):
         # Add file mode selection
         self.file_mode = tk.StringVar(value="single")
         self.batch_timestamps = tk.StringVar()
+        
+        # Add double peak analysis toggle
+        self.double_peak_analysis = tk.StringVar(value="0")  # "0" for normal, "1" for double peak
+
+        # Add double peak analysis parameters
+        self.double_peak_min_distance = tk.DoubleVar(value=0.001)  # 1 ms
+        self.double_peak_max_distance = tk.DoubleVar(value=0.010)  # 10 ms
+        self.double_peak_min_amp_ratio = tk.DoubleVar(value=0.1)   # 10%
+        self.double_peak_max_amp_ratio = tk.DoubleVar(value=5.0)   # 500%
+        self.double_peak_min_width_ratio = tk.DoubleVar(value=0.1) # 10%
+        self.double_peak_max_width_ratio = tk.DoubleVar(value=5.0) # 500%
+        
+        # Add scale mode tracking
+        self.log_scale_enabled = tk.BooleanVar(value=True)  # True for logarithmic, False for linear
+        
+        # Variables for double peak analysis results
+        self.double_peaks = None
+        self.current_double_peak_page = 0
 
         # Add loaded files tracking
         self.loaded_files = []
@@ -442,6 +466,11 @@ class Application(tk.Tk):
         """
         time_res = self.time_resolution.get()
         print(f"Using time resolution: {time_res}")
+        
+        # Update status if double peak analysis is enabled
+        if self.double_peak_analysis.get() == "1":
+            self.status_indicator.set_text("Double Peak Analysis Mode Enabled")
+            
         return browse_files_with_ui(self, time_resolution=time_res)
 
     @ui_action(
@@ -530,16 +559,223 @@ class Application(tk.Tk):
         return plot_data_function(self, profile_function=profile_function)
         
     @ui_action(
-        processing_message="Creating scatter plots...",
-        success_message="Scatter plots created successfully",
-        error_message="Error creating scatter plots"
+        processing_message="Generating scatter plot...",
+        success_message="Scatter plot created successfully",
+        error_message="Error creating scatter plot"
     )
     def plot_scatter(self):
         """
-        Create scatter plots for peak analysis visualization.
+        Generate scatter plots of peak properties.
         This is a UI wrapper around the plotting.analysis_visualization.plot_scatter function.
         """
         return plot_scatter_function(self, profile_function=profile_function)
+        
+    @ui_action(
+        processing_message="Analyzing double peaks...",
+        success_message="Double peak analysis completed",
+        error_message="Error analyzing double peaks"
+    )
+    def analyze_double_peaks(self):
+        """
+        Analyze double peaks and create visualizations.
+        This is a UI wrapper around the plotting.double_peak_analysis.analyze_double_peaks function.
+        """
+        double_peaks, figures = analyze_double_peaks_function(self, profile_function=profile_function)
+        
+        if double_peaks and figures:
+            # Unpack figures
+            selection_figure, grid_figure = figures
+            
+            # Create or update the tab for double peak selection
+            selection_tab_name = "Double Peak Selection"
+            selection_tab_exists = False
+            
+            for tab in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab, "text") == selection_tab_name:
+                    self.plot_tab_control.forget(tab)
+                    selection_tab_exists = True
+                    break
+            
+            selection_tab = ttk.Frame(self.plot_tab_control)
+            self.plot_tab_control.add(selection_tab, text=selection_tab_name)
+            
+            # Create canvas in the tab
+            selection_canvas = FigureCanvasTkAgg(selection_figure, selection_tab)
+            selection_canvas.draw()
+            selection_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            
+            # Store the figure
+            self.tab_figures[selection_tab_name] = selection_figure
+            
+            # Create or update the tab for double peak grid
+            grid_tab_name = "Double Peak Grid"
+            grid_tab_exists = False
+            
+            for tab in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
+                    self.plot_tab_control.forget(tab)
+                    grid_tab_exists = True
+                    break
+            
+            grid_tab = ttk.Frame(self.plot_tab_control)
+            self.plot_tab_control.add(grid_tab, text=grid_tab_name)
+            
+            # Create canvas in the tab
+            grid_canvas = FigureCanvasTkAgg(grid_figure, grid_tab)
+            grid_canvas.draw()
+            grid_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            
+            # Store the figure
+            self.tab_figures[grid_tab_name] = grid_figure
+            
+            # Select the selection tab if it's new, otherwise grid tab
+            if not selection_tab_exists:
+                self.plot_tab_control.select(selection_tab)
+            elif not grid_tab_exists:
+                self.plot_tab_control.select(grid_tab)
+            
+            # Update results summary
+            summary_text = (
+                f"Double Peak Analysis Results:\n"
+                f"Found {len(double_peaks)} double peak pairs matching the criteria.\n"
+                f"Parameters used:\n"
+                f"- Distance range: {self.double_peak_min_distance.get()*1000:.1f} - {self.double_peak_max_distance.get()*1000:.1f} ms\n"
+                f"- Amplitude ratio range: {self.double_peak_min_amp_ratio.get():.2f} - {self.double_peak_max_amp_ratio.get():.2f}\n"
+                f"- Width ratio range: {self.double_peak_min_width_ratio.get():.2f} - {self.double_peak_max_width_ratio.get():.2f}\n"
+            )
+            self.update_results_summary(preview_text=summary_text)
+            
+            return double_peaks
+        else:
+            # If there was an error or no results, show a message
+            self.preview_label.config(text="No double peaks found with current parameters", foreground="orange")
+            return None
+
+    def show_double_peaks_grid(self):
+        """
+        Show the grid view of detected double peaks.
+        This selects the Double Peak Grid tab if it exists.
+        """
+        grid_tab_name = "Double Peak Grid"
+        
+        for tab in self.plot_tab_control.tabs():
+            if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
+                self.plot_tab_control.select(tab)
+                return True
+        
+        # If tab doesn't exist, run the analysis first
+        self.preview_label.config(text="No double peak grid view exists. Running analysis first...", foreground="blue")
+        return self.analyze_double_peaks()
+        
+    @ui_action(
+        processing_message="Navigating to next double peaks...",
+        success_message="Showing next set of double peaks",
+        error_message="Error navigating to next double peaks"
+    )
+    def show_next_double_peaks_page(self):
+        """
+        Show the next page of double peaks.
+        This is a UI wrapper around the plotting.double_peak_analysis.show_next_double_peaks_page function.
+        """
+        # Get the updated figure
+        grid_figure = show_next_double_peaks_page_function(self)
+        
+        if grid_figure:
+            # Update the tab
+            grid_tab_name = "Double Peak Grid"
+            
+            # Find the tab
+            for tab in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
+                    # Get the frame
+                    grid_tab = self.plot_tab_control.nametowidget(tab)
+                    
+                    # Remove old canvas
+                    for widget in grid_tab.winfo_children():
+                        widget.destroy()
+                    
+                    # Create new canvas
+                    grid_canvas = FigureCanvasTkAgg(grid_figure, grid_tab)
+                    grid_canvas.draw()
+                    grid_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                    
+                    # Select the tab
+                    self.plot_tab_control.select(tab)
+                    
+                    # Store the updated figure
+                    self.tab_figures[grid_tab_name] = grid_figure
+                    
+                    # Update status
+                    page_num = self.current_double_peak_page + 1
+                    total_pages = (len(self.double_peaks) - 1) // 25 + 1
+                    self.preview_label.config(
+                        text=f"Showing double peaks page {page_num} of {total_pages}",
+                        foreground="green"
+                    )
+                    
+                    return True
+            
+            # If tab doesn't exist, create it
+            self.preview_label.config(text="Double peak grid tab not found. Creating it...", foreground="blue")
+            return self.analyze_double_peaks()
+        else:
+            self.preview_label.config(text="No double peaks to show", foreground="orange")
+            return False
+            
+    @ui_action(
+        processing_message="Navigating to previous double peaks...",
+        success_message="Showing previous set of double peaks",
+        error_message="Error navigating to previous double peaks"
+    )
+    def show_prev_double_peaks_page(self):
+        """
+        Show the previous page of double peaks.
+        This is a UI wrapper around the plotting.double_peak_analysis.show_prev_double_peaks_page function.
+        """
+        # Get the updated figure
+        grid_figure = show_prev_double_peaks_page_function(self)
+        
+        if grid_figure:
+            # Update the tab
+            grid_tab_name = "Double Peak Grid"
+            
+            # Find the tab
+            for tab in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
+                    # Get the frame
+                    grid_tab = self.plot_tab_control.nametowidget(tab)
+                    
+                    # Remove old canvas
+                    for widget in grid_tab.winfo_children():
+                        widget.destroy()
+                    
+                    # Create new canvas
+                    grid_canvas = FigureCanvasTkAgg(grid_figure, grid_tab)
+                    grid_canvas.draw()
+                    grid_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                    
+                    # Select the tab
+                    self.plot_tab_control.select(tab)
+                    
+                    # Store the updated figure
+                    self.tab_figures[grid_tab_name] = grid_figure
+                    
+                    # Update status
+                    page_num = self.current_double_peak_page + 1
+                    total_pages = (len(self.double_peaks) - 1) // 25 + 1
+                    self.preview_label.config(
+                        text=f"Showing double peaks page {page_num} of {total_pages}",
+                        foreground="green"
+                    )
+                    
+                    return True
+            
+            # If tab doesn't exist, create it
+            self.preview_label.config(text="Double peak grid tab not found. Creating it...", foreground="blue")
+            return self.analyze_double_peaks()
+        else:
+            self.preview_label.config(text="No double peaks to show", foreground="orange")
+            return False
 
     # Function to calculate the areas of detected peaks
     @profile_function
@@ -590,7 +826,6 @@ class Application(tk.Tk):
         else:
             return None
 
-    # Function to save peak information to CSV
     @ui_action(
         processing_message="Saving peak information...",
         success_message="Peak information saved successfully",
@@ -598,15 +833,11 @@ class Application(tk.Tk):
     )
     def save_peak_information_to_csv(self):
         """
-        Export detected peak information to a CSV file.
+        Save detected peak information to a file with configurable format.
         This is a UI wrapper around the core.file_export.save_peak_information_to_csv function.
-        
-        Returns
-        -------
-        str or None
-            Path where the CSV file was saved, or None if canceled or an error occurred
         """
-        return save_peak_information_to_csv_function(self)
+        from core.file_export import save_peak_information_to_csv as save_peaks
+        return save_peaks(self)
             
     @ui_action(
         processing_message="Taking screenshot...",
@@ -626,16 +857,68 @@ class Application(tk.Tk):
         return take_screenshot_with_ui(self)
 
     @ui_action(
-        processing_message="Updating file mode...",
-        success_message="File mode updated",
-        error_message="Error updating file mode"
+        processing_message="Switching file mode...",
+        success_message="File mode switched successfully",
+        error_message="Error switching file mode"
     )
     def on_file_mode_change(self):
         """
-        Handle UI updates when file mode changes (single/batch).
-        This method now uses the integrated function from ui.ui_utils.
+        Handle changes to the file mode (single or batch).
+        This updates UI elements based on the selected mode.
         """
         return on_file_mode_change_with_ui(self)
+        
+    @ui_action(
+        processing_message="Updating double peak mode...",
+        success_message="Double peak mode updated",
+        error_message="Error updating double peak mode"
+    )
+    def on_double_peak_mode_change(self):
+        """
+        Handle changes to the double peak analysis mode.
+        This method adds or removes the double peak analysis tab based on the mode.
+        """
+        try:
+            # Check if double peak mode is enabled
+            double_peak_enabled = self.double_peak_analysis.get() == "1"
+            
+            # Update status message
+            if double_peak_enabled:
+                self.status_indicator.set_text("Double Peak Analysis Mode Enabled")
+            else:
+                self.status_indicator.set_text("Normal Analysis Mode")
+            
+            # Look for existing double peak tab
+            found_tab = False
+            for tab in self.tab_control.tabs():
+                tab_text = self.tab_control.tab(tab, "text")
+                if tab_text == "Double Peak Analysis":
+                    found_tab = True
+                    if not double_peak_enabled:
+                        # Remove the tab if double peak mode is disabled
+                        self.tab_control.forget(tab)
+                    break
+            
+            # Add the tab if it doesn't exist and double peak mode is enabled
+            if double_peak_enabled and not found_tab:
+                from ui.components import create_double_peak_analysis_tab
+                create_double_peak_analysis_tab(self, self.tab_control)
+            
+            # Also update plot tabs - remove double peak tabs if mode is disabled
+            if not double_peak_enabled:
+                for tab in list(self.plot_tab_control.tabs()):
+                    tab_text = self.plot_tab_control.tab(tab, "text")
+                    if tab_text in ["Double Peak Selection", "Double Peak Grid"]:
+                        self.plot_tab_control.forget(tab)
+                        # Also remove from tab_figures
+                        if tab_text in self.tab_figures:
+                            del self.tab_figures[tab_text]
+            
+            return True
+            
+        except Exception as e:
+            self.show_error("Error updating double peak mode", e)
+            return False
 
     # Add this helper function at the class level
     def show_error(self, title, error):
@@ -688,15 +971,15 @@ class Application(tk.Tk):
         success_message="Plot exported successfully",
         error_message="Error exporting plot"
     )
-    def export_plot(self, figure, default_name="peak_analysis_plot"):
+    def export_plot(self, figure=None, default_name="peak_analysis_plot"):
         """
         Export the current plot to an image file.
         This is a UI wrapper around the core.file_export.export_plot function.
         
         Parameters
         ----------
-        figure : matplotlib.figure.Figure
-            The figure to export
+        figure : matplotlib.figure.Figure, optional
+            The figure to export. If None, will try to get the current figure from the active tab.
         default_name : str, optional
             Default filename for the exported plot
         
@@ -705,6 +988,23 @@ class Application(tk.Tk):
         str or None
             Path where the plot was saved, or None if canceled or an error occurred
         """
+        # If no figure is provided, try to get the current figure from the active tab
+        if figure is None:
+            # Get the current tab
+            current_tab = self.plot_tab_control.select()
+            tab_text = self.plot_tab_control.tab(current_tab, "text")
+            
+            # Try to get the figure from the tab_figures dictionary
+            if tab_text in self.tab_figures:
+                figure = self.tab_figures[tab_text]
+            else:
+                # If no figure found, show error message
+                self.preview_label.config(
+                    text="No plot available to export. Please generate a plot first.",
+                    foreground=self.theme_manager.get_color('error')
+                )
+                return None
+        
         return export_plot_function(self, figure, default_name)
 
     @ui_action(
@@ -823,6 +1123,47 @@ class Application(tk.Tk):
                 if widget.cget("background") == self.theme_manager.colors['light']['primary'] or \
                    widget.cget("background") == self.theme_manager.colors['dark']['primary']:
                     widget.config(background=self.theme_manager.get_color('primary'))
+
+    @ui_action(
+        processing_message="Toggling scale mode...",
+        success_message="Scale mode toggled successfully",
+        error_message="Error toggling scale mode"
+    )
+    def toggle_scale_mode(self):
+        """
+        Toggle between linear and logarithmic scales for peak analysis plots.
+        """
+        try:
+            # Toggle the scale mode
+            self.log_scale_enabled.set(not self.log_scale_enabled.get())
+            
+            # Get the current scale mode
+            scale_mode = 'log' if self.log_scale_enabled.get() else 'linear'
+            
+            # Update the plots if they exist
+            if hasattr(self, 'data_figure') and self.data_figure is not None:
+                # Get all axes
+                axes = self.data_figure.get_axes()
+                
+                # Update scale for each subplot (except throughput)
+                for ax in axes[:-1]:  # Skip the last axis (throughput)
+                    ax.set_yscale(scale_mode)
+                
+                # Redraw the canvas
+                if hasattr(self, 'data_canvas') and self.data_canvas is not None:
+                    self.data_canvas.draw()
+                
+                # Update status message
+                self.preview_label.config(
+                    text=f"Switched to {scale_mode.capitalize()} Scale",
+                    foreground=self.theme_manager.get_color('success')
+                )
+            
+            return True
+            
+        except Exception as e:
+            self.show_error("Error toggling scale mode", str(e))
+            return False
 
 # Your main program code goes here
 
