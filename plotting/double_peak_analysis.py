@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.lines import Line2D
 from core.peak_analysis_utils import find_peaks_with_window
+import matplotlib.pyplot as plt
 
 def find_double_peaks(peaks, properties, parameters, time_resolution):
     """
@@ -41,7 +42,8 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
         Dictionary containing information for all peaks:
         - 'peak_indices': indices of all peaks
         - 'next_peak_indices': indices of next peaks
-        - 'distances': distances to next peaks (in seconds)
+        - 'distances': distances between peak maxima (in seconds)
+        - 'start_distances': distances between peak starts (in seconds)
         - 'amp_ratios': amplitude ratios (next/current)
         - 'width_ratios': width ratios (next/current)
         - 'is_double_peak': boolean array indicating which peaks meet criteria
@@ -54,6 +56,7 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
             'peak_indices': np.array([]),
             'next_peak_indices': np.array([]),
             'distances': np.array([]),
+            'start_distances': np.array([]),
             'amp_ratios': np.array([]),
             'width_ratios': np.array([]),
             'is_double_peak': np.array([])
@@ -76,6 +79,7 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
     peak_indices = []
     next_peak_indices = []
     distances = []
+    start_distances = []
     amp_ratios = []
     width_ratios = []
     is_double_peak = []
@@ -85,8 +89,27 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
         current_peak = peaks[i]
         next_peak = peaks[i+1]
         
-        # Calculate peak distance in seconds
+        # Calculate peak-to-peak distance in seconds
         peak_distance = (next_peak - current_peak) * time_resolution
+        
+        # Calculate start-to-start distance in seconds
+        # left_ips values are already absolute positions, not relative offsets
+        current_start = properties['left_ips'][i]  # Use left_ips directly
+        next_start = properties['left_ips'][i+1]  # Use left_ips directly
+        start_distance = (next_start - current_start) * time_resolution
+        
+        # Print debug information for the first few peaks
+        if i < 3:  # Only print first 3 peaks to avoid cluttering
+            print(f"\nPeak {i} detailed analysis:")
+            print(f"  Peak positions: current={current_peak}, next={next_peak}")
+            print(f"  Left IPs (raw): current={properties['left_ips'][i]:.6f}, next={properties['left_ips'][i+1]:.6f}")
+            print(f"  Left IPs (samples): current={int(properties['left_ips'][i])}, next={int(properties['left_ips'][i+1])}")
+            print(f"  Left IPs (ms): current={properties['left_ips'][i]*time_resolution*1000:.3f}, next={properties['left_ips'][i+1]*time_resolution*1000:.3f}")
+            print(f"  Start positions: current={current_start:.3f}, next={next_start:.3f}")
+            print(f"  Peak-to-peak = {peak_distance*1000:.2f}ms")
+            print(f"  Start-to-start = {start_distance*1000:.2f}ms")
+            print(f"  Difference = {(start_distance - peak_distance)*1000:.2f}ms")
+            print(f"  Peak widths: current={properties['widths'][i]:.3f}, next={properties['widths'][i+1]:.3f}")
         
         # Get peak properties
         current_amp = properties['prominences'][i]
@@ -102,6 +125,7 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
         peak_indices.append(i)
         next_peak_indices.append(i+1)
         distances.append(peak_distance)
+        start_distances.append(start_distance)
         amp_ratios.append(amp_ratio)
         width_ratios.append(width_ratio)
         
@@ -117,6 +141,7 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
     peak_indices = np.array(peak_indices)
     next_peak_indices = np.array(next_peak_indices)
     distances = np.array(distances)
+    start_distances = np.array(start_distances)
     amp_ratios = np.array(amp_ratios)
     width_ratios = np.array(width_ratios)
     is_double_peak = np.array(is_double_peak)
@@ -130,6 +155,7 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
         'peak_indices': peak_indices,
         'next_peak_indices': next_peak_indices,
         'distances': distances,
+        'start_distances': start_distances,
         'amp_ratios': amp_ratios,
         'width_ratios': width_ratios,
         'is_double_peak': is_double_peak
@@ -157,7 +183,18 @@ def plot_double_peak_selection(app, figure, all_peaks, double_peak_data):
         Updated figure
     """
     figure.clear()
-    ax = figure.add_subplot(111)
+    
+    # Create two subplots side by side
+    ax1 = figure.add_subplot(121)
+    ax2 = figure.add_subplot(122)
+    
+    # Get SEMANTIC theme colors
+    min_dist_color = app.theme_manager.get_plot_color('line_dist_min')
+    max_dist_color = app.theme_manager.get_plot_color('line_dist_max')
+    span_color = app.theme_manager.get_plot_color('span_dist')
+    double_marker_color = app.theme_manager.get_plot_color('marker_double')
+    nondouble_marker_color = app.theme_manager.get_plot_color('marker_nondouble')
+    text_color = app.theme_manager.get_plot_color('text.color') # For annotations
     
     # Get the minimum and maximum distance ranges (convert to ms)
     min_distance_ms = app.double_peak_min_distance.get() * 1000
@@ -165,62 +202,70 @@ def plot_double_peak_selection(app, figure, all_peaks, double_peak_data):
     
     print(f"DEBUG - Distance range: min={min_distance_ms:.2f}ms, max={max_distance_ms:.2f}ms")
     
-    # Plot horizontal lines for distance range with labels
-    min_line = ax.axhline(y=min_distance_ms, color='r', linestyle='--', alpha=0.7, linewidth=1.5,
-               label=f'Min Distance ({min_distance_ms:.1f} ms)')
-    max_line = ax.axhline(y=max_distance_ms, color='b', linestyle='--', alpha=0.7, linewidth=1.5,
-               label=f'Max Distance ({max_distance_ms:.1f} ms)')
-    
-    # Create a highlighted area between min and max distance
-    ax.axhspan(min_distance_ms, max_distance_ms, alpha=0.1, color='green', zorder=1)
-    
-    # Add text annotations for the distance range
-    ax.text(0.99, min_distance_ms, f"{min_distance_ms:.1f} ms", color='r', fontsize=8,
-           verticalalignment='bottom', horizontalalignment='right', transform=ax.get_yaxis_transform())
-    
-    ax.text(0.99, max_distance_ms, f"{max_distance_ms:.1f} ms", color='b', fontsize=8,
-           verticalalignment='top', horizontalalignment='right', transform=ax.get_yaxis_transform())
+    # Plot horizontal lines for distance range with labels on both plots
+    for ax in [ax1, ax2]:
+        ax.axhline(y=min_distance_ms, color=min_dist_color, # Use color
+                              linestyle='--', alpha=0.7, linewidth=1.5,
+                              label=f'Min Distance ({min_distance_ms:.1f} ms)')
+        ax.axhline(y=max_distance_ms, color=max_dist_color, # Use color
+                              linestyle='--', alpha=0.7, linewidth=1.5,
+                              label=f'Max Distance ({max_distance_ms:.1f} ms)')
+        
+        # Create a highlighted area between min and max distance
+        ax.axhspan(min_distance_ms, max_distance_ms, alpha=0.15, # Slightly increased alpha
+                   color=span_color, # Use color
+                   zorder=1)
+        
+        # Add text annotations for the distance range using color
+        ax.text(0.99, min_distance_ms, f"{min_distance_ms:.1f} ms", color=min_dist_color, # Use color for text
+               fontsize=8, verticalalignment='bottom', horizontalalignment='right',
+               transform=ax.get_yaxis_transform())
+        
+        ax.text(0.99, max_distance_ms, f"{max_distance_ms:.1f} ms", color=max_dist_color, # Use color for text
+               fontsize=8, verticalalignment='top', horizontalalignment='right',
+               transform=ax.get_yaxis_transform())
     
     # If we have double peak data, plot it
     if double_peak_data and len(double_peak_data['distances']) > 0:
         # Extract data
         peak_indices = double_peak_data['peak_indices']
         distances = double_peak_data['distances']
+        start_distances = double_peak_data['start_distances']
         is_double_peak = double_peak_data['is_double_peak']
         
         # Convert distances to ms
         distances_ms = distances * 1000
+        start_distances_ms = start_distances * 1000
         
         # Get time values for each peak
         times = app.t_value[all_peaks[peak_indices]] / 60  # Convert to minutes
         
-        # Create a color array based on whether each peak meets criteria
-        colors = np.array(['blue' if flag else 'darkgray' for flag in is_double_peak])
+        # Create a color array based on whether each peak meets criteria using theme colors
+        colors = np.array([double_marker_color if flag else nondouble_marker_color
+                           for flag in is_double_peak])
         
-        # Plot all peaks with colors indicating selection status
-        scatter = ax.scatter(
-            times,
-            distances_ms,
-            c=colors,  # Array of colors based on is_double_peak
-            marker='o',
-            s=15,  # Smaller size for better visibility
-            alpha=0.8,
-            zorder=3
-        )
+        # Plot peak-to-peak distances (Removed hardcoded colors)
+        scatter1 = ax1.scatter(
+            times, distances_ms, c=colors, marker='o', s=10, # Smaller size
+            alpha=0.7, zorder=3) # Reduced alpha slightly
+        
+        # Plot start-to-start distances (Removed hardcoded colors)
+        scatter2 = ax2.scatter(
+            times, start_distances_ms, c=colors, marker='o', s=10,
+            alpha=0.7, zorder=3)
         
         # Create custom legend entries
         double_peak_count = np.sum(is_double_peak)
         non_double_peak_count = len(is_double_peak) - double_peak_count
         
         legend_elements = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', 
-                   label=f'Double Peaks ({double_peak_count})', markersize=6),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='darkgray', 
-                   label=f'Other Peaks ({non_double_peak_count})', markersize=6)
+            Line2D([0], [0], marker='o', color=double_marker_color, label='Double Peaks ({double_peak_count})', markersize=6),
+            Line2D([0], [0], marker='o', color=nondouble_marker_color, label=f'Other Peaks ({non_double_peak_count})', markersize=6)
         ]
-        ax.legend(handles=legend_elements, loc='upper right')
+        ax1.legend(handles=legend_elements, loc='upper right')
+        ax2.legend(handles=legend_elements, loc='upper right')
         
-        # Summary text
+        # Summary text for both plots
         total_peaks = len(all_peaks)
         percentage = (double_peak_count/len(peak_indices)*100) if len(peak_indices) > 0 else 0
         
@@ -230,7 +275,7 @@ def plot_double_peak_selection(app, figure, all_peaks, double_peak_data):
             f"Double Peaks: {double_peak_count} ({percentage:.1f}%)"
         )
         
-        ax.text(0.02, 0.96, summary_text, transform=ax.transAxes,
+        ax1.text(0.02, 0.96, summary_text, transform=ax1.transAxes,
                verticalalignment='top', fontsize=9,
                bbox=dict(facecolor='white', alpha=0.7, boxstyle='round'))
         
@@ -240,10 +285,12 @@ def plot_double_peak_selection(app, figure, all_peaks, double_peak_data):
             y_min = max(0, min_distance_ms - 0.2 * y_range)  # 20% padding below, but not less than 0
             y_max = max_distance_ms + 0.2 * y_range  # 20% padding above
             
-            ax.set_ylim(y_min, y_max)
+            ax1.set_ylim(y_min, y_max)
+            ax2.set_ylim(y_min, y_max)
         else:
             # Fallback if min and max are the same
-            ax.set_ylim(0, max_distance_ms * 1.4)
+            ax1.set_ylim(0, max_distance_ms * 1.4)
+            ax2.set_ylim(0, max_distance_ms * 1.4)
     else:
         # If no data, just show empty plot with proper range
         y_range = max_distance_ms - min_distance_ms
@@ -254,45 +301,58 @@ def plot_double_peak_selection(app, figure, all_peaks, double_peak_data):
             y_min = 0
             y_max = max_distance_ms * 1.4
             
-        ax.set_ylim(y_min, y_max)
+        ax1.set_ylim(y_min, y_max)
+        ax2.set_ylim(y_min, y_max)
         
         # Add a text message
-        ax.text(0.5, 0.5, "No peak data available.\nRun peak detection first.", 
-               ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        for ax in [ax1, ax2]:
+            ax.text(0.5, 0.5, "No peak data available.\nRun peak detection first.", 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
     
-    ax.set_xlabel('Time (min)')
-    ax.set_ylabel('Peak Distance (ms)')
-    ax.set_title('Distance to Next Peak Analysis')
-    ax.grid(True, alpha=0.3)
+    ax1.set_xlabel('Time (min)')
+    ax1.set_ylabel('Peak-to-Peak Distance (ms)')
+    ax1.set_title('Peak Maximum Distance Analysis')
+    ax1.grid(True, alpha=0.3)
+    
+    ax2.set_xlabel('Time (min)')
+    ax2.set_ylabel('Start-to-Start Distance (ms)')
+    ax2.set_title('Peak Start Distance Analysis')
+    ax2.grid(True, alpha=0.3)
     
     figure.tight_layout()
+    
+    # Apply theme colors to the figure and axes
+    app.theme_manager.apply_plot_theme(figure, [ax1, ax2])
+
     return figure
 
-def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_signal, properties, page=0):
+def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, properties, double_peak_data, page=0):
     """
-    Create a grid plot of double peak pairs.
+    Create a grid of plots showing double peak pairs.
     
     Parameters
     ----------
     app : Application
         The main application instance
-    double_peak_indices : list
-        List of (primary_idx, secondary_idx, ...) tuples for double peaks
+    double_peaks : list
+        List of tuples containing (primary_idx, secondary_idx, distance, amp_ratio, width_ratio)
     peaks : array
-        Array of peak indices
+        Array of all peak indices
     t_value : array
-        Time values
+        Time values for the signal
     filtered_signal : array
         Filtered signal values
     properties : dict
-        Dictionary of peak properties
+        Dictionary of peak properties from find_peaks_with_window
+    double_peak_data : dict
+        Dictionary containing double peak analysis data including start_distances
     page : int, optional
-        Page number for pagination, by default 0
+        Page number to display (0-based), by default 0
         
     Returns
     -------
     matplotlib.figure.Figure
-        Figure with grid of double peak plots
+        Figure containing the grid of double peak plots
     """
     print(f"Creating double peak grid, page {page+1}")
     
@@ -312,29 +372,36 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
     # Calculate the range of pairs to display
     peaks_per_page = rows * cols
     start_idx = page * peaks_per_page
-    end_idx = min(start_idx + peaks_per_page, len(double_peak_indices))
+    end_idx = min(start_idx + peaks_per_page, len(double_peaks))
     
-    if start_idx >= len(double_peak_indices):
+    if start_idx >= len(double_peaks):
         print("No pairs to display on this page")
+        # Apply theme even to empty figure before returning
+        app.theme_manager.apply_plot_theme(fig, axs)
         return fig
     
-    print(f"Displaying pairs {start_idx+1} to {end_idx} of {len(double_peak_indices)}")
+    print(f"Displaying pairs {start_idx+1} to {end_idx} of {len(double_peaks)}")
     
-    # Create a shared legend for the entire figure
+    # Get SEMANTIC theme colors
+    signal_color = app.theme_manager.get_plot_color('line_filtered')
+    primary_marker_color = app.theme_manager.get_plot_color('marker_peak')
+    secondary_marker_color = app.theme_manager.get_plot_color('marker_width') # Reusing width color for secondary
+    primary_width_color = primary_marker_color
+    secondary_width_color = secondary_marker_color
+    grid_color = app.theme_manager.get_plot_color('grid.color') # Get grid color
+    
+    # Create a shared legend for the entire figure using theme colors
     legend_lines = [
-        Line2D([0], [0], color='b', linewidth=1, label='Signal'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='r', markersize=5, label='Primary'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='g', markersize=5, label='Secondary')
+        Line2D([0], [0], color=signal_color, linewidth=1, label='Signal'),
+        Line2D([0], [0], marker='o', color='None', markerfacecolor=primary_marker_color, markersize=5, label='Primary'),
+        Line2D([0], [0], marker='o', color='None', markerfacecolor=secondary_marker_color, markersize=5, label='Secondary')
     ]
     
     # For each visible double peak pair
-    for i, pair_idx in enumerate(range(start_idx, end_idx)):
+    for i, (primary_idx, secondary_idx, distance, amp_ratio, width_ratio) in enumerate(double_peaks[start_idx:end_idx]):
         # Get grid position (row, col)
         row = i // cols
         col = i % cols
-        
-        # Get the primary and secondary peak indices
-        primary_idx, secondary_idx, distance, amp_ratio, width_ratio = double_peak_indices[pair_idx]
         
         # Get the actual peaks
         primary_peak = peaks[primary_idx]
@@ -366,7 +433,7 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
         x_ms = (xData - xData[0]) * 1000  # Convert to ms
         
         # Plot filtered signal
-        axs[i].plot(x_ms, yData - background, 'b-', linewidth=0.8)
+        axs[i].plot(x_ms, yData - background, color=signal_color, linestyle='-', linewidth=0.8)
         
         # Calculate positions for markers relative to window start
         primary_x_ms = (t_value[primary_peak] - xData[0]) * 1000
@@ -375,8 +442,8 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
         secondary_y = filtered_signal[secondary_peak] - background
         
         # Mark the peaks with correct positions
-        axs[i].plot(primary_x_ms, primary_y, 'ro', markersize=4)
-        axs[i].plot(secondary_x_ms, secondary_y, 'go', markersize=4)
+        axs[i].plot(primary_x_ms, primary_y, marker='o', color=primary_marker_color, linestyle='None', markersize=4)
+        axs[i].plot(secondary_x_ms, secondary_y, marker='o', color=secondary_marker_color, linestyle='None', markersize=4)
         
         # Get peak widths
         try:
@@ -390,7 +457,7 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
             primary_right_x = (t_value[primary_right_idx] - xData[0]) * 1000
             
             axs[i].hlines(primary_width_height, primary_left_x, primary_right_x, 
-                          color='r', linestyle='--', linewidth=0.8)
+                          color=primary_width_color, linestyle='--', linewidth=0.8)
             
             # Get width information for secondary peak
             secondary_left_idx = int(properties['left_ips'][secondary_idx])
@@ -402,15 +469,20 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
             secondary_right_x = (t_value[secondary_right_idx] - xData[0]) * 1000
             
             axs[i].hlines(secondary_width_height, secondary_left_x, secondary_right_x, 
-                          color='g', linestyle='--', linewidth=0.8)
+                          color=secondary_width_color, linestyle='--', linewidth=0.8)
         except (KeyError, IndexError) as e:
             # If width data is not available, just continue
-            print(f"Width data not available for peak pair {pair_idx}: {e}")
+            print(f"Width data not available for peak pair {i}: {e}")
         
         # Add ultra-compact peak information at the top of the plot
         # Using shorter format to avoid overlap: "#1: 3.4ms 0.8A 1.0W"
-        info_text = f"#{start_idx+i+1}: {distance*1000:.1f}ms {amp_ratio:.1f}A {width_ratio:.1f}W"
-        axs[i].set_title(info_text, fontsize=6, pad=2)
+        info_text = (
+            f"#{start_idx+i+1}: "
+            f"P-P:{distance*1000:.1f}ms "
+            f"S-S:{double_peak_data['start_distances'][i]*1000:.1f}ms "
+            f"A:{amp_ratio:.1f} W:{width_ratio:.1f}"
+        )
+        axs[i].set_title(info_text, fontsize=7, pad=2)
         
         # Set the x-limits to show the full window, not going negative
         axs[i].set_xlim(0, np.max(x_ms))
@@ -430,7 +502,7 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
             axs[i].set_yticklabels([])
         
         # Make tick labels smaller
-        axs[i].tick_params(axis='both', which='major', labelsize=6)
+        axs[i].tick_params(axis='both', which='major', labelsize=7)
         
         # Enable grid but make it very light
         axs[i].grid(True, alpha=0.2, linestyle=':')
@@ -443,8 +515,8 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
               bbox_to_anchor=(0.5, 0.02), frameon=True)
     
     # Add overall title and subtitle explaining the format
-    if double_peak_indices:
-        fig.suptitle(f"Double Peak Analysis (Page {page+1}/{(len(double_peak_indices)-1)//peaks_per_page+1})", 
+    if double_peaks:
+        fig.suptitle(f"Double Peak Analysis (Page {page+1}/{(len(double_peaks)-1)//peaks_per_page+1})", 
                    fontsize=16, y=0.98)
         subtitle = "Format: #N: separation(ms) amplitude_ratio(A) width_ratio(W)"
         fig.text(0.5, 0.96, subtitle, ha='center', fontsize=10, style='italic')
@@ -454,9 +526,12 @@ def plot_double_peaks_grid(app, double_peak_indices, peaks, t_value, filtered_si
     # Adjust layout to accommodate the legend at the bottom
     fig.tight_layout(rect=[0, 0.04, 1, 0.95])
     
+    # Apply theme colors explicitly to all axes
+    app.theme_manager.apply_plot_theme(fig, axs)
+
     return fig
 
-def analyze_double_peaks(app, profile_function=None):
+def analyze_double_peaks(app):
     """
     Analyze distances between all consecutive peaks and identify double peaks.
     
@@ -464,8 +539,6 @@ def analyze_double_peaks(app, profile_function=None):
     ----------
     app : Application
         The main application instance
-    profile_function : callable, optional
-        Function for profiling, by default None
         
     Returns
     -------
@@ -495,9 +568,9 @@ def analyze_double_peaks(app, profile_function=None):
         properties = {
             'prominences': app.peak_heights,
             'widths': app.peak_widths,
-            'left_ips': getattr(app, 'peak_left_ips', np.zeros_like(peaks)),
-            'right_ips': getattr(app, 'peak_right_ips', np.zeros_like(peaks)),
-            'width_heights': getattr(app, 'peak_width_heights', np.zeros_like(peaks))
+            'left_ips': app.peak_left_ips,
+            'right_ips': app.peak_right_ips,
+            'width_heights': app.peak_width_heights
         }
         
         # Calculate distances and identify double peaks
@@ -506,6 +579,103 @@ def analyze_double_peaks(app, profile_function=None):
         # Store double peak data in app
         app.double_peak_data = double_peak_data
         app.current_double_peak_page = 0
+        
+        # Update histograms if they exist
+        if hasattr(app, 'amp_hist_ax') and hasattr(app, 'width_hist_ax'):
+            # Clear previous histograms
+            app.amp_hist_ax.clear()
+            app.width_hist_ax.clear()
+            
+            # === Apply Theme to Histograms ===
+            app._update_histogram_theme(app.amp_hist_canvas, app.amp_hist_ax)
+            app._update_histogram_theme(app.width_hist_canvas, app.width_hist_ax)
+            # === End Apply Theme ===
+            
+            # Get indices of peaks within distance range
+            distance_mask = (double_peak_data['distances'] >= parameters['min_distance']) & \
+                          (double_peak_data['distances'] <= parameters['max_distance'])
+            
+            # Plot amplitude ratio histogram for selected peaks only
+            if len(double_peak_data['amp_ratios']) > 0:
+                selected_amp_ratios = double_peak_data['amp_ratios'][distance_mask]
+                if len(selected_amp_ratios) > 0:
+                    # Define theme-aware colors
+                    is_dark = app.theme_manager.current_theme == 'dark'
+                    bar_color = app.theme_manager.get_color('secondary') if is_dark else app.theme_manager.get_color('primary')
+                    line_color = '#FF8A80' if is_dark else 'red' # Brighter red for dark
+                    
+                    app.amp_hist_ax.hist(
+                        selected_amp_ratios,
+                        bins=30, 
+                        range=(0, 5),
+                        density=True,
+                        alpha=0.75, # Slightly increased alpha
+                        color=bar_color # Use theme color
+                    )
+                    # Add vertical lines for current range with theme color
+                    app.amp_hist_ax.axvline(
+                        parameters['min_amp_ratio'],
+                        color=line_color,
+                        linestyle='--',
+                        linewidth=1, # Thinner line
+                        alpha=0.8 # More visible
+                    )
+                    app.amp_hist_ax.axvline(
+                        parameters['max_amp_ratio'],
+                        color=line_color,
+                        linestyle='--',
+                        linewidth=1,
+                        alpha=0.8
+                    )
+            
+            # Plot width ratio histogram for selected peaks only
+            if len(double_peak_data['width_ratios']) > 0:
+                selected_width_ratios = double_peak_data['width_ratios'][distance_mask]
+                if len(selected_width_ratios) > 0:
+                    # Define theme-aware colors (can reuse from above)
+                    is_dark = app.theme_manager.current_theme == 'dark'
+                    bar_color = app.theme_manager.get_color('secondary') if is_dark else app.theme_manager.get_color('primary')
+                    line_color = '#FF8A80' if is_dark else 'red'
+                    
+                    app.width_hist_ax.hist(
+                        selected_width_ratios,
+                        bins=30, 
+                        range=(0, 5),
+                        density=True,
+                        alpha=0.75,
+                        color=bar_color # Use theme color
+                    )
+                    # Add vertical lines for current range with theme color
+                    app.width_hist_ax.axvline(
+                        parameters['min_width_ratio'],
+                        color=line_color,
+                        linestyle='--',
+                        linewidth=1,
+                        alpha=0.8
+                    )
+                    app.width_hist_ax.axvline(
+                        parameters['max_width_ratio'],
+                        color=line_color,
+                        linestyle='--',
+                        linewidth=1,
+                        alpha=0.8
+                    )
+            
+            # Update plot settings for both histograms (theme applied already)
+            for ax in [app.amp_hist_ax, app.width_hist_ax]:
+                ax.set_xlim(0, 5)
+                ax.set_ylim(0, 1)
+                ax.set_xticks([0, 1, 2, 3, 4, 5])
+                ax.set_yticks([])
+                ax.grid(True, alpha=0.3)
+                # Make tick labels smaller
+                ax.tick_params(axis='both', which='major', labelsize=6)
+                # Make the plot more compact
+                ax.margins(x=0.05)
+            
+            # Update canvases
+            app.amp_hist_canvas.draw()
+            app.width_hist_canvas.draw()
         
         # Create figures for double peak analysis
         selection_figure = Figure(figsize=(10, 4))
@@ -531,7 +701,7 @@ def analyze_double_peaks(app, profile_function=None):
         if double_peaks:
             grid_figure = plot_double_peaks_grid(
                 app, double_peaks, peaks, app.t_value, app.filtered_signal, 
-                properties, page=app.current_double_peak_page
+                properties, double_peak_data, page=app.current_double_peak_page
             )
         else:
             # Create an empty figure with a message if no double peaks found
@@ -614,7 +784,7 @@ def show_next_double_peaks_page(app):
         # Create new grid figure with updated page
         grid_figure = plot_double_peaks_grid(
             app, app.double_peaks, app.peaks, app.t_value, app.filtered_signal, 
-            properties, page=app.current_double_peak_page
+            properties, app.double_peak_data, page=app.current_double_peak_page
         )
         
         return grid_figure
@@ -687,7 +857,7 @@ def show_prev_double_peaks_page(app):
         # Create new grid figure with updated page
         grid_figure = plot_double_peaks_grid(
             app, app.double_peaks, app.peaks, app.t_value, app.filtered_signal, 
-            properties, page=app.current_double_peak_page
+            properties, app.double_peak_data, page=app.current_double_peak_page
         )
         
         return grid_figure

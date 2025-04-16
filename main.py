@@ -1,7 +1,7 @@
 """                                                                                             
-Created Nov 17 21:518:48 2024
+Created 2 Apr 2025 21:518:48 2024
 
-@author: Lucjan & Silas
+@author: Lucjan Grzegorzewski
 """
 
 # Standard library
@@ -69,7 +69,8 @@ from core.data_utils import (
 from core.peak_analysis_utils import timestamps_array_to_seconds, adjust_lowpass_cutoff, calculate_lowpass_cutoff  # For array of timestamps
 from core.file_export import (
     export_plot as export_plot_function,
-    save_peak_information_to_csv as save_peak_information_to_csv_function
+    save_peak_information_to_csv as save_peak_information_to_csv_function,
+    save_double_peak_information_to_csv as save_double_peak_information_to_csv_function
 )
 
 # Import UI modules
@@ -238,12 +239,26 @@ class Application(tk.Tk):
         self.setup_window_title()
         
     def get_icon_path(self):
-        """Get path to icon file, or return empty string if not found"""
-        icon_path = os.path.join(os.path.dirname(__file__), "resources", "images", "icon.ico")
+        """Get path to icon file, handling packaged app scenario."""
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # Running in a PyInstaller bundle
+            base_path = sys._MEIPASS
+        else:
+            # Running in a normal Python environment
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        # Construct the path relative to the base path
+        # This assumes your 'resources' folder is copied into the root of the bundle
+        icon_path = os.path.join(base_path, "resources", "images", "icon.ico")
+
+        # Check if the file exists at the determined path
         if os.path.exists(icon_path):
-            return icon_path
-        return ""
-        
+             return icon_path
+        else:
+             # Add a print statement for debugging if the icon isn't found
+             print(f"Warning: Icon file not found at expected location: {icon_path}")
+             return "" # Return empty string if not found
+
     def setup_window_title(self):
         """Set up a more descriptive window title"""
         version = "1.0"  # Define your version number
@@ -520,7 +535,36 @@ class Application(tk.Tk):
         Execute peak detection algorithm with current parameters.
         This is a UI wrapper around the peak detection pipeline function.
         """
-        return run_peak_detection_function(self, profile_function=profile_function)
+        try:
+            # Run peak detection
+            peaks, properties, peak_areas = run_peak_detection_function(self, profile_function=profile_function)
+            
+            if peaks is not None and properties is not None:
+                # Store peak properties in app instance
+                self.peaks = peaks
+                self.peak_heights = properties['prominences']
+                self.peak_widths = properties['widths']
+                self.peak_left_ips = properties['left_ips']
+                self.peak_right_ips = properties['right_ips']
+                self.peak_width_heights = properties['width_heights']
+                self.peak_areas = peak_areas  # Store peak areas
+                
+                # Update status
+                self.preview_label.config(
+                    text=f"Detected {len(peaks)} peaks",
+                    foreground=self.theme_manager.get_color('success')
+                )
+                return True
+            else:
+                self.preview_label.config(
+                    text="No peaks detected",
+                    foreground=self.theme_manager.get_color('warning')
+                )
+                return False
+                
+        except Exception as e:
+            self.show_error("Error during peak detection", str(e))
+            return False
         
     @ui_action(
         processing_message="Plotting filtered peaks...",
@@ -577,79 +621,80 @@ class Application(tk.Tk):
     )
     def analyze_double_peaks(self):
         """
-        Analyze double peaks and create visualizations.
-        This is a UI wrapper around the plotting.double_peak_analysis.analyze_double_peaks function.
+        Analyze double peaks using current parameters and update the visualization.
         """
-        double_peaks, figures = analyze_double_peaks_function(self, profile_function=profile_function)
-        
-        if double_peaks and figures:
-            # Unpack figures
-            selection_figure, grid_figure = figures
+        try:
+            # Run double peak analysis
+            double_peaks, figures = analyze_double_peaks_function(self)
             
-            # Create or update the tab for double peak selection
-            selection_tab_name = "Double Peak Selection"
-            selection_tab_exists = False
+            if double_peaks and figures:
+                # Unpack figures
+                selection_figure, grid_figure = figures
+                
+                # Create or update the tab for double peak selection
+                selection_tab_name = "Double Peak Selection"
+                selection_tab_exists = False
+                
+                for tab in self.plot_tab_control.tabs():
+                    if self.plot_tab_control.tab(tab, "text") == selection_tab_name:
+                        self.plot_tab_control.forget(tab)
+                        selection_tab_exists = True
+                        break
+                
+                selection_tab = ttk.Frame(self.plot_tab_control)
+                self.plot_tab_control.add(selection_tab, text=selection_tab_name)
+                
+                # Create canvas in the tab
+                selection_canvas = FigureCanvasTkAgg(selection_figure, selection_tab)
+                selection_canvas.draw()
+                selection_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                
+                # Store the figure
+                self.tab_figures[selection_tab_name] = selection_figure
+                
+                # Create or update the tab for double peak grid
+                grid_tab_name = "Double Peak Grid"
+                grid_tab_exists = False
+                
+                for tab in self.plot_tab_control.tabs():
+                    if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
+                        self.plot_tab_control.forget(tab)
+                        grid_tab_exists = True
+                        break
+                
+                grid_tab = ttk.Frame(self.plot_tab_control)
+                self.plot_tab_control.add(grid_tab, text=grid_tab_name)
+                
+                # Create canvas in the tab
+                grid_canvas = FigureCanvasTkAgg(grid_figure, grid_tab)
+                grid_canvas.draw()
+                grid_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                
+                # Store the figure
+                self.tab_figures[grid_tab_name] = grid_figure
+                
+                # Select the selection tab if it's new, otherwise grid tab
+                if not selection_tab_exists:
+                    self.plot_tab_control.select(selection_tab)
+                elif not grid_tab_exists:
+                    self.plot_tab_control.select(grid_tab)
+                
+                # Update results summary
+                summary_text = (
+                    f"Double Peak Analysis Results:\n"
+                    f"Found {len(double_peaks)} double peak pairs matching the criteria.\n"
+                    f"Parameters used:\n"
+                    f"- Distance range: {self.double_peak_min_distance.get()*1000:.1f} - {self.double_peak_max_distance.get()*1000:.1f} ms\n"
+                    f"- Amplitude ratio range: {self.double_peak_min_amp_ratio.get():.2f} - {self.double_peak_max_amp_ratio.get():.2f}\n"
+                    f"- Width ratio range: {self.double_peak_min_width_ratio.get():.2f} - {self.double_peak_max_width_ratio.get():.2f}\n"
+                )
+                self.update_results_summary(preview_text=summary_text)
+            else:
+                # If there was an error or no results, show a message
+                self.preview_label.config(text="No double peaks found with current parameters", foreground="orange")
             
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == selection_tab_name:
-                    self.plot_tab_control.forget(tab)
-                    selection_tab_exists = True
-                    break
-            
-            selection_tab = ttk.Frame(self.plot_tab_control)
-            self.plot_tab_control.add(selection_tab, text=selection_tab_name)
-            
-            # Create canvas in the tab
-            selection_canvas = FigureCanvasTkAgg(selection_figure, selection_tab)
-            selection_canvas.draw()
-            selection_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            
-            # Store the figure
-            self.tab_figures[selection_tab_name] = selection_figure
-            
-            # Create or update the tab for double peak grid
-            grid_tab_name = "Double Peak Grid"
-            grid_tab_exists = False
-            
-            for tab in self.plot_tab_control.tabs():
-                if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
-                    self.plot_tab_control.forget(tab)
-                    grid_tab_exists = True
-                    break
-            
-            grid_tab = ttk.Frame(self.plot_tab_control)
-            self.plot_tab_control.add(grid_tab, text=grid_tab_name)
-            
-            # Create canvas in the tab
-            grid_canvas = FigureCanvasTkAgg(grid_figure, grid_tab)
-            grid_canvas.draw()
-            grid_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            
-            # Store the figure
-            self.tab_figures[grid_tab_name] = grid_figure
-            
-            # Select the selection tab if it's new, otherwise grid tab
-            if not selection_tab_exists:
-                self.plot_tab_control.select(selection_tab)
-            elif not grid_tab_exists:
-                self.plot_tab_control.select(grid_tab)
-            
-            # Update results summary
-            summary_text = (
-                f"Double Peak Analysis Results:\n"
-                f"Found {len(double_peaks)} double peak pairs matching the criteria.\n"
-                f"Parameters used:\n"
-                f"- Distance range: {self.double_peak_min_distance.get()*1000:.1f} - {self.double_peak_max_distance.get()*1000:.1f} ms\n"
-                f"- Amplitude ratio range: {self.double_peak_min_amp_ratio.get():.2f} - {self.double_peak_max_amp_ratio.get():.2f}\n"
-                f"- Width ratio range: {self.double_peak_min_width_ratio.get():.2f} - {self.double_peak_max_width_ratio.get():.2f}\n"
-            )
-            self.update_results_summary(preview_text=summary_text)
-            
-            return double_peaks
-        else:
-            # If there was an error or no results, show a message
-            self.preview_label.config(text="No double peaks found with current parameters", foreground="orange")
-            return None
+        except Exception as e:
+            show_error_with_ui(self, "Error during double peak analysis", str(e))
 
     def show_double_peaks_grid(self):
         """
@@ -838,6 +883,19 @@ class Application(tk.Tk):
         """
         from core.file_export import save_peak_information_to_csv as save_peaks
         return save_peaks(self)
+
+    @ui_action(
+        processing_message="Saving double peak information...",
+        success_message="Double peak information saved successfully",
+        error_message="Error saving double peak information"
+    )
+    def save_double_peak_information_to_csv(self):
+        """
+        Save detected double peak information to a file with configurable format.
+        This is a UI wrapper around the core.file_export.save_double_peak_information_to_csv function.
+        """
+        from core.file_export import save_double_peak_information_to_csv as save_double_peaks
+        return save_double_peaks(self)
             
     @ui_action(
         processing_message="Taking screenshot...",
@@ -1014,79 +1072,277 @@ class Application(tk.Tk):
     )
     def toggle_theme(self):
         """
-        Toggle between light and dark theme and update UI elements accordingly.
+        Toggle between light and dark theme and update UI and plots accordingly.
         """
         new_theme = self.theme_manager.toggle_theme()
-        
-        # Apply the theme to the application
+
+        # 1. Apply theme to UI elements and set matplotlib rcParams
         self.style = self.theme_manager.apply_theme(self)
-        
-        # Update ScrolledText colors
-        if self.results_summary:
+
+        # 2. Update specific UI Elements (Existing Code - Keep this)
+        # Update ScrolledText colors if it exists
+        if hasattr(self, 'results_summary') and self.results_summary:
             self.results_summary.config(
                 bg=self.theme_manager.get_color('card_bg'),
                 fg=self.theme_manager.get_color('text'),
                 insertbackground=self.theme_manager.get_color('text')
             )
-        
+
         # Update welcome label if it exists
-        for child in self.blank_tab.winfo_children():
-            if isinstance(child, ttk.Label):
-                child.config(
-                    foreground=self.theme_manager.get_color('text'),
-                    background=self.theme_manager.get_color('background')
-                )
-        
-        # Update visual elements on all tabs
+        if hasattr(self, 'blank_tab'):
+            for child in self.blank_tab.winfo_children():
+                if isinstance(child, ttk.Label):
+                    child.config(
+                        foreground=self.theme_manager.get_color('text'),
+                        background=self.theme_manager.get_color('background')
+                    )
+
+        # Update Data Loading Tab - Dwell Time section explicitly
+        if hasattr(self, 'explanation_frame'):
+            self.explanation_frame.config(style='TFrame')
+        if hasattr(self, 'explanation_label'):
+            self.explanation_label.config(
+                background=self.theme_manager.get_color('background'),
+                foreground=self.theme_manager.get_color('text')
+            )
+        if hasattr(self, 'highlight_frame'):
+            accent_bg = self.theme_manager.get_color('panel_bg') if new_theme == 'dark' else '#e6f2ff'
+            self.highlight_frame.config(style='Accent.TFrame')
+            try:
+                self.highlight_frame.configure(background=accent_bg)
+            except tk.TclError:
+                 pass
+            for child in self.highlight_frame.winfo_children():
+                if isinstance(child, ttk.Label):
+                    child.config(
+                        background=accent_bg,
+                        foreground=self.theme_manager.get_color('text')
+                    )
+        if hasattr(self, 'time_res_entry'):
+             pass # Style handles ttk.Entry
+
+        # === Update Peak Detection Tab ===
+        if hasattr(self, 'peak_detection_main_canvas'):
+            self.peak_detection_main_canvas.config(bg=self.theme_manager.get_color('background'))
+        if hasattr(self, 'sigma_container'):
+            self.sigma_container.config(style='TFrame')
+        if hasattr(self, 'slider_frame'):
+            self.slider_frame.config(style='TFrame')
+            for child in self.slider_frame.winfo_children():
+                if isinstance(child, ttk.Label):
+                     child.config(
+                         background=self.theme_manager.get_color('background'),
+                         foreground=self.theme_manager.get_color('text')
+                     )
+        if hasattr(self, 'threshold_diagram_canvas'):
+            canvas_bg_color = self.theme_manager.get_color('background')
+            self.threshold_diagram_canvas.config(bg=canvas_bg_color)
+            self._redraw_threshold_diagram()
+        if hasattr(self, 'sigma_slider'):
+            self.sigma_slider.config(
+                bg=self.theme_manager.get_color('card_bg'),
+                fg=self.theme_manager.get_color('text'),
+                troughcolor=self.theme_manager.get_color('background')
+            )
+        if hasattr(self, 'manual_diagram_canvas'):
+            canvas_bg_color = self.theme_manager.get_color('background')
+            self.manual_diagram_canvas.config(bg=canvas_bg_color)
+            self._redraw_manual_diagram()
+        if hasattr(self, 'distance_slider'):
+            self.distance_slider.config(
+                bg=self.theme_manager.get_color('card_bg'),
+                fg=self.theme_manager.get_color('text'),
+                troughcolor=self.theme_manager.get_color('background')
+            )
+        if hasattr(self, 'rel_height_slider'):
+            self.rel_height_slider.config(
+                bg=self.theme_manager.get_color('card_bg'),
+                fg=self.theme_manager.get_color('text'),
+                troughcolor=self.theme_manager.get_color('background')
+            )
+
+        # === Update Double Peak Analysis Tab Histograms ===
+        if hasattr(self, 'amp_hist_canvas') and hasattr(self, 'amp_hist_ax'):
+            self._update_histogram_theme(self.amp_hist_canvas, self.amp_hist_ax)
+            self.amp_hist_canvas.draw()
+        if hasattr(self, 'width_hist_canvas') and hasattr(self, 'width_hist_ax'):
+            self._update_histogram_theme(self.width_hist_canvas, self.width_hist_ax)
+            self.width_hist_canvas.draw()
+
+        # === Update Preprocessing Tab ===
+        if hasattr(self, 'raw_color_indicator'):
+            raw_indicator_bg = '#bbbbbb' if new_theme == 'dark' else '#333333'
+            self.raw_color_indicator.config(background=raw_indicator_bg)
+        if hasattr(self, 'filter_color_indicator'):
+            filter_indicator_bg = '#81D4FA' if new_theme == 'dark' else '#0078D7'
+            self.filter_color_indicator.config(background=filter_indicator_bg)
+        if hasattr(self, 'preprocessing_comparison_canvas'):
+            self._redraw_preprocessing_comparison()
+
+        # === Update General UI Elements within Tabs ===
         for tab in self.tab_control.winfo_children():
             if isinstance(tab, ttk.Frame):
-                # Search for visual elements that need theme updates
                 for frame in tab.winfo_children():
                     if isinstance(frame, ttk.LabelFrame):
-                        # Look for canvas elements (diagrams)
                         self._update_frame_theme_elements(frame)
-                        
-                        # Also look in child frames
                         for child in frame.winfo_children():
                             if isinstance(child, ttk.Frame):
                                 self._update_frame_theme_elements(child)
-        
-        # Update all existing figures to match the new theme
-        for tab_name, figure in self.tab_figures.items():
-            if figure:
-                # Keep white background for plots regardless of theme
-                figure.patch.set_facecolor('white')
-                for ax in figure.get_axes():
-                    ax.set_facecolor('white')
-                    ax.tick_params(colors='#333333')  # Dark tick labels
-                    ax.xaxis.label.set_color('#333333')  # Dark axis labels
-                    ax.yaxis.label.set_color('#333333')
-                    if ax.get_title():
-                        ax.title.set_color('#333333')
-                    # Dark spines
-                    for spine in ax.spines.values():
-                        spine.set_edgecolor('#666666')
-                
-                # Find and redraw any canvas associated with this figure
-                for widget in self.plot_tab_control.winfo_children():
-                    if isinstance(widget, ttk.Frame):
-                        for child in widget.winfo_children():
-                            if hasattr(child, 'figure') and child.figure == figure:
-                                child.draw()
-        
-        # Recreate the menu bar to update the theme toggle label
+        # === End Update UI Elements ===
+
+        # 3. Regenerate Existing Plots to Apply Full Theme
+        # Get a copy of figure keys (tab names) *before* potentially modifying the dict
+        existing_plot_tabs = list(self.tab_figures.keys())
+        print(f"Theme toggled to '{new_theme}'. Regenerating plots for tabs: {existing_plot_tabs}")
+
+        # Store the currently selected plot tab to re-select it later
+        selected_tab_id = None
+        if hasattr(self, 'plot_tab_control') and self.plot_tab_control.winfo_exists():
+             try:
+                  selected_tab_id = self.plot_tab_control.select()
+                  # Get the text of the selected tab if needed for comparison later
+                  # selected_tab_text = self.plot_tab_control.tab(selected_tab_id, "text")
+             except tk.TclError: # Handle case where no tab is selected or control destroyed
+                  selected_tab_id = None
+
+        regenerated_tabs = set() # Keep track to avoid double regeneration (e.g., double peak)
+
+        for tab_name in existing_plot_tabs:
+             if tab_name in regenerated_tabs:
+                 continue
+
+             print(f"Attempting regeneration for plot tab: {tab_name}")
+             # Ensure figure exists for this tab before trying to clear/replot
+             if tab_name not in self.tab_figures or not isinstance(self.tab_figures[tab_name], Figure):
+                  print(f"  Skipping regeneration for '{tab_name}', no valid figure found.")
+                  continue
+
+             try:
+                # Use if/elif based on the tab name to call the correct replotting function
+                # Add checks for necessary data before calling plot functions
+                if tab_name == "Raw Data":
+                    if hasattr(self, 'data') and self.data is not None:
+                        self.plot_raw_data() # Replots raw data
+                    else:
+                        self._clear_plot_tab(tab_name) # Clear if no data
+
+                elif tab_name == "Processed Data":
+                    if hasattr(self, 'data') and self.data is not None:
+                         # start_analysis creates the 'Processed Data' plot
+                        self.start_analysis()
+                    else:
+                        self._clear_plot_tab(tab_name)
+
+                elif tab_name == "Filtered Peaks":
+                     if hasattr(self, 'filtered_signal') and self.filtered_signal is not None and \
+                        hasattr(self, 'peaks') and self.peaks is not None:
+                          # plot_filtered_peaks creates the grid
+                          self.plot_filtered_peaks()
+                     else:
+                         self._clear_plot_tab(tab_name)
+
+                elif tab_name == "Peak Analysis":
+                     if hasattr(self, 'filtered_signal') and self.filtered_signal is not None and \
+                        hasattr(self, 't_value') and self.t_value is not None:
+                          self.plot_data() # Replots peak properties over time
+                     else:
+                          self._clear_plot_tab(tab_name)
+
+                elif tab_name == "Peak Properties":
+                     if hasattr(self, 'filtered_signal') and self.filtered_signal is not None:
+                          self.plot_scatter() # Replots scatter correlations
+                     else:
+                          self._clear_plot_tab(tab_name)
+
+                elif tab_name in ["Double Peak Selection", "Double Peak Grid"]:
+                     # Check prerequisites: filtered signal exists AND double peak mode is on
+                     if hasattr(self, 'filtered_signal') and self.filtered_signal is not None and \
+                        hasattr(self, 'double_peak_analysis') and self.double_peak_analysis.get() == "1":
+                          # This call regenerates both Selection and Grid plots/tabs
+                          # It handles checks for enough peaks internally
+                          self.analyze_double_peaks()
+                          regenerated_tabs.add("Double Peak Selection")
+                          regenerated_tabs.add("Double Peak Grid")
+                          print(f"  Regenerated Double Peak plots.")
+                     else:
+                          # Clear both potential tabs if prerequisites aren't met
+                          print(f"  Clearing Double Peak plots as prerequisites not met.")
+                          self._clear_plot_tab("Double Peak Selection")
+                          self._clear_plot_tab("Double Peak Grid")
+                          regenerated_tabs.add("Double Peak Selection") # Mark as handled
+                          regenerated_tabs.add("Double Peak Grid")
+
+                # Add elif clauses here for any other plot tabs you might have
+
+                else:
+                     print(f"  No regeneration logic defined for tab: {tab_name}")
+                     # Optionally, try a generic redraw for unknown tabs
+                     # self._redraw_canvas_for_tab(tab_name)
+
+
+             except Exception as e:
+                 print(f"ERROR regenerating plot for tab '{tab_name}' during theme switch:")
+                 traceback.print_exc() # Print detailed error
+
+        # 4. Re-select the previously selected tab if possible
+        if selected_tab_id and hasattr(self, 'plot_tab_control') and self.plot_tab_control.winfo_exists():
+             try:
+                  # Check if the tab still exists before selecting
+                  if selected_tab_id in self.plot_tab_control.tabs():
+                       self.plot_tab_control.select(selected_tab_id)
+                       print(f"Re-selected tab ID: {selected_tab_id}")
+                  else:
+                       print(f"Tab ID {selected_tab_id} no longer exists after regeneration.")
+             except tk.TclError as e:
+                  print(f"Could not re-select tab ID {selected_tab_id} after theme change: {e}")
+
+
+        # 5. Recreate the menu bar to update the theme toggle label
         from ui.components import create_menu_bar
         self.menu_bar = create_menu_bar(self)
-        
-        # Custom success message with theme name
-        theme_name = "Dark" if new_theme == "dark" else "Light"
+
+        # 6. Update status message
+        theme_name_str = "Dark" if new_theme == "dark" else "Light"
         self.preview_label.config(
-            text=f"Switched to {theme_name} Theme", 
+            text=f"Switched to {theme_name_str} Theme",
             foreground=self.theme_manager.get_color('success')
         )
-        
+
         return new_theme
-        
+
+    def _clear_plot_tab(self, tab_name):
+        """Clears the figure associated with a tab and redraws its canvas."""
+        if tab_name in self.tab_figures and isinstance(self.tab_figures[tab_name], Figure):
+            print(f"Clearing figure for tab: {tab_name}")
+            self.tab_figures[tab_name].clear() # Clear the figure object
+            self._redraw_canvas_for_tab(tab_name) # Redraw the canvas to show blank state
+        else:
+             print(f"No figure found to clear for tab: {tab_name}")
+
+
+    def _redraw_canvas_for_tab(self, tab_name):
+        """Finds the canvas associated with a tab name and calls draw() on it."""
+        if not hasattr(self, 'plot_tab_control') or not self.plot_tab_control.winfo_exists():
+            return # Tab control doesn't exist
+
+        try:
+            for tab_id in self.plot_tab_control.tabs():
+                if self.plot_tab_control.tab(tab_id, "text") == tab_name:
+                    tab_frame = self.plot_tab_control.nametowidget(tab_id)
+                    for widget in tab_frame.winfo_children():
+                        if isinstance(widget, FigureCanvasTkAgg):
+                            print(f"Redrawing canvas for tab: {tab_name}")
+                            widget.draw()
+                            return # Found and drew the canvas
+                    print(f"No canvas found in tab frame for: {tab_name}")
+                    return # No canvas found in this tab
+            # print(f"Tab '{tab_name}' not found in plot_tab_control.")
+        except tk.TclError as e:
+            print(f"TclError finding/redrawing canvas for tab '{tab_name}': {e}")
+        except Exception as e:
+             print(f"Unexpected error redrawing canvas for tab '{tab_name}': {e}")
+
+
     def _update_frame_theme_elements(self, frame):
         """Helper method to update theme-aware elements within a frame"""
         # Update canvases
@@ -1164,6 +1420,263 @@ class Application(tk.Tk):
         except Exception as e:
             self.show_error("Error toggling scale mode", str(e))
             return False
+
+    # Method to redraw the threshold diagram with theme-appropriate colors
+    def _redraw_threshold_diagram(self):
+        """Redraws the threshold explanation diagram with current theme colors."""
+        if not hasattr(self, 'threshold_diagram_canvas'):
+            return # Canvas doesn't exist yet
+            
+        canvas = self.threshold_diagram_canvas
+        canvas_bg = self.theme_manager.get_color('background') # Use main background
+        text_color = self.theme_manager.get_color('text')
+        signal_color = self.theme_manager.get_color('primary') # Use theme primary for signal
+        
+        # Define colors for threshold lines (using theme colors where appropriate)
+        # For dark theme, use brighter colors
+        if self.theme_manager.current_theme == 'dark':
+            low_thresh_color = "#66BB6A"  # Brighter Green
+            med_thresh_color = "#FFA726"  # Brighter Orange
+            high_thresh_color = "#EF5350" # Brighter Red
+            low_thresh_text = "σ=2"
+            med_thresh_text = "σ=5"
+            high_thresh_text = "σ=8"
+        else:
+            low_thresh_color = "#4CAF50"  # Standard Green
+            med_thresh_color = "#FF9800"  # Standard Orange
+            high_thresh_color = "#F44336" # Standard Red
+            low_thresh_text = "σ=2"
+            med_thresh_text = "σ=5"
+            high_thresh_text = "σ=8"
+
+        canvas.delete("all") # Clear previous drawing
+        canvas.config(bg=canvas_bg) # Ensure background is set
+        
+        canvas_width = canvas.winfo_width()
+        canvas_height = canvas.winfo_height()
+        if canvas_width < 50 or canvas_height < 20: # Check if canvas size is valid
+             canvas_width = 380 # Default if not rendered yet
+             canvas_height = 80
+             
+        baseline_y = canvas_height // 2 + 15
+
+        # --- Re-draw signal (same logic as before) ---
+        data_points = []
+        np.random.seed(42)
+        for x in range(10, canvas_width-10, 4):
+            y = baseline_y
+            if 70 <= x <= 90:
+                peak_height = 35
+                y = baseline_y - peak_height * np.exp(-0.02 * (x - 80) ** 2)
+            elif 180 <= x <= 200:
+                peak_height = 45
+                y = baseline_y - peak_height * np.exp(-0.02 * (x - 190) ** 2)
+            elif 270 <= x <= 290:
+                peak_height = 25
+                y = baseline_y - peak_height * np.exp(-0.02 * (x - 280) ** 2)
+            y += np.random.normal(0, 3)
+            data_points.append(x)
+            data_points.append(int(y))
+        canvas.create_line(data_points, fill=signal_color, width=2, smooth=True, tags="diagram_element")
+
+        # --- Re-draw threshold lines and text with theme colors ---
+        low_thresh_y = baseline_y - 15
+        med_thresh_y = baseline_y - 25
+        high_thresh_y = baseline_y - 40
+
+        # Low sigma
+        canvas.create_line(10, low_thresh_y, canvas_width-10, low_thresh_y, 
+                           fill=low_thresh_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_text(canvas_width-15, low_thresh_y-8, text=low_thresh_text, 
+                           fill=low_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="diagram_element")
+
+        # Medium sigma
+        canvas.create_line(10, med_thresh_y, canvas_width-10, med_thresh_y, 
+                           fill=med_thresh_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_text(canvas_width-15, med_thresh_y-8, text=med_thresh_text, 
+                           fill=med_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="diagram_element")
+
+        # High sigma
+        canvas.create_line(10, high_thresh_y, canvas_width-10, high_thresh_y, 
+                           fill=high_thresh_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_text(canvas_width-15, high_thresh_y-8, text=high_thresh_text, 
+                           fill=high_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="diagram_element")
+
+        # --- Re-draw markers with theme colors ---
+        for x_pos in [80, 190, 280]:
+            canvas.create_oval(x_pos-3, low_thresh_y-3, x_pos+3, low_thresh_y+3, 
+                               fill=low_thresh_color, outline="", tags="diagram_element")
+        for x_pos in [190, 280]:
+            canvas.create_oval(x_pos-3, med_thresh_y-3, x_pos+3, med_thresh_y+3, 
+                               fill=med_thresh_color, outline="", tags="diagram_element")
+        canvas.create_oval(190-3, high_thresh_y-3, 190+3, high_thresh_y+3, 
+                           fill=high_thresh_color, outline="", tags="diagram_element")
+
+    # Method to redraw the manual parameters diagram with theme-appropriate colors
+    def _redraw_manual_diagram(self):
+        """Redraws the manual parameters explanation diagram with current theme colors."""
+        if not hasattr(self, 'manual_diagram_canvas'):
+            return # Canvas doesn't exist yet
+
+        canvas = self.manual_diagram_canvas
+        canvas_bg = self.theme_manager.get_color('background')
+        text_color = self.theme_manager.get_color('text')
+        signal_color = self.theme_manager.get_color('primary')
+
+        # Define colors for indicators (brighter for dark theme)
+        if self.theme_manager.current_theme == 'dark':
+            dist_color = "#FF8A80"  # Brighter Red
+            height_color = "#80CBC4" # Brighter Teal
+            width_color = "#81D4FA" # Brighter Blue
+        else:
+            dist_color = "#FF6B6B"  # Standard Red
+            height_color = "#4ECDC4" # Standard Teal
+            width_color = "#45B7D1" # Standard Blue
+
+        canvas.delete("all") # Clear previous drawing
+        canvas.config(bg=canvas_bg) # Ensure background is set
+
+        canvas_width = canvas.winfo_width()
+        canvas_height = canvas.winfo_height()
+        if canvas_width < 50 or canvas_height < 20: # Check if canvas size is valid
+            canvas_width = 380 # Default if not rendered yet
+            canvas_height = 120
+            
+        baseline_y = 60
+
+        # --- Re-draw signal (same logic as before) ---
+        data_points = []
+        np.random.seed(42)
+        peaks = [
+            {'x': 100, 'height': 50, 'width': 30},
+            {'x': 250, 'height': 35, 'width': 25}
+        ]
+        for x in range(10, canvas_width-10, 2):
+            y = baseline_y
+            for peak in peaks:
+                if abs(x - peak['x']) < peak['width'] * 2:
+                    y -= peak['height'] * np.exp(-0.5 * ((x - peak['x']) / (peak['width']/2))**2)
+            y += np.random.normal(0, 0.5)
+            data_points.append(x)
+            data_points.append(int(y))
+        canvas.create_line(data_points, fill=signal_color, width=2, smooth=True, tags="diagram_element")
+
+        # --- Re-draw indicators with theme colors ---
+        # Distance
+        distance_y = baseline_y + 15
+        canvas.create_line(peaks[0]['x'], distance_y, peaks[1]['x'], distance_y,
+                           fill=dist_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_text((peaks[0]['x'] + peaks[1]['x'])/2, distance_y + 10,
+                           text="Distance between peaks", fill=text_color, 
+                           font=("TkDefaultFont", 8), tags="diagram_element")
+        # Height
+        rel_height_y = baseline_y - peaks[0]['height'] * 0.2
+        canvas.create_line(peaks[0]['x'], baseline_y - peaks[0]['height'], peaks[0]['x'], rel_height_y,
+                           fill=height_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_text(peaks[0]['x'], rel_height_y - 10,
+                           text="Relative Height (0.8 = 80% from top)", fill=text_color, 
+                           font=("TkDefaultFont", 8), tags="diagram_element")
+        # Width
+        width_y = baseline_y + 5
+        width_val = peaks[0]['width'] # Use defined width
+        canvas.create_line(peaks[0]['x'] - width_val, width_y, peaks[0]['x'] + width_val, width_y,
+                           fill=width_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_line(peaks[0]['x'] - width_val, width_y, peaks[0]['x'] - width_val, rel_height_y,
+                           fill=width_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_line(peaks[0]['x'] + width_val, width_y, peaks[0]['x'] + width_val, rel_height_y,
+                           fill=width_color, width=1, dash=(2, 2), tags="diagram_element")
+        canvas.create_text(peaks[0]['x'], width_y + 10,
+                           text="Width Range", fill=text_color, 
+                           font=("TkDefaultFont", 8), tags="diagram_element")
+
+    # Method to update the theme styling of a Matplotlib histogram
+    def _update_histogram_theme(self, canvas, ax):
+        """Applies the current theme colors to a histogram's figure and axes."""
+        if canvas is None or ax is None:
+            return
+            
+        fig = ax.get_figure()
+        is_dark = self.theme_manager.current_theme == 'dark'
+        
+        # Colors
+        bg_color = self.theme_manager.get_color('background')
+        text_color = self.theme_manager.get_color('text')
+        grid_color = self.theme_manager.get_color('border')
+        spine_color = self.theme_manager.get_color('secondary')
+        
+        # Update figure and axes background
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(bg_color)
+        
+        # Update spines
+        for spine in ax.spines.values():
+            spine.set_edgecolor(spine_color)
+            
+        # Update ticks and labels
+        ax.tick_params(axis='x', colors=text_color, labelsize=6) # Keep labelsize small
+        ax.tick_params(axis='y', colors=text_color, labelsize=6)
+        ax.xaxis.label.set_color(text_color)
+        ax.yaxis.label.set_color(text_color)
+        
+        # Update grid
+        ax.grid(True, color=grid_color, alpha=0.3)
+        
+        # Update title (if exists)
+        if ax.get_title():
+            ax.title.set_color(text_color)
+            
+        # Redraw the canvas
+        canvas.draw()
+
+    # Method to redraw the preprocessing comparison diagram
+    def _redraw_preprocessing_comparison(self):
+        """Redraws the preprocessing comparison diagram with current theme colors."""
+        if not hasattr(self, 'preprocessing_comparison_canvas'):
+            return
+
+        canvas = self.preprocessing_comparison_canvas
+        canvas_bg = self.theme_manager.get_color('card_bg') # Use card_bg for this canvas
+        text_color = self.theme_manager.get_color('text')
+        is_dark = self.theme_manager.current_theme == 'dark'
+        
+        # Define colors based on theme
+        raw_color = '#bbbbbb' if is_dark else '#333333'
+        filtered_color = '#81D4FA' if is_dark else '#0078D7' # Lighter blue for dark
+        axis_color = self.theme_manager.get_color('secondary')
+
+        canvas.delete("all")
+        canvas.config(bg=canvas_bg)
+
+        canvas_width = canvas.winfo_width()
+        canvas_height = canvas.winfo_height()
+        if canvas_width < 50 or canvas_height < 20:
+            canvas_width = 380
+            canvas_height = 80
+            
+        baseline_y = canvas_height // 2
+
+        # Draw axis
+        canvas.create_line(10, baseline_y, canvas_width - 10, baseline_y,
+                           fill=axis_color, dash=(4, 4), width=1, tags="compare_element")
+
+        # Draw raw data
+        raw_points = []
+        np.random.seed(42)
+        for x in range(10, canvas_width-10, 3):
+            noise = np.random.normal(0, 6) if x % 9 != 0 else np.random.normal(0, 2)
+            y = baseline_y - 15 * np.sin((x-10) / 30) + noise
+            raw_points.append(x)
+            raw_points.append(int(y))
+        canvas.create_line(raw_points, fill=raw_color, width=1.5, smooth=False, tags="compare_element")
+
+        # Draw filtered data
+        filtered_points = []
+        for x in range(10, canvas_width-10, 3):
+            y = baseline_y - 15 * np.sin((x-10) / 30)
+            filtered_points.append(x)
+            filtered_points.append(int(y))
+        canvas.create_line(filtered_points, fill=filtered_color, width=2, smooth=True, tags="compare_element")
+
 
 # Your main program code goes here
 

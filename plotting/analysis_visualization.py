@@ -19,16 +19,20 @@ from scipy import stats
 def plot_data(app, profile_function=None):
     """Plot processed data with peaks in a new tab."""
     if app.filtered_signal is None:
-        app.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
+        app.preview_label.config(
+            text="Filtered signal not available. Please start the analysis first.",
+            foreground=app.theme_manager.get_color('error')
+            )
         return
 
     try:
         print("Starting plot_data function...")
 
         # Create a new figure for data plot
+        # Figure background color is handled by theme manager
         app.data_figure = Figure(figsize=(10, 8))
 
-        # Create subplots with proper spacing
+        # Create subplots
         axes = app.data_figure.subplots(nrows=4, ncols=1, sharex=True,
                                        gridspec_kw={'height_ratios': [1, 1, 1, 1.2],
                                                    'hspace': 0.3})
@@ -111,25 +115,30 @@ def plot_data(app, profile_function=None):
                 areas.append(0)
         areas = np.array(areas)
 
-        # Plot peak heights
-        axes[0].scatter(peak_times/60, prominences, s=1, alpha=0.5, color='black', label='Peak Heights')
+        # Get SEMANTIC theme colors for plotting elements
+        scatter_color = app.theme_manager.get_plot_color('scatter_points')
+        bar_color = app.theme_manager.get_plot_color('hist_bars') # Use hist color for bars too
+        moving_avg_color = app.theme_manager.get_plot_color('moving_average')
+
+        # Plot peak heights using SEMANTIC color
+        axes[0].scatter(peak_times/60, prominences, s=1, alpha=0.5, color=scatter_color, label='Peak Heights')
         axes[0].set_ylabel('Peak Heights')
-        axes[0].grid(True, alpha=0.3)
-        axes[0].legend(fontsize=8)
+        axes[0].grid(True) # alpha/color from rcParams
+        axes[0].legend()
         axes[0].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
-        # Plot peak widths
-        axes[1].scatter(peak_times/60, widths_in_ms, s=1, alpha=0.5, color='black', label='Peak Widths (ms)')
+        # Plot peak widths using SEMANTIC color
+        axes[1].scatter(peak_times/60, widths_in_ms, s=1, alpha=0.5, color=scatter_color, label='Peak Widths (ms)')
         axes[1].set_ylabel('Peak Widths (ms)')
-        axes[1].grid(True, alpha=0.3)
-        axes[1].legend(fontsize=8)
+        axes[1].grid(True)
+        axes[1].legend()
         axes[1].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
-        # Plot peak areas
-        axes[2].scatter(peak_times/60, areas, s=1, alpha=0.5, color='black', label='Peak Areas')
+        # Plot peak areas using SEMANTIC color
+        axes[2].scatter(peak_times/60, areas, s=1, alpha=0.5, color=scatter_color, label='Peak Areas')
         axes[2].set_ylabel('Peak Areas')
-        axes[2].grid(True, alpha=0.3)
-        axes[2].legend(fontsize=8)
+        axes[2].grid(True)
+        axes[2].legend()
         axes[2].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
         # Calculate and plot throughput
@@ -138,72 +147,94 @@ def plot_data(app, profile_function=None):
         bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
         throughput, _ = np.histogram(peak_times, bins=bins)
 
-        # Plot throughput with proper styling
-        axes[3].bar(bin_centers/60, throughput,
-                   width=(interval/60)*0.8,  # Adjust bar width
-                   color='black',
-                   alpha=0.5,
-                   label=f'Throughput ({interval}s bins)')
+        # Plot throughput bars using SEMANTIC color
+        axes[3].bar(bin_centers/60, throughput, width=(interval/60)*0.8,
+                   color=bar_color,
+                   alpha=0.6, label=f'Throughput ({interval}s bins)')
 
-        # Add moving average line
+        # Add moving average line using SEMANTIC color
         window = 5  # Number of points for moving average
         moving_avg = np.convolve(throughput, np.ones(window)/window, mode='valid')
         moving_avg_times = bin_centers[window-1:]/60
         axes[3].plot(moving_avg_times, moving_avg,
-                    color='red',
-                    linewidth=1,
-                    label=f'{window}-point Moving Average')
+                    color=moving_avg_color,
+                    linewidth=1, label=f'{window}-point Moving Average')
 
         axes[3].set_ylabel(f'Peaks per {interval}s')
         axes[3].set_xlabel('Time (min)')
-        axes[3].grid(True, alpha=0.3)
-        axes[3].legend(fontsize=8)
+        axes[3].grid(True)
+        axes[3].legend() # Removed fontsize
 
-        # Add statistics annotation to throughput plot
+        # Add statistics annotation to throughput plot (Removed bbox, fontsize=8)
         stats_text = (f'Total Peaks: {len(peaks):,}\n'
                      f'Avg Rate: {len(peaks)/(np.max(t)-np.min(t))*60:.1f} peaks/min\n'
                      f'Max Rate: {np.max(throughput)/(interval/60):.1f} peaks/min')
         axes[3].text(0.02, 0.98, stats_text,
                     transform=axes[3].transAxes,
                     verticalalignment='top',
-                    fontsize=8,
-                    bbox=dict(facecolor='white', alpha=0.8))
+                    fontsize=8) # Keep annotation font small
 
         # Update title and layout
         app.data_figure.suptitle('Peak Analysis Over Time', y=0.95)
-        app.data_figure.tight_layout()
+        app.data_figure.tight_layout(rect=[0, 0, 1, 0.93]) # Adjust rect for suptitle
+
+        # Apply theme standard styles (bg, grid, text)
+        app.theme_manager.apply_plot_theme(app.data_figure, axes)
 
         # Create or update the tab in plot_tab_control
         tab_name = "Peak Analysis"
         tab_exists = False
+        canvas = None
 
-        for tab in app.plot_tab_control.tabs():
-            if app.plot_tab_control.tab(tab, "text") == tab_name:
-                app.plot_tab_control.forget(tab)  # Remove existing tab to update it
+        for tab_widget_id in app.plot_tab_control.tabs():
+            if app.plot_tab_control.tab(tab_widget_id, "text") == tab_name:
+                tab_frame = app.plot_tab_control.nametowidget(tab_widget_id)
+                app.plot_tab_control.select(tab_frame)
+                # Remove old canvas
+                for widget in tab_frame.winfo_children():
+                    widget.destroy()
+                # Add new canvas
+                canvas = FigureCanvasTkAgg(app.data_figure, master=tab_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                app.data_canvas = canvas # Update specific canvas reference
+                tab_exists = True
                 break
 
-        new_tab = ttk.Frame(app.plot_tab_control)
-        app.plot_tab_control.add(new_tab, text=tab_name)
-        app.plot_tab_control.select(new_tab)
+        if not tab_exists:
+            new_tab = ttk.Frame(app.plot_tab_control)
+            app.plot_tab_control.add(new_tab, text=tab_name)
+            app.plot_tab_control.select(new_tab)
+            # Create and pack the canvas
+            canvas = FigureCanvasTkAgg(app.data_figure, master=new_tab)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            app.data_canvas = canvas # Store specific canvas reference
 
-        # Create new canvas in the tab
-        app.data_canvas = FigureCanvasTkAgg(app.data_figure, new_tab)
-        app.data_canvas.draw()
-        app.data_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # Store the figure associated with the tab
+        app.tab_figures[tab_name] = app.data_figure
 
-        app.preview_label.config(text="Peak analysis plot created successfully", foreground="green")
-
-        app.tab_figures["Peak Analysis"] = app.data_figure
+        app.preview_label.config(
+            text="Peak analysis plot created successfully",
+            foreground=app.theme_manager.get_color('success')
+            )
 
     except Exception as e:
         app.show_error("Error in plot_data", e)
-        raise  # Re-raise the exception for debugging
+        app.preview_label.config(
+            text="Error creating peak analysis plot.",
+            foreground=app.theme_manager.get_color('error')
+            )
+        # Don't re-raise, just show error in UI
 
 
 def plot_scatter(app, profile_function=None):
     """Enhanced scatter plot for peak property correlations"""
     if app.filtered_signal is None:
-        app.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
+        app.preview_label.config(
+            text="Filtered signal not available. Please start the analysis first.",
+            foreground=app.theme_manager.get_color('error')
+            )
         return
 
     try:
@@ -288,90 +319,77 @@ def plot_scatter(app, profile_function=None):
             # Calculate average width in sample points
             print(f"Average width in sample points: {np.mean(widths):.2f}")
 
-        # Create new figure with adjusted size and spacing
+        # Create new figure
+        # Figure bg color handled by theme manager
         new_figure = Figure(figsize=(12, 10))
-        gs = new_figure.add_gridspec(2, 2, hspace=0.25, wspace=0.3)
+        gs = new_figure.add_gridspec(2, 2, hspace=0.3, wspace=0.3) # Increased spacing slightly
         ax = [new_figure.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
+        # Axes bg color handled by theme manager
 
-        # Color map for density
+        # Get SEMANTIC theme colors
+        hist_color = app.theme_manager.get_plot_color('hist_bars')
+        hist_edge_color = app.theme_manager.get_plot_color('patch.edgecolor') # Use standard edge color
+
+        # Colormap for density
         cmap = plt.cm.viridis
+        scatter_size = 3 # Smaller points for less overplotting
+        scatter_alpha = 0.6
 
-        # Plot 1: Width vs Amplitude
+        # Plot 1: Width vs Amplitude (Density cmap, fonts from apply_plot_theme)
         density1 = stats.gaussian_kde(np.vstack([df_all['width'], df_all['amplitude']]))
         density1_points = density1(np.vstack([df_all['width'], df_all['amplitude']]))
-
         sc1 = ax[0].scatter(df_all['width'], df_all['amplitude'],
-                          c=density1_points,
-                          s=5,
-                          alpha=0.6,
-                          cmap=cmap)
-        ax[0].set_xlabel('Width (ms)', fontsize=10)
-        ax[0].set_ylabel('Amplitude (counts)', fontsize=10)
+                          c=density1_points, s=scatter_size, alpha=scatter_alpha, cmap=cmap)
+        ax[0].set_xlabel('Width (ms)')
+        ax[0].set_ylabel('Amplitude (counts)')
         ax[0].set_xscale('log')
         ax[0].set_yscale('log')
-        ax[0].grid(True, alpha=0.3)
-        ax[0].set_title('Width vs Amplitude', fontsize=12)
-
-        # Add correlation coefficient
+        ax[0].grid(True) # Use theme grid style
+        ax[0].set_title('Width vs Amplitude')
         corr1 = df_all['width'].corr(df_all['amplitude'])
-        ax[0].text(0.05, 0.95, f'r = {corr1:.2f}',
-                  transform=ax[0].transAxes,
-                  fontsize=10,
-                  bbox=dict(facecolor='white', alpha=0.8))
+        ax[0].text(0.05, 0.95, f'r = {corr1:.2f}', transform=ax[0].transAxes,
+                   fontsize=9, verticalalignment='top') # Keep annotation font small
 
-        # Plot 2: Width vs Area
+        # Plot 2: Width vs Area (Density cmap, fonts from apply_plot_theme)
         density2 = stats.gaussian_kde(np.vstack([df_all['width'], df_all['area']]))
         density2_points = density2(np.vstack([df_all['width'], df_all['area']]))
-
         sc2 = ax[1].scatter(df_all['width'], df_all['area'],
-                          c=density2_points,
-                          s=5,
-                          alpha=0.6,
-                          cmap=cmap)
-        ax[1].set_xlabel('Width (ms)', fontsize=10)
-        ax[1].set_ylabel('Area (counts)', fontsize=10)
+                          c=density2_points, s=scatter_size, alpha=scatter_alpha, cmap=cmap)
+        ax[1].set_xlabel('Width (ms)')
+        ax[1].set_ylabel('Area (counts)')
         ax[1].set_xscale('log')
         ax[1].set_yscale('log')
-        ax[1].grid(True, alpha=0.3)
-        ax[1].set_title('Width vs Area', fontsize=12)
-
+        ax[1].grid(True)
+        ax[1].set_title('Width vs Area')
         corr2 = df_all['width'].corr(df_all['area'])
-        ax[1].text(0.05, 0.95, f'r = {corr2:.2f}',
-                  transform=ax[1].transAxes,
-                  fontsize=10,
-                  bbox=dict(facecolor='white', alpha=0.8))
+        ax[1].text(0.05, 0.95, f'r = {corr2:.2f}', transform=ax[1].transAxes,
+                   fontsize=9, verticalalignment='top')
 
-        # Plot 3: Amplitude vs Area
+        # Plot 3: Amplitude vs Area (Density cmap, fonts from apply_plot_theme)
         density3 = stats.gaussian_kde(np.vstack([df_all['amplitude'], df_all['area']]))
         density3_points = density3(np.vstack([df_all['amplitude'], df_all['area']]))
-
         sc3 = ax[2].scatter(df_all['amplitude'], df_all['area'],
-                          c=density3_points,
-                          s=5,
-                          alpha=0.6,
-                          cmap=cmap)
-        ax[2].set_xlabel('Amplitude (counts)', fontsize=10)
-        ax[2].set_ylabel('Area (counts)', fontsize=10)
+                          c=density3_points, s=scatter_size, alpha=scatter_alpha, cmap=cmap)
+        ax[2].set_xlabel('Amplitude (counts)')
+        ax[2].set_ylabel('Area (counts)')
         ax[2].set_xscale('log')
         ax[2].set_yscale('log')
-        ax[2].grid(True, alpha=0.3)
-        ax[2].set_title('Amplitude vs Area', fontsize=12)
-
+        ax[2].grid(True)
+        ax[2].set_title('Amplitude vs Area')
         corr3 = df_all['amplitude'].corr(df_all['area'])
-        ax[2].text(0.05, 0.95, f'r = {corr3:.2f}',
-                  transform=ax[2].transAxes,
-                  fontsize=10,
-                  bbox=dict(facecolor='white', alpha=0.8))
+        ax[2].text(0.05, 0.95, f'r = {corr3:.2f}', transform=ax[2].transAxes,
+                   fontsize=9, verticalalignment='top')
 
-        # Plot 4: Width distribution with statistics
+        # Plot 4: Width distribution using SEMANTIC colors
         import seaborn as sns
-        sns.histplot(data=df_all, x='width', bins=50, ax=ax[3], color='darkblue', alpha=0.6)
-        ax[3].set_xlabel('Width (ms)', fontsize=10)
-        ax[3].set_ylabel('Count', fontsize=10)
-        ax[3].grid(True, alpha=0.3)
-        ax[3].set_title('Width Distribution', fontsize=12)
-
-        # Add statistics to histogram
+        sns.histplot(data=df_all, x='width', bins=50, ax=ax[3],
+                     color=hist_color,
+                     edgecolor=hist_edge_color,
+                     alpha=0.7)
+        ax[3].set_xlabel('Width (ms)')
+        ax[3].set_ylabel('Count')
+        ax[3].grid(True)
+        ax[3].set_title('Width Distribution')
         stats_text = (
             f'Mean: {df_all["width"].mean():.1f} ms\n'
             f'Median: {df_all["width"].median():.1f} ms\n'
@@ -379,47 +397,69 @@ def plot_scatter(app, profile_function=None):
             f'Min: {df_all["width"].min():.1f} ms\n'
             f'Max: {df_all["width"].max():.1f} ms\n'
             f'N: {len(df_all):,} peaks')
-        ax[3].text(0.95, 0.95, stats_text,
-                  transform=ax[3].transAxes,
-                  fontsize=9,
-                  bbox=dict(facecolor='white', alpha=0.8),
-                  verticalalignment='top',
-                  horizontalalignment='right')
+        ax[3].text(0.95, 0.95, stats_text, transform=ax[3].transAxes,
+                  fontsize=9, verticalalignment='top', horizontalalignment='right') # Keep font small
 
-        # Add colorbar for density
-        cbar_ax = new_figure.add_axes([0.92, 0.15, 0.02, 0.7])
-        new_figure.colorbar(sc1, cax=cbar_ax, label='Density')
+        # Add colorbar
+        cbar_ax = new_figure.add_axes([0.93, 0.15, 0.02, 0.7]) # Adjusted position slightly
+        cbar = new_figure.colorbar(sc1, cax=cbar_ax, label='Density')
+        # Colorbar label/ticks set by apply_plot_theme
 
-        # Main title with summary statistics
+        # Main title (text color from apply_plot_theme)
         summary_stats = (
             f'Total Peaks: {len(peaks_x_filter):,} | '
             f'Mean Area: {df_all["area"].mean():.1e} ± {df_all["area"].std():.1e} | '
             f'Mean Amplitude: {df_all["amplitude"].mean():.1f} ± {df_all["amplitude"].std():.1f}'
         )
         new_figure.suptitle('Peak Property Correlations\n' + summary_stats,
-                           y=0.95, fontsize=14)
+                           y=0.96) # Adjusted y slightly
 
-        # Update or create tab in plot_tab_control
+        # Apply theme standard styles (bg, grid, text) including colorbar axis
+        all_axes_to_theme = ax + [cbar.ax]
+        app.theme_manager.apply_plot_theme(new_figure, all_axes_to_theme)
+
+        # --- Update or create tab ---
         tab_name = "Peak Properties"
         tab_exists = False
+        canvas = None
 
-        for tab in app.plot_tab_control.tabs():
-            if app.plot_tab_control.tab(tab, "text") == tab_name:
-                app.plot_tab_control.forget(tab)
+        for tab_widget_id in app.plot_tab_control.tabs():
+            if app.plot_tab_control.tab(tab_widget_id, "text") == tab_name:
+                tab_frame = app.plot_tab_control.nametowidget(tab_widget_id)
+                app.plot_tab_control.select(tab_frame)
+                # Remove old canvas
+                for widget in tab_frame.winfo_children():
+                    widget.destroy()
+                # Add new canvas
+                canvas = FigureCanvasTkAgg(new_figure, master=tab_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                # app.scatter_canvas = canvas # Optional: store specific canvas
+                tab_exists = True
                 break
 
-        new_tab = ttk.Frame(app.plot_tab_control)
-        app.plot_tab_control.add(new_tab, text=tab_name)
-        app.plot_tab_control.select(new_tab)
+        if not tab_exists:
+            new_tab = ttk.Frame(app.plot_tab_control)
+            app.plot_tab_control.add(new_tab, text=tab_name)
+            app.plot_tab_control.select(new_tab)
+            # Create and pack the canvas
+            canvas = FigureCanvasTkAgg(new_figure, master=new_tab)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            # app.scatter_canvas = canvas # Optional: store specific canvas
 
-        new_canvas = FigureCanvasTkAgg(new_figure, new_tab)
-        new_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        new_canvas.draw_idle()
+        # Store the figure associated with the tab
+        app.tab_figures[tab_name] = new_figure
 
-        app.preview_label.config(text="Peak properties plotted successfully", foreground="green")
-        app.tab_figures["Peak Properties"] = new_figure
+        app.preview_label.config(
+            text="Peak properties plotted successfully",
+            foreground=app.theme_manager.get_color('success')
+            )
 
     except Exception as e:
-        app.preview_label.config(text=f"Error creating scatter plot: {e}", foreground="red")
+        app.preview_label.config(
+            text=f"Error creating scatter plot: {e}",
+            foreground=app.theme_manager.get_color('error')
+            )
         print(f"Detailed error: {str(e)}")
         traceback.print_exc() 

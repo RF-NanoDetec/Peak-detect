@@ -363,4 +363,142 @@ def save_peak_information_to_csv(app):
             text=f"Error saving peak information: {str(e)}", 
             foreground=app.theme_manager.get_color('error')
         )
+        return None
+
+def save_double_peak_information_to_csv(app):
+    """
+    Save detected double peak information to a file with configurable format.
+    
+    Parameters
+    ----------
+    app : Application
+        The main application instance
+    """
+    print("DEBUG: Starting save_double_peak_information_to_csv")
+    
+    if not hasattr(app, 'double_peak_data') or app.double_peak_data is None:
+        print("DEBUG: No double peak data available")
+        app.preview_label.config(
+            text="No double peak data available. Please run double peak analysis first.", 
+            foreground=app.theme_manager.get_color('error')
+        )
+        app.status_indicator.set_state('warning')
+        app.status_indicator.set_text("No data available")
+        return None
+
+    try:
+        # Update status
+        app.status_indicator.set_state('processing')
+        app.status_indicator.set_text("Saving double peak information...")
+        
+        print("DEBUG: Getting export format and options")
+        # Get export format and options
+        file_format, delimiter, include_metadata = get_export_format(app)
+        print(f"DEBUG: Export options - format: {file_format}, delimiter: {delimiter}, metadata: {include_metadata}")
+        
+        # Get double peak data
+        double_peak_data = app.double_peak_data
+        
+        # Get peak indices and properties
+        peak_indices = double_peak_data['peak_indices']
+        next_peak_indices = double_peak_data['next_peak_indices']
+        distances = double_peak_data['distances']
+        amp_ratios = double_peak_data['amp_ratios']
+        width_ratios = double_peak_data['width_ratios']
+        is_double_peak = double_peak_data['is_double_peak']
+        
+        # Get time values for peaks
+        peak_times = app.t_value[app.peaks[peak_indices]]
+        next_peak_times = app.t_value[app.peaks[next_peak_indices]]
+        
+        # Get peak widths and left_ips
+        peak_widths = app.peak_widths[peak_indices]
+        next_peak_widths = app.peak_widths[next_peak_indices]
+        peak_left_ips = app.peak_left_ips[peak_indices]
+        next_peak_left_ips = app.peak_left_ips[next_peak_indices]
+        
+        # Convert widths from samples to milliseconds
+        time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+        peak_widths_ms = peak_widths * time_res * 1000
+        next_peak_widths_ms = next_peak_widths * time_res * 1000
+        
+        # Calculate start-to-start distances in milliseconds
+        start_to_start_distances = (next_peak_left_ips - peak_left_ips) * time_res * 1000
+        
+        # Create the DataFrame
+        data = {
+            'Primary Peak Time (s)': peak_times,
+            'Secondary Peak Time (s)': next_peak_times,
+            'Peak Distance (ms)': distances * 1000,  # Convert to milliseconds
+            'Start-to-Start Distance (ms)': start_to_start_distances,  # New column
+            'Primary Peak Width (ms)': peak_widths_ms,
+            'Secondary Peak Width (ms)': next_peak_widths_ms,
+            'Width Ratio': width_ratios,
+            'Amplitude Ratio': amp_ratios,
+            'Is Double Peak': is_double_peak
+        }
+        
+        # Create DataFrame
+        df = pd.DataFrame(data)
+        print(f"DEBUG: DataFrame created with {len(df)} rows")
+        
+        print("DEBUG: Showing file save dialog")
+        # Ask user for save location
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=f".{file_format}",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*")
+            ],
+            title="Save Double Peak Information"
+        )
+        
+        if file_path:
+            print(f"DEBUG: Saving to file: {file_path}")
+            # Create metadata header if requested
+            if include_metadata:
+                metadata = create_metadata_header(app)
+                with open(file_path, 'w') as f:
+                    f.write(metadata)
+            
+            # Export data
+            df.to_csv(file_path, 
+                     sep=delimiter, 
+                     index=False, 
+                     mode='a' if include_metadata else 'w',
+                     float_format='%.6f')  # Use 6 decimal places for better precision
+            
+            # Update status
+            app.status_indicator.set_state('success')
+            app.status_indicator.set_text(f"Double peak information saved to {os.path.basename(file_path)}")
+            
+            # Update preview label
+            app.preview_label.config(
+                text=f"Double peak information saved to {file_path}", 
+                foreground=app.theme_manager.get_color('success')
+            )
+            
+            print("DEBUG: File saved successfully")
+            return file_path
+        else:
+            print("DEBUG: Save cancelled by user")
+            # Save cancelled
+            app.status_indicator.set_state('idle')
+            app.status_indicator.set_text("Save cancelled")
+            return None
+            
+    except Exception as e:
+        print(f"DEBUG: Error saving double peak information: {str(e)}")
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+        # Update status
+        app.status_indicator.set_state('error')
+        app.status_indicator.set_text("Error saving double peak information")
+        
+        # Log error and show to user
+        logger.error(f"Error saving double peak information: {str(e)}\n{traceback.format_exc()}")
+        app.preview_label.config(
+            text=f"Error saving double peak information: {str(e)}", 
+            foreground=app.theme_manager.get_color('error')
+        )
         return None 

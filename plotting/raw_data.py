@@ -74,64 +74,78 @@ def plot_raw_data(app, profiler=None):
         # Update progress
         app.update_progress_bar(2)
         
-        # Plot decimated data
+        # Get SEMANTIC theme color
+        raw_line_color = app.theme_manager.get_plot_color('line_raw')
+
+        # Plot decimated data using SEMANTIC theme color
         ax.plot(t_plot, x_plot,
-                color='black',
+                color=raw_line_color,
                 linewidth=0.05,
                 label=f'Raw Data ({len(t_plot):,} points)',
                 alpha=0.9)
         
-        # Customize plot
-        ax.set_xlabel('Time (min)', fontsize=12)
-        ax.set_ylabel('Amplitude (counts)', fontsize=12)
-        ax.set_title('Raw Data (Optimized View)', fontsize=14)
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.legend(fontsize=10)
+        # Customize plot (fonts, etc., handled by apply_plot_theme)
+        ax.set_xlabel('Time (min)')
+        ax.set_ylabel('Amplitude (counts)')
+        ax.set_title('Raw Data (Optimized View)')
+        ax.grid(True, linestyle='--') # Grid color/alpha handled by apply_plot_theme
+        ax.legend()
         
         # Add data statistics annotation
         stats_text = (f'Total points: {len(app.data):,}\n'
                      f'Plotted points: {len(t_plot):,}\n'
                      f'Mean: {np.mean(x_plot):.1f}\n'
                      f'Std: {np.std(x_plot):.1f}')
-        ax.text(0.02, 0.98, stats_text,
-                transform=ax.transAxes,
-                verticalalignment='top',
-                fontsize=8,
-                bbox=dict(facecolor='white', alpha=0.8))
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+                verticalalignment='top', fontsize=8)
         
         # Adjust layout
         app.figure.tight_layout()
         
+        # Apply theme standard styles (bg, grid, text)
+        app.theme_manager.apply_plot_theme(app.figure, [ax])
+        
         # Update or create tab
         tab_exists = False
-        for tab in app.plot_tab_control.tabs():
-            if app.plot_tab_control.tab(tab, "text") == "Raw Data":
-                app.plot_tab_control.select(tab)
+        raw_data_tab_name = "Raw Data"
+        for tab_widget_id in app.plot_tab_control.tabs():
+            if app.plot_tab_control.tab(tab_widget_id, "text") == raw_data_tab_name:
+                tab_frame = app.plot_tab_control.nametowidget(tab_widget_id)
+                app.plot_tab_control.select(tab_frame)
+                 # Remove old canvas if exists
+                for widget in tab_frame.winfo_children():
+                    widget.destroy()
+                # Add new canvas
+                canvas = FigureCanvasTkAgg(app.figure, master=tab_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                app.canvas = canvas # Update app.canvas reference
                 tab_exists = True
                 break
         
         if not tab_exists:
             new_tab = ttk.Frame(app.plot_tab_control)
-            app.plot_tab_control.add(new_tab, text="Raw Data")
+            app.plot_tab_control.add(new_tab, text=raw_data_tab_name)
             app.plot_tab_control.select(new_tab)
-            canvas = FigureCanvasTkAgg(app.figure, new_tab)
+            canvas = FigureCanvasTkAgg(app.figure, master=new_tab)
+            canvas.draw()
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            app.canvas = canvas # Store new canvas reference
         
-        # Update the canvas
-        app.canvas.draw_idle()
-        
+        # Store the figure associated with the tab
+        app.tab_figures[raw_data_tab_name] = app.figure
+
         # Final progress update
         app.update_progress_bar(3)
         
         # Update status
         app.preview_label.config(
             text=f"Raw data plotted successfully (Decimated from {len(app.data):,} to {len(t_plot):,} points)",
-            foreground="green"
+            foreground=app.theme_manager.get_color('success')
         )
 
-        app.tab_figures["Raw Data"] = app.figure
-
     except Exception as e:
-        app.preview_label.config(text=f"Error plotting raw data: {str(e)}", foreground="red")
+        app.preview_label.config(text=f"Error plotting raw data: {str(e)}",
+                                  foreground=app.theme_manager.get_color('error'))
         print(f"Detailed error: {str(e)}")
         traceback.print_exc() 

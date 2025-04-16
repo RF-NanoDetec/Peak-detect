@@ -14,7 +14,7 @@ from core.peak_analysis_utils import apply_butterworth_filter, adjust_lowpass_cu
 def start_analysis(app, profile_function=None):
     """Optimized analysis and plotting of filtered data"""
     if app.data is None:
-        app.show_error("No data loaded. Please load files first.")
+        app.show_error("No data loaded", Exception("Please load files first."))
         return
 
     try:
@@ -144,22 +144,26 @@ def start_analysis(app, profile_function=None):
         app.figure.clear()
         ax = app.figure.add_subplot(111)
 
-        # Plot decimated data
+        # Get SEMANTIC theme colors
+        raw_line_color = app.theme_manager.get_plot_color('line_raw')
+        filtered_line_color = app.theme_manager.get_plot_color('line_filtered')
+
+        # Plot decimated raw data using SEMANTIC color
         ax.plot(
             t_plot,
             x_plot,
-            color='black',
+            color=raw_line_color,
             linewidth=0.05,
             label=f'Raw Data ({len(x_plot):,} points)',
             alpha=0.4,
         )
 
-        # Adjust plot based on filtering status
+        # Plot filtered data using SEMANTIC color if enabled
         if app.filter_enabled.get():
             ax.plot(
                 t_plot,
                 filtered_plot,
-                color='blue',
+                color=filtered_line_color,
                 linewidth=0.05,
                 label=f'Filtered Data ({len(filtered_plot):,} points)',
                 alpha=0.9,
@@ -168,14 +172,14 @@ def start_analysis(app, profile_function=None):
         else:
             title = 'Raw Signal Data (Processing Only)'
 
-        # Customize plot
-        ax.set_xlabel('Time (min)', fontsize=12)
-        ax.set_ylabel('Amplitude (counts)', fontsize=12)
-        ax.set_title(title, fontsize=14)
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.legend(fontsize=10)
+        # Customize plot (fonts handled by apply_plot_theme)
+        ax.set_xlabel('Time (min)')
+        ax.set_ylabel('Amplitude (counts)')
+        ax.set_title(title)
+        ax.grid(True, linestyle='--') # Grid color/alpha handled by apply_plot_theme
+        ax.legend()
 
-        # Add filtering parameters annotation
+        # Annotation (text color handled by apply_plot_theme)
         if app.filter_enabled.get():
             filter_text = (
                 f'Cutoff: {calculated_cutoff:.1f} Hz\n'
@@ -188,16 +192,15 @@ def start_analysis(app, profile_function=None):
                 f'Processing raw data only\n'
                 f'Total points: {len(app.filtered_signal):,}'
             )
-            
-        ax.text(
-            0.02,
-            0.98,
-            filter_text,
-            transform=ax.transAxes,
-            verticalalignment='top',
-            fontsize=8,
-            bbox=dict(facecolor='white', alpha=0.8),
-        )
+
+        ax.text(0.02, 0.98, filter_text, transform=ax.transAxes,
+                verticalalignment='top', fontsize=8)
+
+        # Adjust layout
+        app.figure.tight_layout()
+
+        # Apply theme standard styles (bg, grid, text)
+        app.theme_manager.apply_plot_theme(app.figure, [ax])
 
         # Update progress
         app.update_progress_bar(3)
@@ -206,9 +209,18 @@ def start_analysis(app, profile_function=None):
         tab_name = "Processed Data"
         tab_exists = False
 
-        for tab in app.plot_tab_control.tabs():
-            if app.plot_tab_control.tab(tab, "text") == tab_name:
-                app.plot_tab_control.select(tab)
+        for tab_widget_id in app.plot_tab_control.tabs():
+             if app.plot_tab_control.tab(tab_widget_id, "text") == tab_name:
+                tab_frame = app.plot_tab_control.nametowidget(tab_widget_id)
+                app.plot_tab_control.select(tab_frame)
+                # Remove old canvas
+                for widget in tab_frame.winfo_children():
+                    widget.destroy()
+                # Add new canvas
+                canvas = FigureCanvasTkAgg(app.figure, master=tab_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                app.canvas = canvas # Update app.canvas reference
                 tab_exists = True
                 break
 
@@ -216,16 +228,19 @@ def start_analysis(app, profile_function=None):
             new_tab = ttk.Frame(app.plot_tab_control)
             app.plot_tab_control.add(new_tab, text=tab_name)
             app.plot_tab_control.select(new_tab)
-            app.canvas = FigureCanvasTkAgg(app.figure, new_tab)
-            app.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            # Create and pack the canvas
+            canvas = FigureCanvasTkAgg(app.figure, master=new_tab)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            app.canvas = canvas # Store new canvas reference
 
-        # Update the canvas
-        app.canvas.draw_idle()
+        # Store the figure associated with the tab
+        app.tab_figures[tab_name] = app.figure
 
         # Final progress update
         app.update_progress_bar(4)
 
-        # Update status
+        # Update status using theme colors
         if app.filter_enabled.get():
             status_msg = (
                 f"Analysis completed (Cutoff: {calculated_cutoff:.1f} Hz, "
@@ -233,14 +248,14 @@ def start_analysis(app, profile_function=None):
             )
         else:
             status_msg = f"Processing completed (Filtering disabled, using {len(filtered_plot):,} raw data points)"
-            
+
         app.preview_label.config(
             text=status_msg,
-            foreground="green",
+            foreground=app.theme_manager.get_color('success'), # Use theme success color
         )
-
-        app.tab_figures["Processed Data"] = app.figure
 
     except Exception as e:
         app.show_error("Error during analysis", e)
-        app.update_progress_bar(0) 
+        app.update_progress_bar(0)
+        # Ensure error message also uses theme color (show_error likely handles this, but belt and suspenders)
+        app.preview_label.config(text="Error during analysis.", foreground=app.theme_manager.get_color('error')) 

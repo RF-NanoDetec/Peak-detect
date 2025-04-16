@@ -279,25 +279,25 @@ def create_data_loading_tab(app, tab_control):
     time_res_frame.pack(fill=tk.X, padx=5, pady=10, ipady=5)
     
     # Create a container for the explanation text
-    explanation_frame = ttk.Frame(time_res_frame)
-    explanation_frame.pack(fill=tk.X, padx=5, pady=2)
+    app.explanation_frame = ttk.Frame(time_res_frame)
+    app.explanation_frame.pack(fill=tk.X, padx=5, pady=2)
     
     explanation_text = (
         "This value represents the time interval between data points and is crucial for correct peak width calculations.\n"
         "For most measurements, the default value of 0.1 milliseconds is appropriate."
     )
-    explanation_label = ttk.Label(explanation_frame, text=explanation_text, wraplength=380, justify=tk.LEFT)
-    explanation_label.pack(anchor=tk.W, padx=5, pady=2)
+    app.explanation_label = ttk.Label(app.explanation_frame, text=explanation_text, wraplength=380, justify=tk.LEFT)
+    app.explanation_label.pack(anchor=tk.W, padx=5, pady=2)
     
     # Create entry container frame
     entry_frame = ttk.Frame(time_res_frame)
     entry_frame.pack(fill=tk.X, padx=5, pady=5)
     
     # Create colored frame to highlight importance
-    highlight_frame = ttk.Frame(entry_frame, style="Accent.TFrame")
-    highlight_frame.pack(fill=tk.X, padx=2, pady=2)
+    app.highlight_frame = ttk.Frame(entry_frame, style="Accent.TFrame")
+    app.highlight_frame.pack(fill=tk.X, padx=2, pady=2)
     
-    time_res_label = ttk.Label(highlight_frame, text="Dwell Time (ms):", font=("TkDefaultFont", 10, "bold"))
+    time_res_label = ttk.Label(app.highlight_frame, text="Dwell Time (ms):", font=("TkDefaultFont", 10, "bold"))
     time_res_label.pack(side=tk.LEFT, padx=10, pady=5)
     
     # Create a StringVar for displaying in milliseconds
@@ -329,17 +329,17 @@ def create_data_loading_tab(app, tab_control):
     # Initialize the ms display
     init_time_resolution_ms()
     
-    time_res_entry = ttk.Entry(
-        highlight_frame, 
+    app.time_res_entry = ttk.Entry(
+        app.highlight_frame, 
         textvariable=app.time_resolution_ms,
         width=10,
         font=("TkDefaultFont", 10, "bold"),
         validate="key", 
         validatecommand=(app.register(lambda P: validate_float_entry(P)), "%P")
     )
-    time_res_entry.pack(side=tk.LEFT, padx=5, pady=5)
+    app.time_res_entry.pack(side=tk.LEFT, padx=5, pady=5)
     
-    units_label = ttk.Label(highlight_frame, text="milliseconds", font=("TkDefaultFont", 10))
+    units_label = ttk.Label(app.highlight_frame, text="milliseconds", font=("TkDefaultFont", 10))
     units_label.pack(side=tk.LEFT, padx=5, pady=5)
     
     # Create a "Reset to Default" button
@@ -483,14 +483,15 @@ def create_preprocessing_tab(app, tab_control):
     filter_radio.pack(side=tk.LEFT, padx=20)
     
     # Create a color chip to show filtered data is smoothed
-    filter_color = ttk.Label(
+    # Store reference to the filter color indicator
+    app.filter_color_indicator = ttk.Label(
         mode_selector,
         text="   ",
-        background="#0078D7",  # Use blue directly instead of primary theme color
+        background="#0078D7",  # Initial color (will be updated by theme)
         relief=tk.RAISED,
         borderwidth=2
     )
-    filter_color.pack(side=tk.LEFT, padx=(0, 30))
+    app.filter_color_indicator.pack(side=tk.LEFT, padx=(0, 30))
     
     raw_radio = ttk.Radiobutton(
         mode_selector,
@@ -502,36 +503,38 @@ def create_preprocessing_tab(app, tab_control):
     raw_radio.pack(side=tk.LEFT, padx=20)
     
     # Create a color chip to show raw data is noisy
-    raw_color = ttk.Label(
+    # Store reference to the raw color indicator
+    app.raw_color_indicator = ttk.Label(
         mode_selector,
         text="   ",
-        background="#333333",  # Change from #FF6B6B to dark gray
+        background="#333333",  # Initial color (will be updated by theme)
         relief=tk.RAISED,
         borderwidth=2
     )
-    raw_color.pack(side=tk.LEFT)
+    app.raw_color_indicator.pack(side=tk.LEFT)
     
     # Add visual comparison of filtered vs raw data
     comparison_frame = ttk.Frame(mode_frame)
     comparison_frame.pack(fill=tk.X, padx=10, pady=5)
     
     # Create canvas for comparison visualization
+    # Store reference to the comparison canvas
     canvas_height = 80
     canvas_width = 380
-    comparison = tk.Canvas(
+    app.preprocessing_comparison_canvas = tk.Canvas(
         comparison_frame, 
         height=canvas_height, 
         width=canvas_width,
         bg=app.theme_manager.get_color('card_bg'),
         highlightthickness=0
     )
-    comparison.pack(pady=5)
+    app.preprocessing_comparison_canvas.pack(pady=5)
     
     # Draw a comparison of raw vs filtered data
     baseline_y = canvas_height // 2
     
     # Draw axis
-    comparison.create_line(
+    app.preprocessing_comparison_canvas.create_line(
         10, baseline_y, canvas_width-10, baseline_y,
         fill="#aaaaaa", dash=(4, 4), width=1
     )
@@ -547,7 +550,7 @@ def create_preprocessing_tab(app, tab_control):
         raw_points.append(int(y))
     
     # Create raw data curve
-    comparison.create_line(raw_points, fill="#333333", width=1.5, smooth=False)
+    app.preprocessing_comparison_canvas.create_line(raw_points, fill="#333333", width=1.5, smooth=False)
     
     # Draw filtered data (smooth)
     filtered_points = []
@@ -557,24 +560,7 @@ def create_preprocessing_tab(app, tab_control):
         filtered_points.append(x)
         filtered_points.append(int(y))
     
-    # Create filtered data curve
-    comparison.create_line(filtered_points, fill="#0078D7", width=2, smooth=True)
-    
-    # Add labels
-    comparison.create_text(
-        30, 15, 
-        text="Filtered: Smoother signal, reduced noise", 
-        fill="#0078D7",  # Use blue directly 
-        anchor=tk.W,
-        font=("TkDefaultFont", 8, "bold")
-    )
-    comparison.create_text(
-        30, 30, 
-        text="Raw: Original signal with noise", 
-        fill="#333333",  # Change from #FF6B6B to dark gray
-        anchor=tk.W,
-        font=("TkDefaultFont", 8, "bold")
-    )
+    app.preprocessing_comparison_canvas.create_line(filtered_points, fill="#0078D7", width=2, smooth=True)
     
     # Function to update UI based on filter state
     def update_filter_state(is_filtered):
@@ -757,21 +743,22 @@ def create_peak_detection_tab(app, tab_control):
     main_container.pack(fill=tk.BOTH, expand=True)
     
     # Create canvas and scrollbar
-    canvas = tk.Canvas(main_container, bg=app.theme_manager.get_color('background'))
-    scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
-    scrollable_frame = ttk.Frame(canvas)
+    # Store reference to the main canvas for the tab
+    app.peak_detection_main_canvas = tk.Canvas(main_container, bg=app.theme_manager.get_color('background'))
+    scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=app.peak_detection_main_canvas.yview)
+    scrollable_frame = ttk.Frame(app.peak_detection_main_canvas) # Add frame to the app's canvas
     
     scrollable_frame.bind(
         "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        lambda e: app.peak_detection_main_canvas.configure(scrollregion=app.peak_detection_main_canvas.bbox("all"))
     )
     
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
+    app.peak_detection_main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    app.peak_detection_main_canvas.configure(yscrollcommand=scrollbar.set)
     
     # Pack the scrollbar and canvas
     scrollbar.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
+    app.peak_detection_main_canvas.pack(side="left", fill="both", expand=True)
 
     # Create a dedicated Auto Threshold frame with clear explanation
     auto_threshold_frame = ttk.LabelFrame(scrollable_frame, text="Automatic Threshold Detection")
@@ -799,14 +786,15 @@ def create_peak_detection_tab(app, tab_control):
     
     canvas_height = 80
     canvas_width = 380
-    diagram = tk.Canvas(
+    # Store reference to the canvas
+    app.threshold_diagram_canvas = tk.Canvas(
         diagram_frame, 
         height=canvas_height, 
         width=canvas_width,
         bg=app.theme_manager.get_color('card_bg'),
         highlightthickness=0
     )
-    diagram.pack()
+    app.threshold_diagram_canvas.pack()
     
     # Draw a sine-like signal to represent data
     signal_color = "#0078D7"  # Use blue directly instead of theme's primary color
@@ -839,7 +827,7 @@ def create_peak_detection_tab(app, tab_control):
         data_points.append(int(y))
     
     # Create the single signal curve
-    diagram.create_line(data_points, fill=signal_color, width=2, smooth=True)
+    app.threshold_diagram_canvas.create_line(data_points, fill=signal_color, width=2, smooth=True)
     
     # Draw threshold lines for different sigma values
     low_thresh_y = baseline_y - 15  # Low threshold (catches small peaks too)
@@ -847,11 +835,11 @@ def create_peak_detection_tab(app, tab_control):
     high_thresh_y = baseline_y - 40  # High threshold (only the largest peaks)
     
     # Low sigma (e.g., σ=2) - will detect all peaks including some noise
-    diagram.create_line(
+    app.threshold_diagram_canvas.create_line(
         10, low_thresh_y, canvas_width-10, low_thresh_y,
         fill="#4CAF50", width=1, dash=(2, 2)
     )
-    diagram.create_text(
+    app.threshold_diagram_canvas.create_text(
         canvas_width-15, low_thresh_y-8, 
         text="σ=2", 
         fill="#4CAF50", 
@@ -860,11 +848,11 @@ def create_peak_detection_tab(app, tab_control):
     )
     
     # Medium sigma (e.g., σ=5) - balanced threshold
-    diagram.create_line(
+    app.threshold_diagram_canvas.create_line(
         10, med_thresh_y, canvas_width-10, med_thresh_y,
         fill="#FF9800", width=1, dash=(2, 2)
     )
-    diagram.create_text(
+    app.threshold_diagram_canvas.create_text(
         canvas_width-15, med_thresh_y-8, 
         text="σ=5", 
         fill="#FF9800", 
@@ -873,11 +861,11 @@ def create_peak_detection_tab(app, tab_control):
     )
     
     # High sigma (e.g., σ=8) - only detects the largest peak
-    diagram.create_line(
+    app.threshold_diagram_canvas.create_line(
         10, high_thresh_y, canvas_width-10, high_thresh_y,
         fill="#F44336", width=1, dash=(2, 2)
     )
-    diagram.create_text(
+    app.threshold_diagram_canvas.create_text(
         canvas_width-15, high_thresh_y-8, 
         text="σ=8", 
         fill="#F44336", 
@@ -888,7 +876,7 @@ def create_peak_detection_tab(app, tab_control):
     # Add markers to show which peaks are detected at each threshold
     # For low threshold (detects all peaks)
     for x_pos in [80, 190, 280]:
-        diagram.create_oval(
+        app.threshold_diagram_canvas.create_oval(
             x_pos-3, low_thresh_y-3, 
             x_pos+3, low_thresh_y+3, 
             fill="#4CAF50", outline=""
@@ -896,14 +884,14 @@ def create_peak_detection_tab(app, tab_control):
         
     # For medium threshold (detects medium and large peaks)
     for x_pos in [190, 280]:
-        diagram.create_oval(
+        app.threshold_diagram_canvas.create_oval(
             x_pos-3, med_thresh_y-3, 
             x_pos+3, med_thresh_y+3, 
             fill="#FF9800", outline=""
         )
         
     # For high threshold (detects only the largest peak)
-    diagram.create_oval(
+    app.threshold_diagram_canvas.create_oval(
         190-3, high_thresh_y-3, 
         190+3, high_thresh_y+3, 
         fill="#F44336", outline=""
@@ -944,8 +932,8 @@ def create_peak_detection_tab(app, tab_control):
     slider_frame = ttk.Frame(sigma_container)
     slider_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
-    # Improved slider with labels for values
-    sigma_slider = tk.Scale(
+    # Store reference to the slider
+    app.sigma_slider = tk.Scale(
         slider_frame, 
         from_=1.0, 
         to=10.0, 
@@ -959,7 +947,7 @@ def create_peak_detection_tab(app, tab_control):
         troughcolor=app.theme_manager.get_color('background'),
         showvalue=False  # Hide the default value display
     )
-    sigma_slider.pack(fill=tk.X, expand=True)
+    app.sigma_slider.pack(fill=tk.X, expand=True)
     
     # Add min/max labels under slider
     slider_labels = ttk.Frame(slider_frame)
@@ -1018,7 +1006,7 @@ def create_peak_detection_tab(app, tab_control):
     
     # Add tooltips with detailed explanations
     app.add_tooltip(
-        sigma_slider,
+        app.sigma_slider,
         "Adjust sensitivity of peak detection:\n"
         "• Lower values (1-3): More sensitive, detects smaller peaks\n"
         "• Medium values (4-6): Balanced detection for most data\n"
@@ -1069,14 +1057,15 @@ def create_peak_detection_tab(app, tab_control):
     visualization_frame.pack(fill=tk.X, padx=5, pady=5)
     
     # Add visual diagram with realistic signal
-    diagram = tk.Canvas(
+    # Store reference to the manual diagram canvas
+    app.manual_diagram_canvas = tk.Canvas(
         visualization_frame,
         height=120,
         width=380,
         bg=app.theme_manager.get_color('card_bg'),
         highlightthickness=0
     )
-    diagram.pack(fill=tk.X, padx=5, pady=5)
+    app.manual_diagram_canvas.pack(fill=tk.X, padx=5, pady=5)
     
     # Draw a realistic signal with two clear peaks
     signal_color = "#0078D7"  # Use blue directly instead of theme's primary color
@@ -1109,17 +1098,17 @@ def create_peak_detection_tab(app, tab_control):
         data_points.append(int(y))
     
     # Create the signal curve
-    diagram.create_line(data_points, fill=signal_color, width=2, smooth=True)
+    app.manual_diagram_canvas.create_line(data_points, fill=signal_color, width=2, smooth=True)
     
     # Add parameter indicators with better spacing and colors
     # 1. Minimum Distance between Peaks (between peak centers)
     distance_y = baseline_y + 15  # Move distance indicator up
-    diagram.create_line(
+    app.manual_diagram_canvas.create_line(
         peaks[0]['x'], distance_y,
         peaks[1]['x'], distance_y,
         fill="#FF6B6B", width=1, dash=(2, 2)
     )
-    diagram.create_text(
+    app.manual_diagram_canvas.create_text(
         (peaks[0]['x'] + peaks[1]['x'])/2, distance_y + 10,
         text="Distance between peaks",
         fill="black",
@@ -1129,12 +1118,12 @@ def create_peak_detection_tab(app, tab_control):
     # 2. Relative Height (measured from peak top)
     rel_height_y = baseline_y - peaks[0]['height'] * 0.2  # 20% from baseline (80% from top)
     # Draw line from peak top to width measurement height
-    diagram.create_line(
+    app.manual_diagram_canvas.create_line(
         peaks[0]['x'], baseline_y - peaks[0]['height'],  # Start from peak top
         peaks[0]['x'], rel_height_y,  # End at width measurement height
         fill="#4ECDC4", width=1, dash=(2, 2)
     )
-    diagram.create_text(
+    app.manual_diagram_canvas.create_text(
         peaks[0]['x'], rel_height_y - 10,
         text="Relative Height (0.8 = 80% from top)",
         fill="black",
@@ -1144,25 +1133,25 @@ def create_peak_detection_tab(app, tab_control):
     # 3. Width Range (measured at relative height) - only for first peak
     width_y = baseline_y + 5
     # Horizontal line at width measurement height
-    diagram.create_line(
+    app.manual_diagram_canvas.create_line(
         peaks[0]['x'] - peaks[0]['width'], width_y,
         peaks[0]['x'] + peaks[0]['width'], width_y,
         fill="#45B7D1", width=1, dash=(2, 2)
     )
     # Vertical lines to show width measurement
-    diagram.create_line(
+    app.manual_diagram_canvas.create_line(
         peaks[0]['x'] - peaks[0]['width'], width_y,
         peaks[0]['x'] - peaks[0]['width'], rel_height_y,
         fill="#45B7D1", width=1, dash=(2, 2)
     )
-    diagram.create_line(
+    app.manual_diagram_canvas.create_line(
         peaks[0]['x'] + peaks[0]['width'], width_y,
         peaks[0]['x'] + peaks[0]['width'], rel_height_y,
         fill="#45B7D1", width=1, dash=(2, 2)
     )
     
     # Add width range text for first peak
-    diagram.create_text(
+    app.manual_diagram_canvas.create_text(
         peaks[0]['x'], width_y + 10,
         text="Width Range",
         fill="black",
@@ -1191,7 +1180,8 @@ def create_peak_detection_tab(app, tab_control):
     distance_container.pack(fill=tk.X, padx=5, pady=2)
     
     ttk.Label(distance_container, text="Distance:").pack(side=tk.LEFT, padx=5)
-    distance_slider = tk.Scale(
+    # Store reference to distance slider
+    app.distance_slider = tk.Scale(
         distance_container,
         from_=1,
         to=100,
@@ -1203,7 +1193,7 @@ def create_peak_detection_tab(app, tab_control):
         highlightthickness=0,
         troughcolor=app.theme_manager.get_color('background')
     )
-    distance_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    app.distance_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
     distance_entry = ttk.Entry(distance_container, textvariable=app.distance, width=6)
     distance_entry.pack(side=tk.LEFT, padx=5)
@@ -1213,11 +1203,12 @@ def create_peak_detection_tab(app, tab_control):
     rel_height_container.pack(fill=tk.X, padx=5, pady=2)
     
     ttk.Label(rel_height_container, text="Height:").pack(side=tk.LEFT, padx=5)
-    rel_height_slider = tk.Scale(
+    # Store reference to height slider
+    app.rel_height_slider = tk.Scale(
         rel_height_container,
         from_=0.1,
         to=1.0,
-        resolution=0.1,
+        resolution=0.01,
         orient=tk.HORIZONTAL,
         variable=app.rel_height,
         length=250,
@@ -1226,7 +1217,7 @@ def create_peak_detection_tab(app, tab_control):
         highlightthickness=0,
         troughcolor=app.theme_manager.get_color('background')
     )
-    rel_height_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    app.rel_height_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
     rel_height_entry = ttk.Entry(rel_height_container, textvariable=app.rel_height, width=6)
     rel_height_entry.pack(side=tk.LEFT, padx=5)
@@ -1241,12 +1232,12 @@ def create_peak_detection_tab(app, tab_control):
     
     # Add tooltips for better user guidance
     app.add_tooltip(
-        distance_slider,
+        app.distance_slider,
         "Minimum number of points between peak centers.\n"
         "Higher values prevent detecting multiple peaks too close together."
     )
     app.add_tooltip(
-        rel_height_slider,
+        app.rel_height_slider,
         "Relative height (0-1) at which peak width is measured.\n"
         "Example: 0.5 = width at half maximum height, 0.9 = width near peak top"
     )
@@ -1336,16 +1327,6 @@ def create_peak_analysis_tab(app, tab_control):
         command=app.plot_scatter
     ).pack(side=tk.LEFT, padx=5, pady=5)
 
-    # Export Frame
-    export_frame = ttk.LabelFrame(peak_analysis_tab, text="Export Options")
-    export_frame.pack(fill=tk.X, padx=5, pady=5)
-
-    ttk.Button(
-        export_frame,
-        text="Export Peak Data to CSV",  # Changed from "Save Peak Information"
-        command=app.save_peak_information_to_csv
-    ).pack(side=tk.LEFT, padx=5, pady=5)
-
     # Results Frame
     results_frame = ttk.LabelFrame(peak_analysis_tab, text="Results Summary")
     results_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -1358,10 +1339,6 @@ def create_peak_analysis_tab(app, tab_control):
     app.add_tooltip(
         analysis_options_frame.winfo_children()[1],  # Peak Property Correlations button
         "Display correlation plots between peak width, height, and area"
-    )
-    app.add_tooltip(
-        export_frame.winfo_children()[0],  # Export button
-        "Save all peak information to a CSV file for further analysis"
     )
 
 def create_double_peak_analysis_tab(app, tab_control):
@@ -1385,6 +1362,7 @@ def create_double_peak_analysis_tab(app, tab_control):
     def update_app_distance_values():
         app.double_peak_min_distance.set(min_distance_ms.get() / 1000)
         app.double_peak_max_distance.set(max_distance_ms.get() / 1000)
+        # No longer trigger analysis automatically
     
     # Functions to synchronize entry and slider (but don't trigger automatic refresh)
     def sync_min_slider_to_entry(*args):
@@ -1393,7 +1371,8 @@ def create_double_peak_analysis_tab(app, tab_control):
             if value >= 0.1 and value <= max_distance_ms.get():
                 min_slider.set(value)
                 min_distance_ms.set(value)
-                update_app_distance_values()
+                # Only update the values, don't trigger analysis
+                app.double_peak_min_distance.set(value / 1000)
             else:
                 # Reset entry to slider value if out of range
                 min_entry.delete(0, tk.END)
@@ -1409,7 +1388,8 @@ def create_double_peak_analysis_tab(app, tab_control):
             if value >= min_distance_ms.get() and value <= 50.0:
                 max_slider.set(value)
                 max_distance_ms.set(value)
-                update_app_distance_values()
+                # Only update the values, don't trigger analysis
+                app.double_peak_max_distance.set(value / 1000)
             else:
                 # Reset entry to slider value if out of range
                 max_entry.delete(0, tk.END)
@@ -1425,12 +1405,16 @@ def create_double_peak_analysis_tab(app, tab_control):
         min_entry.delete(0, tk.END)
         min_entry.insert(0, f"{val:.1f}")
         min_distance_ms.set(val)
+        # Only update the values, don't trigger analysis
+        app.double_peak_min_distance.set(val / 1000)
         
     def update_max_entry(val):
         val = float(val)
         max_entry.delete(0, tk.END)
         max_entry.insert(0, f"{val:.1f}")
         max_distance_ms.set(val)
+        # Only update the values, don't trigger analysis
+        app.double_peak_max_distance.set(val / 1000)
     
     # Min distance slider and entry
     min_slider_frame = ttk.Frame(distance_frame)
@@ -1481,32 +1465,92 @@ def create_double_peak_analysis_tab(app, tab_control):
     ttk.Label(max_slider_frame, text="ms").pack(side=tk.LEFT)
     
     # Amplitude ratio parameters
-    amp_frame = ttk.Frame(param_frame)
+    amp_frame = ttk.LabelFrame(param_frame, text="Amplitude Ratio")
     amp_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    ttk.Label(amp_frame, text="Amplitude Ratio Range:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-    
+    # Grid layout for amplitude ratio controls
+    ttk.Label(amp_frame, text="Range:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
     min_amp_entry = ttk.Entry(amp_frame, textvariable=app.double_peak_min_amp_ratio, width=8)
     min_amp_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-    
     ttk.Label(amp_frame, text="to").grid(row=0, column=2, sticky="ew", padx=2, pady=2)
-    
     max_amp_entry = ttk.Entry(amp_frame, textvariable=app.double_peak_max_amp_ratio, width=8)
     max_amp_entry.grid(row=0, column=3, sticky="ew", padx=5, pady=2)
     
+    # Histogram frame using grid
+    amp_hist_frame = ttk.Frame(amp_frame)
+    amp_hist_frame.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=(2, 5))
+    
+    # Create small figure for amplitude ratio histogram with adjusted size and tight layout
+    amp_hist_fig = Figure(figsize=(2.5, 1.0), dpi=100)
+    amp_hist_fig.set_tight_layout(True)  # Enable tight layout
+    amp_hist_canvas = FigureCanvasTkAgg(amp_hist_fig, amp_hist_frame)
+    
+    # Create and store the axis with adjusted position
+    app.amp_hist_ax = amp_hist_fig.add_subplot(111)
+    app.amp_hist_ax.set_xlim(0, 5)
+    app.amp_hist_ax.set_ylim(0, 1)
+    app.amp_hist_ax.set_xticks([0, 1, 2, 3, 4, 5])
+    app.amp_hist_ax.set_yticks([])
+    app.amp_hist_ax.grid(True, alpha=0.3)
+    app.amp_hist_ax.tick_params(axis='both', which='major', labelsize=6)
+    
+    # Adjust the subplot parameters to prevent cutoff
+    amp_hist_fig.subplots_adjust(left=0.1, right=0.95, bottom=0.25, top=0.95)
+    
+    amp_hist_canvas.draw()
+    amp_hist_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+    
+    # Store the canvas for later updates
+    app.amp_hist_canvas = amp_hist_canvas
+    
+    # Configure grid columns for amplitude ratio frame
+    amp_frame.columnconfigure(1, weight=1)
+    amp_frame.columnconfigure(3, weight=1)
+    amp_frame.rowconfigure(1, weight=1)
+    
     # Width ratio parameters
-    width_frame = ttk.Frame(param_frame)
+    width_frame = ttk.LabelFrame(param_frame, text="Width Ratio")
     width_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    ttk.Label(width_frame, text="Width Ratio Range:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-    
+    # Grid layout for width ratio controls
+    ttk.Label(width_frame, text="Range:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
     min_width_entry = ttk.Entry(width_frame, textvariable=app.double_peak_min_width_ratio, width=8)
     min_width_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-    
     ttk.Label(width_frame, text="to").grid(row=0, column=2, sticky="ew", padx=2, pady=2)
-    
     max_width_entry = ttk.Entry(width_frame, textvariable=app.double_peak_max_width_ratio, width=8)
     max_width_entry.grid(row=0, column=3, sticky="ew", padx=5, pady=2)
+    
+    # Width ratio histogram frame
+    width_hist_frame = ttk.Frame(width_frame)
+    width_hist_frame.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=(2, 5))
+    
+    # Create small figure for width ratio histogram with adjusted size and tight layout
+    width_hist_fig = Figure(figsize=(2.5, 1.0), dpi=100)
+    width_hist_fig.set_tight_layout(True)  # Enable tight layout
+    width_hist_canvas = FigureCanvasTkAgg(width_hist_fig, width_hist_frame)
+    
+    # Create and store the axis with adjusted position
+    app.width_hist_ax = width_hist_fig.add_subplot(111)
+    app.width_hist_ax.set_xlim(0, 5)
+    app.width_hist_ax.set_ylim(0, 1)
+    app.width_hist_ax.set_xticks([0, 1, 2, 3, 4, 5])
+    app.width_hist_ax.set_yticks([])
+    app.width_hist_ax.grid(True, alpha=0.3)
+    app.width_hist_ax.tick_params(axis='both', which='major', labelsize=6)
+    
+    # Adjust the subplot parameters to prevent cutoff
+    width_hist_fig.subplots_adjust(left=0.1, right=0.95, bottom=0.25, top=0.95)
+    
+    width_hist_canvas.draw()
+    width_hist_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+    
+    # Store the canvas for later updates
+    app.width_hist_canvas = width_hist_canvas
+    
+    # Configure grid columns for width ratio frame
+    width_frame.columnconfigure(1, weight=1)
+    width_frame.columnconfigure(3, weight=1)
+    width_frame.rowconfigure(1, weight=1)
     
     # Add explanation text
     explanation_text = (
@@ -1518,7 +1562,8 @@ def create_double_peak_analysis_tab(app, tab_control):
         "The primary peak can be either the higher or lower amplitude peak - this is determined by the flow dynamics\n"
         "of your experiment. The amplitude and width ratios help distinguish between true double peaks and\n"
         "random peak pairs by ensuring the peaks have similar characteristics.\n\n"
-        "Note: Adjust parameters using sliders or text entries, then press 'Analyze Double Peaks' to update the visualization."
+        "Note: Adjust parameters using sliders or text entries. Changes will not affect the visualization until you\n"
+        "click 'Analyze Double Peaks' to update the results."
     )
     explanation = ttk.Label(
         param_frame, 
@@ -1530,29 +1575,22 @@ def create_double_peak_analysis_tab(app, tab_control):
     explanation.pack(fill=tk.X, padx=5, pady=5)
     
     # Action buttons
-    action_frame = ttk.LabelFrame(double_peak_tab, text="Double Peak Analysis Actions")
+    action_frame = ttk.LabelFrame(double_peak_tab, text="Actions")
     action_frame.pack(fill=tk.X, padx=5, pady=5)
     
     button_frame = ttk.Frame(action_frame)
     button_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    # Function to sync values before analysis
-    def prepare_analysis():
-        # Ensure the app variables are updated with the current UI values
-        update_app_distance_values()
-        # Call the analyze function
-        app.analyze_double_peaks()
-    
     # Analyze button
     analyze_btn = ttk.Button(
         button_frame,
         text="Analyze Double Peaks",
-        command=prepare_analysis,
+        command=app.analyze_double_peaks,
         style="Primary.TButton"
     )
     analyze_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
     
-    # Show grid view button
+    # Show grid button
     show_grid_btn = ttk.Button(
         button_frame,
         text="Show Grid View",
@@ -1560,61 +1598,35 @@ def create_double_peak_analysis_tab(app, tab_control):
     )
     show_grid_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
     
-    # Navigation buttons
-    nav_frame = ttk.Frame(button_frame)
-    nav_frame.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+    # Export button
+    export_btn = ttk.Button(
+        button_frame,
+        text="Export Double Peak Data",
+        command=app.save_double_peak_information_to_csv
+    )
+    export_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
     
+    # Navigation frame
+    nav_frame = ttk.Frame(action_frame)
+    nav_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Previous page button
     prev_btn = ttk.Button(
         nav_frame,
-        text="Previous",
+        text="Previous Page",
         command=app.show_prev_double_peaks_page
     )
-    prev_btn.pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+    prev_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
     
+    # Next page button
     next_btn = ttk.Button(
         nav_frame,
-        text="Next",
+        text="Next Page",
         command=app.show_next_double_peaks_page
     )
-    next_btn.pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+    next_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
     
     # Add tooltips
-    app.add_tooltip(
-        min_slider,
-        "Minimum time separation between peaks in a double peak pair (milliseconds).\nAdjust slider and press 'Analyze Double Peaks' to update visualization."
-    )
-    app.add_tooltip(
-        max_slider,
-        "Maximum time separation between peaks in a double peak pair (milliseconds).\nAdjust slider and press 'Analyze Double Peaks' to update visualization."
-    )
-    app.add_tooltip(
-        min_entry,
-        "Enter exact minimum distance in milliseconds.\nPress Enter to confirm or click outside the field."
-    )
-    app.add_tooltip(
-        max_entry,
-        "Enter exact maximum distance in milliseconds.\nPress Enter to confirm or click outside the field."
-    )
-    app.add_tooltip(
-        min_amp_entry,
-        "Minimum ratio of secondary to primary peak amplitude (0-1)\n"
-        "Example: 0.3 means secondary peak must be at least 30% as high as primary"
-    )
-    app.add_tooltip(
-        max_amp_entry,
-        "Maximum ratio of secondary to primary peak amplitude (0-1)\n"
-        "Example: 0.9 means secondary peak must be at most 90% as high as primary"
-    )
-    app.add_tooltip(
-        min_width_entry,
-        "Minimum ratio of secondary to primary peak width (0-∞)\n"
-        "Example: 0.5 means secondary peak must be at least half as wide as primary"
-    )
-    app.add_tooltip(
-        max_width_entry,
-        "Maximum ratio of secondary to primary peak width (0-∞)\n"
-        "Example: 2.0 means secondary peak can be at most twice as wide as primary"
-    )
     app.add_tooltip(
         analyze_btn,
         "Update visualization and detect double peaks using current parameters.\nClick this button after adjusting any parameters to see changes."
@@ -1622,6 +1634,10 @@ def create_double_peak_analysis_tab(app, tab_control):
     app.add_tooltip(
         show_grid_btn,
         "Show grid view of detected double peak pairs"
+    )
+    app.add_tooltip(
+        export_btn,
+        "Save double peak information including distances and width ratios to a CSV file"
     )
     app.add_tooltip(
         prev_btn,

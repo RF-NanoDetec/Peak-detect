@@ -13,35 +13,39 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.lines import Line2D
 from core.peak_analysis_utils import find_peaks_with_window
+import matplotlib.pyplot as plt
 
 def run_peak_detection(app, profile_function=None):
     """Run peak detection and overlay peaks on existing plot"""
     if app.filtered_signal is None:
         app.show_error("Filtered signal not available. Please start the analysis first.")
-        return
+        return None
+
+    if not hasattr(app, 'figure') or not app.figure.get_axes():
+         app.show_error("No plot available to overlay peaks onto. Please run analysis first.")
+         return None
+    ax = app.figure.gca()
 
     try:
         # Initialize progress
         total_steps = 3
         app.update_progress_bar(0, total_steps)
 
-        # Get the current axes
-        ax = app.figure.gca()
-
         # Remove previously plotted peaks and width indicators
         lines_to_remove = []
+        peak_marker_label = 'Detected Peaks'
         for line in ax.lines:
-            # Check if this is a peak marker (red x marker) or not a main data line
-            if (line.get_color() == 'red' and line.get_marker() == 'x') or \
-               'Detected Peaks' in str(line.get_label()):
+            if line.get_label() == peak_marker_label:
                 lines_to_remove.append(line)
 
-        # Remove the marked lines
         for line in lines_to_remove:
             line.remove()
 
-        # Clear horizontal lines (peak width indicators)
+        collections_to_remove = []
         for collection in ax.collections:
+            if isinstance(collection, plt.collections.LineCollection):
+                collections_to_remove.append(collection)
+        for collection in collections_to_remove:
             collection.remove()
 
         # Get peak detection parameters
@@ -77,23 +81,28 @@ def run_peak_detection(app, profile_function=None):
         peaks_x_filter = app.peak_detector.peaks_indices
         amp_x_filter = app.peak_detector.peaks_properties
 
-        # Check if any peaks were found
         if len(peaks_x_filter) == 0:
             app.show_error("No peaks found with current parameters. Try adjusting threshold or width range.")
-            return
+            if hasattr(app, 'canvas'): app.canvas.draw()
+            return None
 
         # Update progress
         app.update_progress_bar(2)
 
-        # Add peak markers to the existing plot
-        ax.plot(app.t_value[peaks_x_filter] / 60,  # Convert to minutes for plotting
-                app.filtered_signal[peaks_x_filter],
-                'rx',
-                markersize=5,
-                label=f'Detected Peaks ({len(peaks_x_filter)})')
+        # Get SEMANTIC color for peak markers
+        peak_marker_color = app.theme_manager.get_plot_color('marker_peak')
 
-        # Update legend
-        ax.legend(fontsize=10)
+        # Add peak markers using SEMANTIC theme color
+        ax.plot(app.t_value[peaks_x_filter] / 60,
+                app.filtered_signal[peaks_x_filter],
+                marker='x',
+                color=peak_marker_color,
+                linestyle='None',
+                markersize=5,
+                label=peak_marker_label)
+
+        # Update legend (fonts handled by apply_plot_theme)
+        ax.legend()
 
         # Calculate peak intervals
         peak_times = app.t_value[peaks_x_filter]  # Time values already in seconds
@@ -121,10 +130,16 @@ def run_peak_detection(app, profile_function=None):
         app.peak_heights = amp_x_filter['prominences']
         app.peak_widths = amp_x_filter['widths']
 
-        # Update figure
-        app.canvas.draw()
+        # Apply theme standard styles (bg, grid, text)
+        app.theme_manager.apply_plot_theme(app.figure, [ax])
 
-        # Update progress and status
+        # Update figure
+        if hasattr(app, 'canvas'):
+             app.canvas.draw()
+        else:
+             print("Warning: app.canvas not found during peak detection update.")
+
+        # Update progress and status using theme colors
         app.update_progress_bar(3)
         app.status_indicator.set_state('success')
         app.status_indicator.set_text(f"Peak detection completed, found {len(peaks_x_filter)} peaks")
@@ -144,7 +159,10 @@ def run_peak_detection(app, profile_function=None):
 def plot_filtered_peaks(app, profile_function=None):
     """Plot individual peaks in a grid layout for detailed analysis"""
     if app.filtered_signal is None:
-        app.preview_label.config(text="Filtered signal not available. Please start the analysis first.", foreground="red")
+        app.preview_label.config(
+            text="Filtered signal not available. Please start the analysis first.",
+            foreground=app.theme_manager.get_color('error')
+            )
         return
 
     try:
@@ -161,7 +179,10 @@ def plot_filtered_peaks(app, profile_function=None):
         )
 
         if len(peaks_x_filter) == 0:
-            app.preview_label.config(text="No peaks found with current parameters", foreground="red")
+            app.preview_label.config(
+                text="No peaks found with current parameters",
+                foreground=app.theme_manager.get_color('warning')
+                )
             return
 
         # Divide measurement into segments and select representative peaks
@@ -183,19 +204,27 @@ def plot_filtered_peaks(app, profile_function=None):
 
         window = 3*np.round(amp_x_filter['widths'], 0).astype(int)
 
-        # Create new figure
-        new_figure = Figure(figsize=(10, 8))
-        axs = []
+        # Get SEMANTIC theme colors
+        filtered_line_color = app.theme_manager.get_plot_color('line_filtered')
+        peak_marker_color = app.theme_manager.get_plot_color('marker_peak')
+        raw_line_color = app.theme_manager.get_plot_color('line_raw')
+        width_marker_color = app.theme_manager.get_plot_color('marker_width')
+
+        # Create new figure for the grid
+        new_figure = Figure(figsize=(12, 8))
+        axs_flat = []
         for i in range(2):
-            row = []
             for j in range(5):
-                row.append(new_figure.add_subplot(2, 5, i*5 + j + 1))
-            axs.append(row)
+                ax = new_figure.add_subplot(2, 5, i*5 + j + 1)
+                axs_flat.append(ax)
 
         handles, labels = [], []
 
         # Plot selected peaks
         for idx, peak_idx in enumerate(selected_peaks):
+            if idx >= len(axs_flat): break
+
+            ax = axs_flat[idx]
             i = peak_idx
             start_idx = max(0, peaks_x_filter[i] - window[i])
             end_idx = min(len(app.t_value), peaks_x_filter[i] + window[i])
@@ -209,147 +238,184 @@ def plot_filtered_peaks(app, profile_function=None):
             background = np.min(yData_sub)
             yData = yData_sub - background
 
-            ax = axs[idx // 5][idx % 5]
-
-            # Plot filtered data
-            line1, = ax.plot((xData - xData[0]) * 1e3, yData,
-                           color='blue',
+            # Plot filtered data segment using SEMANTIC color
+            ax.plot((xData - xData[0]) * 1e3, yData,
+                           color=filtered_line_color,
                            label='Filtered',
                            alpha=0.8,
-                           linewidth=0.5)
+                           linewidth=0.7)
 
-            # Plot peak marker
+            # Plot peak marker using SEMANTIC color
             peak_time = app.t_value[peaks_x_filter[i]]
             peak_height = app.filtered_signal[peaks_x_filter[i]] - background
-            line2, = ax.plot((peak_time - xData[0]) * 1e3,
+            ax.plot((peak_time - xData[0]) * 1e3,
                            peak_height,
-                           "x",
-                           color='red',
-                           ms=10,
+                           marker="x",
+                           color=peak_marker_color,
+                           linestyle='None',
+                           ms=8,
                            label='Peak')
 
-            # Plot raw data
+            # Plot raw data segment using SEMANTIC color
             raw_data = app.x_value[start_idx:end_idx]
             corrected_signal = raw_data - background
-            line3, = ax.plot((xData - xData[0]) * 1e3,
+            ax.plot((xData - xData[0]) * 1e3,
                            corrected_signal,
-                           color='black',
+                           color=raw_line_color,
                            label='Raw',
-                           alpha=0.5,
-                           linewidth=0.3)
+                           alpha=0.6,
+                           linewidth=0.5)
 
-            # Plot width lines
+            # Plot width lines using SEMANTIC color
             left_idx = int(amp_x_filter["left_ips"][i])
             right_idx = int(amp_x_filter["right_ips"][i])
             width_height = amp_x_filter["width_heights"][i] - background
 
-            line4 = ax.hlines(y=width_height,
+            ax.hlines(y=width_height,
                             xmin=(app.t_value[left_idx] - xData[0]) * 1e3,
                             xmax=(app.t_value[right_idx] - xData[0]) * 1e3,
-                            color="red",
+                            color=width_marker_color,
                             linestyles='-',
-                            alpha=0.8)
-            line4 = Line2D([0], [0], color='red', linestyle='-', label='Peak Width')
+                            linewidth=1.0,
+                            label='Width Measurement')
 
-            # Add peak number label
-            ax.text(0.02, 0.98, f'Peak #{i+1}',  # i+1 to start counting from 1 instead of 0
-                    transform=ax.transAxes,
-                    fontsize=10,
-                    fontweight='bold',
-                    verticalalignment='top',
-                    bbox=dict(facecolor='white',
-                             edgecolor='none',
-                             alpha=0.7))
+            # Customize subplot axes (fonts handled by apply_plot_theme)
+            ax.set_xlabel("Time (ms)")
+            ax.set_ylabel("Amplitude (counts)")
+            ax.set_title(f"Peak {peak_idx+1}", fontsize=10)
+            ax.grid(True, linestyle=':')
 
-            # Customize subplot
-            ax.set_xlabel('Time (ms)', fontsize=10)
-            ax.set_ylabel('Counts', fontsize=10)
-            ax.grid(True, linestyle='--', alpha=0.3)
-            ax.tick_params(axis='both', labelsize=9)
-
-            # Add padding to y-axis limits
-            ymin, ymax = ax.get_ylim()
-            y_padding = (ymax - ymin) * 0.15
-            ax.set_ylim(ymin - y_padding, ymax + y_padding)
+            # Minimal ticks for clarity
+            ax.xaxis.set_major_locator(plt.MaxNLocator(3))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(3))
+            ax.tick_params(axis='both', which='major', labelsize=8)
 
             if idx == 0:
-                handles.extend([line3, line1, line2, line4])
+                handles.extend([ax.lines[0], ax.lines[1], ax.lines[2]])
 
         # Remove individual legends from subplots (with check)
-        for ax_row in axs:
-            for ax in ax_row:
-                legend = ax.get_legend()
-                if legend is not None:  # Only remove if legend exists
-                    legend.remove()
+        for ax in axs_flat:
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.remove()
 
-        # Create handles for the legend (move this before the legend creation)
-        handles = [
-            Line2D([0], [0], color='black', alpha=0.5, linewidth=0.3, label='Raw Data'),
-            Line2D([0], [0], color='blue', alpha=0.8, linewidth=0.5, label='Filtered Data'),
-            Line2D([0], [0], color='red', marker='x', linestyle='None', label='Peak'),
-            Line2D([0], [0], color='red', linestyle='-', alpha=0.8, label='Peak Width')
-        ]
-
-        # Add a single, optimized legend
-        new_figure.legend(
-            handles=handles,
-            labels=['Raw Data', 'Filtered Data', 'Peak', 'Peak Width'],
-            loc='center',
-            bbox_to_anchor=(0.5, 0.98),
-            ncol=4,
-            fontsize=8,
-            framealpha=0.9,
-            edgecolor='gray',
-            borderaxespad=0.5,
-            columnspacing=1.0,
-            handletextpad=0.5,
-        )
+        # Add figure legend using SEMANTIC colors
+        if handles: # Check if handles were actually created
+             unique_labels = {
+                 'Filtered': Line2D([0], [0], color=filtered_line_color, alpha=0.8, linewidth=0.7, label='Filtered Data'),
+                 'Peak': Line2D([0], [0], color=peak_marker_color, marker='x', linestyle='None', label='Peak'),
+                 'Raw': Line2D([0], [0], color=raw_line_color, alpha=0.6, linewidth=0.5, label='Raw Data'),
+                 'Width': Line2D([0], [0], color=width_marker_color, linestyle='-', linewidth=1.0, label='Peak Width')
+             }
+             new_figure.legend(handles=unique_labels.values(), labels=unique_labels.keys(),
+                              loc='upper center', ncol=len(unique_labels),
+                              fontsize=9, bbox_to_anchor=(0.5, 0.98))
 
         # Adjust the layout
         new_figure.subplots_adjust(top=0.92)
-        new_figure.suptitle('Individual Peak Analysis', fontsize=12, y=0.96)
-        new_figure.tight_layout(rect=[0, 0, 1, 0.92])
+        new_figure.suptitle(f"Filtered Peaks Detail (Peaks {app.segment_offset+1} - {app.segment_offset+num_segments})",
+                            fontsize=14)
+        new_figure.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        # Apply theme standard styles (bg, grid, text)
+        app.theme_manager.apply_plot_theme(new_figure, axs_flat)
 
         # Update or create tab in plot_tab_control
-        tab_name = "Exemplary Peaks"  # Changed from "Filtered Peaks Plot"
+        tab_name = "Filtered Peaks"
         tab_exists = False
+        canvas = None
 
-        for tab in app.plot_tab_control.tabs():
-            if app.plot_tab_control.tab(tab, "text") == tab_name:
-                app.plot_tab_control.forget(tab)  # Remove existing tab to update it
+        for tab_widget_id in app.plot_tab_control.tabs():
+             if app.plot_tab_control.tab(tab_widget_id, "text") == tab_name:
+                tab_frame = app.plot_tab_control.nametowidget(tab_widget_id)
+                app.plot_tab_control.select(tab_frame)
+                # Remove old canvas
+                for widget in tab_frame.winfo_children():
+                    widget.destroy()
+                # Add new canvas
+                canvas = FigureCanvasTkAgg(new_figure, master=tab_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+                tab_exists = True
                 break
 
-        new_tab = ttk.Frame(app.plot_tab_control)
-        app.plot_tab_control.add(new_tab, text=tab_name)
-        app.plot_tab_control.select(new_tab)
+        if not tab_exists:
+            new_tab = ttk.Frame(app.plot_tab_control)
+            app.plot_tab_control.add(new_tab, text=tab_name)
+            app.plot_tab_control.select(new_tab)
+            # Create and pack the canvas
+            canvas = FigureCanvasTkAgg(new_figure, master=new_tab)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        new_canvas = FigureCanvasTkAgg(new_figure, new_tab)
-        new_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        new_canvas.draw_idle()
+        # Store the figure associated with the tab
+        app.tab_figures[tab_name] = new_figure
+        # Store the canvas reference if needed elsewhere (optional)
+        # app.filtered_peaks_canvas = canvas
 
-        app.tab_figures["Exemplary Peaks"] = new_figure
+        # Update status
+        app.preview_label.config(
+            text=f"Filtered peaks plotted (Showing peaks {app.segment_offset+1} - {app.segment_offset+num_segments})",
+            foreground=app.theme_manager.get_color('success')
+            )
+
+        return True
 
     except Exception as e:
-        app.preview_label.config(text=f"Error plotting example peaks: {str(e)}", foreground="red")
-        print(f"Detailed error: {str(e)}")
-        traceback.print_exc()
+        app.show_error("Error plotting filtered peaks", e)
+        # Use theme color for error message
+        app.preview_label.config(text="Error plotting filtered peaks.", foreground=app.theme_manager.get_color('error'))
+        return False
 
 
 def show_next_peaks(app, profile_function=None):
-    """Show the next set of peaks in the filtered peaks plot"""
+    """Navigate to the next set of peaks in the filtered peaks plot."""
     if not hasattr(app, 'segment_offset'):
         app.segment_offset = 0
 
-    # Increment the offset
-    app.segment_offset += 1
+    if app.filtered_signal is None or not hasattr(app, 'peaks') or len(app.peaks) == 0:
+         app.preview_label.config(text="No peaks available to navigate.", foreground=app.theme_manager.get_color('warning'))
+         return False
 
-    # Reset to beginning if we've reached the end
-    if app.segment_offset >= len(app.filtered_signal):
+    total_peaks = len(app.peaks)
+    num_segments = 10 # Must match plot_filtered_peaks
+
+    # Increment offset, wrapping around if necessary
+    app.segment_offset = (app.segment_offset + num_segments) % total_peaks
+
+    # Trigger redraw
+    success = plot_filtered_peaks(app, profile_function)
+    if success:
+         # Status is updated by plot_filtered_peaks
+         pass
+    else:
+         # Error message is shown by plot_filtered_peaks
+         app.segment_offset = (app.segment_offset - num_segments + total_peaks) % total_peaks # Revert offset on error
+         return False
+    return True
+
+def show_prev_peaks(app, profile_function=None):
+    """Navigate to the previous set of peaks in the filtered peaks plot."""
+    if not hasattr(app, 'segment_offset'):
         app.segment_offset = 0
-        app.preview_label.config(
-            text="Reached end of peaks, returning to start",
-            foreground="blue"
-        )
 
-    # Call plot_filtered_peaks with the same profile_function parameter
-    return plot_filtered_peaks(app, profile_function) 
+    if app.filtered_signal is None or not hasattr(app, 'peaks') or len(app.peaks) == 0:
+         app.preview_label.config(text="No peaks available to navigate.", foreground=app.theme_manager.get_color('warning'))
+         return False
+
+    total_peaks = len(app.peaks)
+    num_segments = 10 # Must match plot_filtered_peaks
+
+    # Decrement offset, wrapping around if necessary
+    app.segment_offset = (app.segment_offset - num_segments + total_peaks) % total_peaks
+
+    # Trigger redraw
+    success = plot_filtered_peaks(app, profile_function)
+    if success:
+         # Status is updated by plot_filtered_peaks
+         pass
+    else:
+         # Error message is shown by plot_filtered_peaks
+         app.segment_offset = (app.segment_offset + num_segments) % total_peaks # Revert offset on error
+         return False
+    return True 

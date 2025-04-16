@@ -224,24 +224,45 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height):
         tuple: (peaks, properties) where:
             - peaks is a numpy array of indices where peaks were found
             - properties is a dict containing peak properties (heights, widths, etc.)
-            
-    Example:
-        >>> peaks, properties = find_peaks_with_window(
-        ...     signal, width=(10, 50), prominence=0.1, distance=20, rel_height=0.5)
     """
-    # Call the scipy function and return results
-    # The find_peaks function is already highly optimized C code,
-    # so we just ensure our inputs are optimized
-    
     # Ensure signal is a contiguous array for better performance
     if not np.isfortran(signal) and not signal.flags.c_contiguous:
         signal = np.ascontiguousarray(signal)
     
+    # Find peaks with specified parameters
     peaks, properties = find_peaks(signal, 
                                  width=width,
                                  prominence=prominence,
                                  distance=distance,
                                  rel_height=rel_height)
+    
+    # Calculate peak widths and interpolated positions
+    if len(peaks) > 0:
+        # Calculate widths at the specified relative height
+        width_results = peak_widths(signal, peaks, rel_height=rel_height)
+        
+        # Store all width-related properties
+        properties['widths'] = width_results[0]  # Width in samples
+        properties['width_heights'] = width_results[1]  # Height at which width is measured
+        properties['left_ips'] = width_results[2]  # Left interpolated position
+        properties['right_ips'] = width_results[3]  # Right interpolated position
+        
+        # Print debug information for the first few peaks
+        print("\nPeak Width Analysis:")
+        for i in range(min(3, len(peaks))):
+            print(f"\nPeak {i+1}:")
+            print(f"  Position: {peaks[i]}")
+            print(f"  Value: {signal[peaks[i]]:.3f}")
+            print(f"  Width: {width_results[0][i]:.3f} samples")
+            print(f"  Width height: {width_results[1][i]:.3f}")
+            print(f"  Left IP: {width_results[2][i]:.3f}")
+            print(f"  Right IP: {width_results[3][i]:.3f}")
+    else:
+        # If no peaks found, initialize empty arrays
+        properties['widths'] = np.array([])
+        properties['width_heights'] = np.array([])
+        properties['left_ips'] = np.array([])
+        properties['right_ips'] = np.array([])
         
     return peaks, properties
 

@@ -2,18 +2,19 @@
 
 ## Table of Contents
 1. [Introduction](#introduction)
-2. [Getting Started](#getting-started)
-3. [User Interface](#user-interface)
-4. [Data Loading](#data-loading)
-5. [Signal Processing](#signal-processing)
-6. [Peak Detection](#peak-detection)
-7. [Analysis Workflows](#analysis-workflows)
-8. [Visualization Options](#visualization-options)
-9. [Data Export](#data-export)
-10. [Batch Processing](#batch-processing)
-11. [Advanced Features](#advanced-features)
-12. [Troubleshooting](#troubleshooting)
-13. [Technical Reference](#technical-reference)
+2. [Practical Examples](#practical-examples)
+3. [Getting Started](#getting-started)
+4. [User Interface](#user-interface)
+5. [Data Loading](#data-loading)
+6. [Signal Processing](#signal-processing)
+7. [Peak Detection](#peak-detection)
+8. [Analysis Workflows](#analysis-workflows)
+9. [Visualization Options](#visualization-options)
+10. [Data Export](#data-export)
+11. [Batch Processing](#batch-processing)
+12. [Advanced Features](#advanced-features)
+13. [Troubleshooting](#troubleshooting)
+14. [Technical Reference](#technical-reference)
 
 ## Introduction
 
@@ -38,6 +39,157 @@ The Peak Analysis Tool is a sophisticated signal processing and analysis softwar
 - Spectroscopy data analysis
 - Chromatography peak detection
 - Sensor data analysis
+
+## Practical Examples
+
+### Example 1: Basic Peak Detection
+
+Let's walk through a simple peak detection analysis:
+
+1. **Load Your Data**
+   - Click "Browse" and select your data file
+   - The file should contain two columns: timestamp and signal value
+   - Example data format:
+     ```
+     timestamp,value
+     0.0001,0.123
+     0.0002,0.456
+     ...
+     ```
+
+2. **Visualize Raw Data**
+   - Click "Plot Raw Data" to see your signal
+   - Use the zoom tool to examine regions of interest
+   - Look for any obvious noise or artifacts
+
+3. **Configure Basic Parameters**
+   - Set normalization to 1.0 (default)
+   - Enable filtering (checkbox)
+   - Set cutoff frequency to 0 (auto-detect)
+   - Set height threshold to 20 (default)
+   - Set minimum distance to 5 (default)
+   - Set relative height to 0.8 (default)
+   - Set width range to "0.1,50" (default)
+
+4. **Run Analysis**
+   - Click "Start Analysis" to apply filtering
+   - Click "Run Peak Detection" to find peaks
+   - Review the detected peaks in the visualization
+
+5. **Review Results**
+   - Check the peak markers on the plot
+   - Look at the peak statistics in the results panel
+   - Export results if needed
+
+### Example 2: Advanced Peak Analysis
+
+For more complex signals, follow these steps:
+
+1. **Data Preparation**
+   - Load your data file
+   - Plot raw data to inspect signal quality
+   - Note any baseline drift or noise
+
+2. **Optimize Parameters**
+   - Click "Calculate Auto-Threshold" for optimal peak detection
+   - Click "Calculate Auto-Cutoff" for optimal filtering
+   - Adjust parameters based on results:
+     - If too many peaks: increase height threshold
+     - If peaks too close: increase minimum distance
+     - If noise remains: decrease cutoff frequency
+
+3. **Fine-tune Detection**
+   - Use the rectangle selector to focus on specific regions
+   - Adjust parameters while watching real-time updates
+   - Save parameter sets for future use
+
+4. **Advanced Analysis**
+   - Calculate peak areas for quantitative analysis
+   - Generate statistical plots
+   - Export comprehensive results
+
+### Example 3: Batch Processing
+
+For analyzing multiple files:
+
+1. **Prepare Files**
+   - Organize your data files in a folder
+   - Ensure consistent naming convention
+   - Check file formats match
+
+2. **Configure Batch Mode**
+   - Switch to "Batch" mode in the dropdown
+   - Select your folder of data files
+   - Set common parameters for all files
+
+3. **Process Files**
+   - Start batch processing
+   - Monitor progress in the status bar
+   - Review results as they come in
+
+4. **Analyze Results**
+   - Compare statistics across files
+   - Generate comparative plots
+   - Export batch report
+
+### Common Parameter Combinations
+
+Here are some recommended parameter sets for different types of signals:
+
+1. **Clean Signals**
+   ```
+   Normalization: 1.0
+   Cutoff Frequency: 0 (auto)
+   Height Threshold: 20
+   Minimum Distance: 5
+   Relative Height: 0.8
+   Width Range: 0.1,50
+   ```
+
+2. **Noisy Signals**
+   ```
+   Normalization: 1.0
+   Cutoff Frequency: 10 Hz
+   Height Threshold: 30
+   Minimum Distance: 10
+   Relative Height: 0.7
+   Width Range: 0.2,100
+   ```
+
+3. **Closely Spaced Peaks**
+   ```
+   Normalization: 1.0
+   Cutoff Frequency: 0 (auto)
+   Height Threshold: 15
+   Minimum Distance: 3
+   Relative Height: 0.9
+   Width Range: 0.1,30
+   ```
+
+### Tips for Best Results
+
+1. **Data Quality**
+   - Ensure clean data acquisition
+   - Remove obvious artifacts before analysis
+   - Check for baseline drift
+
+2. **Parameter Selection**
+   - Start with default parameters
+   - Use auto-calculation features
+   - Make small adjustments
+   - Document successful parameter sets
+
+3. **Visualization**
+   - Use zoom for detailed inspection
+   - Compare raw and filtered signals
+   - Check peak markers carefully
+   - Use different plot types for verification
+
+4. **Export and Documentation**
+   - Save parameter sets
+   - Export results in multiple formats
+   - Document analysis steps
+   - Keep protocol information updated
 
 ## Getting Started
 
@@ -412,12 +564,478 @@ Export processed signals and measurements:
 - **Outlier Detection** - Identify anomalous peaks in the dataset
 - **Trend Analysis** - Detect changes in peak properties over time
 
-### Performance Optimization
+### Double Peak Analysis
 
-- **Data Decimation** - Reduce points for faster processing of large datasets
-- **Multi-threading** - Utilize multiple CPU cores for parallel processing
-- **Memory Management** - Options for handling very large files efficiently
-- **Processing Profiles** - Save and load optimization settings for different data types
+The Peak Analysis Tool includes a specialized feature for detecting and analyzing double peaks, which are common in certain types of signals. This feature helps identify and characterize pairs of peaks that occur close together in time.
+
+#### Enabling Double Peak Analysis
+
+1. **Activate the Feature**
+   - Select "Double Peak" mode from the analysis options
+   - The interface will update to show double peak parameters
+   - Additional visualization tabs will appear
+
+2. **Configure Parameters**
+   - **Minimum Distance**: Time between peaks (default: 0.001s)
+   - **Maximum Distance**: Maximum allowed separation (default: 0.010s)
+   - **Minimum Amplitude Ratio**: Ratio of second to first peak (default: 0.1)
+   - **Maximum Amplitude Ratio**: Maximum allowed ratio (default: 5.0)
+   - **Minimum Width Ratio**: Ratio of peak widths (default: 0.1)
+   - **Maximum Width Ratio**: Maximum allowed ratio (default: 5.0)
+
+#### Analysis Workflow
+
+1. **Initial Detection**
+   - Run standard peak detection first
+   - The tool will identify potential double peak pairs
+   - Results appear in the "Double Peak Selection" tab
+
+2. **Review and Selection**
+   - Examine each potential double peak pair
+   - Use the selection interface to mark valid pairs
+   - Navigate through results using next/previous buttons
+
+3. **Grid View Analysis**
+   - Switch to the "Double Peak Grid" tab
+   - View multiple pairs simultaneously
+   - Compare characteristics across pairs
+
+4. **Statistical Analysis**
+   - Review distribution of peak separations
+   - Analyze amplitude and width ratios
+   - Export detailed measurements
+
+#### Common Applications
+
+1. **Particle Detection**
+   - Identify double peaks from particle pairs
+   - Measure time between particle arrivals
+   - Analyze particle size relationships
+
+2. **Spectroscopy**
+   - Detect split peaks in spectral data
+   - Analyze peak broadening effects
+   - Study peak overlap phenomena
+
+3. **Sensor Analysis**
+   - Identify double-trigger events
+   - Analyze sensor response characteristics
+   - Study timing relationships
+
+#### Best Practices
+
+1. **Parameter Selection**
+   - Start with default values
+   - Adjust based on your signal characteristics
+   - Consider physical meaning of parameters
+
+2. **Validation**
+   - Manually verify detected pairs
+   - Check for false positives
+   - Document selection criteria
+
+3. **Analysis**
+   - Use grid view for pattern recognition
+   - Compare statistics across datasets
+   - Export results for further analysis
+
+4. **Troubleshooting**
+   - If too many pairs detected:
+     - Increase minimum distance
+     - Adjust amplitude ratio limits
+     - Tighten width ratio constraints
+   - If too few pairs detected:
+     - Decrease minimum distance
+     - Relax amplitude ratio limits
+     - Widen width ratio constraints
+
+#### Example Parameter Sets
+
+1. **Standard Analysis**
+   ```
+   Minimum Distance: 0.001s
+   Maximum Distance: 0.010s
+   Min Amplitude Ratio: 0.1
+   Max Amplitude Ratio: 5.0
+   Min Width Ratio: 0.1
+   Max Width Ratio: 5.0
+   ```
+
+2. **Tight Constraints**
+   ```
+   Minimum Distance: 0.0005s
+   Maximum Distance: 0.005s
+   Min Amplitude Ratio: 0.5
+   Max Amplitude Ratio: 2.0
+   Min Width Ratio: 0.5
+   Max Width Ratio: 2.0
+   ```
+
+3. **Relaxed Constraints**
+   ```
+   Minimum Distance: 0.002s
+   Maximum Distance: 0.020s
+   Min Amplitude Ratio: 0.05
+   Max Amplitude Ratio: 10.0
+   Min Width Ratio: 0.05
+   Max Width Ratio: 10.0
+   ```
+
+#### Export Options
+
+1. **Data Export**
+   - Save double peak pairs to CSV
+   - Include timing and ratio measurements
+   - Export selection criteria
+
+2. **Visualization Export**
+   - Save grid view as image
+   - Export individual pair plots
+   - Create summary statistics plots
+
+3. **Report Generation**
+   - Include protocol information
+   - Add statistical summaries
+   - Document analysis parameters
+
+### Data Validation and Quality Control
+
+The Peak Analysis Tool includes comprehensive data validation and quality control features to ensure reliable analysis results. This section describes the tools and procedures for validating your data and maintaining quality control throughout the analysis process.
+
+#### Data Validation Features
+
+1. **File Format Validation**
+   - Checks file structure and format
+   - Validates data types and ranges
+   - Detects missing or corrupt values
+   - Reports format issues
+
+2. **Data Quality Checks**
+   - Identifies outliers and anomalies
+   - Detects baseline drift
+   - Checks for signal saturation
+   - Validates time series continuity
+
+3. **Parameter Validation**
+   - Ensures parameters are within valid ranges
+   - Checks for logical consistency
+   - Validates relationships between parameters
+   - Prevents invalid combinations
+
+#### Quality Control Procedures
+
+1. **Pre-Analysis Checks**
+   - Verify data completeness
+   - Check for systematic errors
+   - Validate calibration
+   - Review acquisition settings
+
+2. **During Analysis**
+   - Monitor processing quality
+   - Track parameter stability
+   - Validate intermediate results
+   - Check for processing artifacts
+
+3. **Post-Analysis Validation**
+   - Review peak detection quality
+   - Validate statistical measures
+   - Check result consistency
+   - Verify export integrity
+
+#### Quality Metrics
+
+1. **Signal Quality Indicators**
+   ```
+   Signal-to-Noise Ratio: > 10
+   Baseline Stability: < 5% drift
+   Sampling Rate: Consistent
+   Data Continuity: No gaps
+   ```
+
+2. **Processing Quality Metrics**
+   ```
+   Peak Detection Confidence: > 90%
+   False Positive Rate: < 5%
+   Processing Stability: Consistent
+   Memory Usage: Within limits
+   ```
+
+3. **Result Quality Measures**
+   ```
+   Statistical Significance: p < 0.05
+   Measurement Precision: < 1%
+   Result Reproducibility: > 95%
+   Export Completeness: 100%
+   ```
+
+#### Validation Tools
+
+1. **Data Inspection**
+   - Interactive data viewer
+   - Statistical summaries
+   - Distribution plots
+   - Time series analysis
+
+2. **Quality Reports**
+   - Comprehensive quality metrics
+   - Processing statistics
+   - Validation results
+   - Issue summaries
+
+3. **Automated Checks**
+   - Format validation
+   - Range checking
+   - Consistency verification
+   - Completeness assessment
+
+#### Best Practices
+
+1. **Data Collection**
+   - Follow standardized procedures
+   - Document acquisition settings
+   - Maintain calibration records
+   - Use quality control samples
+
+2. **Analysis Process**
+   - Validate at each step
+   - Document validation results
+   - Track quality metrics
+   - Address issues promptly
+
+3. **Result Verification**
+   - Cross-validate results
+   - Compare with standards
+   - Review statistical measures
+   - Document verification
+
+#### Troubleshooting Quality Issues
+
+1. **Data Quality Problems**
+   - Check acquisition settings
+   - Review calibration
+   - Inspect for artifacts
+   - Validate file integrity
+
+2. **Processing Issues**
+   - Verify parameters
+   - Check processing steps
+   - Review intermediate results
+   - Validate algorithms
+
+3. **Result Quality Concerns**
+   - Review detection criteria
+   - Check statistical validity
+   - Verify measurements
+   - Validate exports
+
+#### Quality Control Documentation
+
+1. **Required Records**
+   - Data acquisition logs
+   - Calibration records
+   - Processing parameters
+   - Validation results
+
+2. **Quality Reports**
+   - Daily quality metrics
+   - Processing statistics
+   - Issue tracking
+   - Resolution records
+
+3. **Audit Trail**
+   - Parameter changes
+   - Processing steps
+   - Validation checks
+   - Result modifications
+
+#### Quality Assurance Procedures
+
+1. **Regular Checks**
+   - Daily system validation
+   - Weekly quality review
+   - Monthly performance assessment
+   - Quarterly comprehensive audit
+
+2. **Documentation Requirements**
+   - Standard operating procedures
+   - Quality control protocols
+   - Validation checklists
+   - Issue resolution records
+
+3. **Training Requirements**
+   - Quality control procedures
+   - Validation methods
+   - Documentation standards
+   - Issue resolution
+
+### Performance Optimization and Memory Management
+
+The Peak Analysis Tool includes several features to optimize performance and manage memory usage when working with large datasets. This section provides guidelines for efficient data handling and processing.
+
+#### Data Size Considerations
+
+1. **File Size Guidelines**
+   - Small files (< 1MB): No special handling needed
+   - Medium files (1MB - 100MB): Use standard processing
+   - Large files (> 100MB): Enable optimization features
+   - Very large files (> 1GB): Use batch processing
+
+2. **Memory Usage**
+   - Monitor memory usage in the status bar
+   - Typical memory usage: 5x file size
+   - Peak memory during processing: 10x file size
+   - Warning threshold: 80% of available RAM
+
+#### Optimization Features
+
+1. **Data Decimation**
+   - Automatically reduces data points for plotting
+   - Preserves visual features while reducing memory usage
+   - Configurable maximum points (default: 10,000)
+   - Full resolution maintained for analysis
+
+2. **Multi-threading**
+   - Parallel processing for batch operations
+   - Configurable number of worker threads
+   - Automatic thread management
+   - Progress tracking per thread
+
+3. **Memory Management**
+   - Automatic garbage collection
+   - Temporary file usage for large datasets
+   - Progressive loading of data
+   - Cache management for plots
+
+#### Performance Settings
+
+1. **Plot Optimization**
+   ```
+   Maximum Plot Points: 10,000
+   Decimation Method: Adaptive
+   Cache Size: 100MB
+   ```
+
+2. **Processing Settings**
+   ```
+   Thread Count: Auto-detect
+   Batch Size: 1MB
+   Cache Enabled: Yes
+   ```
+
+3. **Memory Limits**
+   ```
+   Warning Threshold: 80% RAM
+   Critical Threshold: 90% RAM
+   Cache Limit: 500MB
+   ```
+
+#### Best Practices
+
+1. **File Organization**
+   - Keep files in a dedicated analysis folder
+   - Use consistent naming conventions
+   - Maintain backup copies
+   - Archive processed files
+
+2. **Processing Strategy**
+   - Process smaller chunks for large files
+   - Use batch mode for multiple files
+   - Enable decimation for visualization
+   - Monitor memory usage
+
+3. **System Resources**
+   - Close other memory-intensive applications
+   - Monitor system resources
+   - Use SSD storage when possible
+   - Maintain adequate free disk space
+
+#### Troubleshooting Performance Issues
+
+1. **Slow Processing**
+   - Enable data decimation
+   - Reduce plot update frequency
+   - Use batch processing
+   - Check system resources
+
+2. **High Memory Usage**
+   - Close unused plot tabs
+   - Clear plot cache
+   - Process smaller chunks
+   - Use temporary files
+
+3. **System Crashes**
+   - Check available memory
+   - Reduce batch size
+   - Enable auto-save
+   - Monitor system logs
+
+#### Advanced Optimization
+
+1. **Custom Decimation**
+   ```python
+   # Example of custom decimation settings
+   decimation_factor = calculate_decimation_factor(
+       data_size=file_size,
+       max_points=10000,
+       sampling_rate=sampling_rate
+   )
+   ```
+
+2. **Memory Profiling**
+   - Monitor memory usage patterns
+   - Identify memory leaks
+   - Optimize data structures
+   - Profile processing steps
+
+3. **Batch Processing Optimization**
+   - Configure optimal batch size
+   - Set appropriate thread count
+   - Manage temporary files
+   - Monitor progress
+
+#### Performance Monitoring
+
+1. **Status Indicators**
+   - Memory usage percentage
+   - Processing speed
+   - Thread utilization
+   - Cache hit rate
+
+2. **Logging**
+   - Performance metrics
+   - Memory usage patterns
+   - Processing times
+   - Error tracking
+
+3. **Reporting**
+   - Generate performance reports
+   - Track optimization effects
+   - Monitor system resources
+   - Document issues
+
+#### Recommendations for Different Scenarios
+
+1. **Small Datasets (< 1MB)**
+   - Use standard processing
+   - Enable all features
+   - No optimization needed
+
+2. **Medium Datasets (1MB - 100MB)**
+   - Enable basic decimation
+   - Use standard batch processing
+   - Monitor memory usage
+
+3. **Large Datasets (> 100MB)**
+   - Enable all optimizations
+   - Use advanced batch processing
+   - Implement custom decimation
+   - Monitor system resources
+
+4. **Very Large Datasets (> 1GB)**
+   - Use specialized processing
+   - Implement chunked processing
+   - Enable temporary file usage
+   - Monitor system stability
 
 ## Troubleshooting
 

@@ -59,6 +59,69 @@ class ThemeManager:
         'status_text': '#ffffff'   # White text for status messages
     }
     
+    # Store semantic plot colors separately
+    LIGHT_SEMANTIC_PLOT_COLORS = {
+        'line_raw': '#555555',      # Darker Gray for raw data overlay
+        'line_filtered': '#1f77b4', # Default blue for filtered data
+        'marker_peak': '#FF0000',   # Red for peak markers
+        'marker_width': '#FF0000',  # Red for width lines
+        'line_dist_min': '#FF6B6B',  # Light Red
+        'line_dist_max': '#4ECDC4',  # Teal
+        'span_dist': '#C8E6C9',      # Light Green
+        'marker_double': '#1f77b4',  # Blue (match filtered)
+        'marker_nondouble': '#AAAAAA', # Light Gray (match raw)
+        'moving_average': '#FF8C00', # Dark Orange for moving average
+        'scatter_points': 'black', # Default blue for scatter
+        'hist_bars': '#1f77b4',      # Default blue for histogram
+    }
+
+    DARK_SEMANTIC_PLOT_COLORS = {
+        'line_raw': '#666666',      # Mid-Gray for raw data overlay
+        'line_filtered': '#81D4FA', # Light Blue for filtered data
+        'marker_peak': '#FF6B6B',   # Lighter Red for peak markers
+        'marker_width': '#FF6B6B',  # Lighter Red for width lines
+        'line_dist_min': '#FF8A80',  # Lighter Red
+        'line_dist_max': '#80CBC4',  # Lighter Teal
+        'span_dist': '#385739',      # Dark Green
+        'marker_double': '#81D4FA',  # Light Blue (match filtered)
+        'marker_nondouble': '#666666', # Mid Gray (match raw)
+        'moving_average': '#FFA726', # Lighter Orange for moving average
+        'scatter_points': '#81D4FA', # Light Blue for scatter
+        'hist_bars': '#81D4FA',      # Light Blue for histogram
+    }
+
+    # --- Standard Matplotlib rcParams ---
+    LIGHT_PLOT_RCParams = {
+        'figure.facecolor': '#ffffff',
+        'axes.facecolor': '#ffffff',
+        'savefig.facecolor': '#ffffff',
+        'text.color': '#333333',
+        'axes.labelcolor': '#333333',
+        'xtick.color': '#333333',
+        'ytick.color': '#333333',
+        'axes.edgecolor': '#666666',
+        'grid.color': '#cccccc',
+        'grid.alpha': 0.5,
+        'lines.color': LIGHT_SEMANTIC_PLOT_COLORS['line_filtered'], # Default line color
+        'patch.edgecolor': '#333333'
+    }
+
+    DARK_PLOT_RCParams = {
+        'figure.facecolor': '#1e1e1e',
+        'axes.facecolor': '#2d2d2d',
+        'savefig.facecolor': '#1e1e1e',
+        'text.color': '#e0e0e0',
+        'axes.labelcolor': '#e0e0e0',
+        'xtick.color': '#e0e0e0',
+        'ytick.color': '#e0e0e0',
+        'axes.edgecolor': '#9e9e9e',
+        'grid.color': '#545c66',
+        'grid.alpha': 0.3,
+        'lines.color': DARK_SEMANTIC_PLOT_COLORS['line_filtered'], # Default line color
+        'patch.edgecolor': '#e0e0e0'
+    }
+    # --- End Standard Matplotlib rcParams ---
+    
     # Font configurations
     FONTS = {
         'default': ('Segoe UI', 10),
@@ -109,8 +172,12 @@ class ThemeManager:
         self.current_theme = theme_name.lower()
         if self.current_theme == 'dark':
             self.COLORS = self.DARK_COLORS
+            self.PLOT_COLORS = self.DARK_SEMANTIC_PLOT_COLORS # Store semantic colors
+            self.PLOT_RCParams = self.DARK_PLOT_RCParams      # Store standard rcParams
         else:
             self.COLORS = self.LIGHT_COLORS
+            self.PLOT_COLORS = self.LIGHT_SEMANTIC_PLOT_COLORS # Store semantic colors
+            self.PLOT_RCParams = self.LIGHT_PLOT_RCParams      # Store standard rcParams
     
     def toggle_theme(self):
         """
@@ -143,40 +210,19 @@ class ThemeManager:
         else:
             self._apply_light_theme(style)
             
-        # Add our accent frame style for highlighting important elements
-        style.configure('Accent.TFrame', 
-                      background='#e6f2ff', 
-                      borderwidth=2, 
-                      relief='solid')
-        
         # Configure common elements
         root.configure(background=self.COLORS['background'])
         
         # Update matplotlib style if it's installed
         try:
             import matplotlib.pyplot as plt
-            if self.current_theme == 'dark':
-                # Don't use dark_background style - keep plots light
-                plt.style.use('default')
-                
-                # Set plot colors for dark theme but with light plot backgrounds
-                plt.rcParams['axes.facecolor'] = 'white'
-                plt.rcParams['figure.facecolor'] = 'white'
-                plt.rcParams['savefig.facecolor'] = 'white'
-                plt.rcParams['text.color'] = '#333333'           # Dark text for plots
-                plt.rcParams['axes.labelcolor'] = '#333333'      # Dark labels
-                plt.rcParams['xtick.color'] = '#333333'          # Dark ticks
-                plt.rcParams['ytick.color'] = '#333333'          # Dark ticks
-                plt.rcParams['axes.edgecolor'] = '#666666'       # Slightly darker edge color
-                plt.rcParams['grid.color'] = '#cccccc'           # Light grid
-                plt.rcParams['grid.alpha'] = 0.3                 # Subtle grid
-            else:
-                plt.style.use('default')
-                plt.rcParams['axes.facecolor'] = 'white'
-                plt.rcParams['figure.facecolor'] = 'white'
-                plt.rcParams['savefig.facecolor'] = 'white'
+            plt.style.use('default') # Reset to default first
+            # Apply ONLY standard, valid rcParams
+            plt.rcParams.update(self.PLOT_RCParams)
         except ImportError:
             pass  # matplotlib not installed
+        except Exception as e:
+             print(f"Error applying matplotlib rcParams: {e}") # Add error logging
             
         return style
     
@@ -190,6 +236,13 @@ class ThemeManager:
             foreground=self.COLORS['text'],
             font=self.FONTS['default']
         )
+        
+        # Add Accent Frame style for light theme
+        style.configure('Accent.TFrame', 
+                      background='#e6f2ff',  # Light blue accent
+                      borderwidth=1, 
+                      relief='solid',
+                      bordercolor=self.COLORS['border'])
         
         # Configure TButton
         style.configure('TButton',
@@ -307,7 +360,8 @@ class ThemeManager:
             darkcolor=self.COLORS['border'],
             borderwidth=1,
             padding=5,
-            font=self.FONTS['default']
+            font=self.FONTS['default'],
+            insertcolor=self.COLORS['text']
         )
         style.map('TEntry',
             fieldbackground=[('readonly', self.COLORS['background'])],
@@ -393,6 +447,13 @@ class ThemeManager:
             foreground=self.COLORS['text'],
             font=self.FONTS['default']
         )
+        
+        # Add Accent Frame style for dark theme
+        style.configure('Accent.TFrame', 
+                      background=self.COLORS['panel_bg'],  # Use panel background for dark accent
+                      borderwidth=1, 
+                      relief='solid',
+                      bordercolor=self.COLORS['border'])
         
         # === BUTTONS ===
         # Standard button
@@ -524,7 +585,8 @@ class ThemeManager:
             darkcolor=self.COLORS['card_bg'],
             borderwidth=1,
             padding=5,
-            font=self.FONTS['default']
+            font=self.FONTS['default'],
+            insertcolor=self.COLORS['text']
         )
         style.map('TEntry',
             fieldbackground=[('readonly', self.COLORS['background']), 
@@ -553,35 +615,49 @@ class ThemeManager:
         )
         
         # === RADIO BUTTONS ===
+        print(f"--- Applying Dark Theme TRadiobutton (Label Styling Focus) ---")
         style.configure('TRadiobutton',
             background=self.COLORS['background'],
-            foreground=self.COLORS['text'],
-            indicatorcolor=self.COLORS['card_bg'],
-            indicatorbackground=self.COLORS['card_bg'],
+            foreground=self.COLORS['text'],         # Default text color (dim)
+            indicatorcolor=self.COLORS['border'],   # Default indicator color (dark)
+            indicatorbackground=self.COLORS['background'],
             indicatorrelief='flat'
         )
         style.map('TRadiobutton',
+            # Change background slightly when selected
             background=[('active', self.COLORS['background']),
-                       ('selected', self.COLORS['background'])],
-            foreground=[('disabled', self.COLORS['text_secondary'])],
-            indicatorcolor=[('selected', self.COLORS['secondary']), 
-                           ('active', self.COLORS['panel_bg'])]
+                       ('selected', self.COLORS['panel_bg'])], # <--- Subtle BG change when selected
+            # Make FOREGROUND bright white when selected
+            foreground=[('disabled', self.COLORS['text_secondary']),
+                       ('selected', '#FFFFFF')],             # <--- Bright text when selected
+            indicatorcolor=[
+                ('selected', self.COLORS['text']),          # Try setting indicator selected bright
+                ('active', self.COLORS['panel_bg'])         # Hover state for OFF indicator
+                # Default uses configure settings
+                ]
         )
-        
+
         # === CHECKBUTTONS ===
+        print(f"--- Applying Dark Theme TCheckbutton (Label Styling Focus) ---")
         style.configure('TCheckbutton',
             background=self.COLORS['background'],
-            foreground=self.COLORS['text'],
-            indicatorcolor=self.COLORS['card_bg'],
-            indicatorbackground=self.COLORS['card_bg'],
+            foreground=self.COLORS['text'],         # Default text color (dim)
+            indicatorcolor=self.COLORS['border'],   # Default indicator color (dark)
+            indicatorbackground=self.COLORS['background'],
             indicatorrelief='flat'
         )
         style.map('TCheckbutton',
+             # Change background slightly when selected
             background=[('active', self.COLORS['background']),
-                       ('selected', self.COLORS['background'])],
-            foreground=[('disabled', self.COLORS['text_secondary'])],
-            indicatorcolor=[('selected', self.COLORS['secondary']), 
-                           ('active', self.COLORS['panel_bg'])]
+                       ('selected', self.COLORS['panel_bg'])], # <--- Subtle BG change when selected
+            # Make FOREGROUND bright white when selected
+            foreground=[('disabled', self.COLORS['text_secondary']),
+                       ('selected', '#FFFFFF')],             # <--- Bright text when selected
+            indicatorcolor=[
+                ('selected', self.COLORS['text']),          # Try setting indicator selected bright
+                ('active', self.COLORS['panel_bg'])         # Hover state for OFF indicator
+                # Default uses configure settings
+                ]
         )
         
         # === TREEVIEW (for tables) ===
@@ -669,4 +745,65 @@ class ThemeManager:
         tuple
             Font configuration
         """
-        return self.FONTS.get(font_name, self.FONTS['default']) 
+        return self.FONTS.get(font_name, self.FONTS['default'])
+
+    def get_plot_color(self, semantic_color_name):
+        """
+        Get a specific SEMANTIC color value for the current plot theme.
+
+        Parameters
+        ----------
+        semantic_color_name : str
+            The semantic name of the color (e.g., 'line_raw', 'marker_peak')
+
+        Returns
+        -------
+        str
+            The color value for the current theme. Returns a default color if not found.
+        """
+        # PLOT_COLORS should be set by set_theme
+        return self.PLOT_COLORS.get(semantic_color_name, '#000000') # Default to black if missing
+
+    def apply_plot_theme(self, fig, axes_list=None):
+        """
+        Apply the current theme's standard styles (bg, text, grid) directly
+        to a Figure and its Axes. Specific element colors (lines, markers)
+        must be set using get_plot_color in the plotting functions.
+        """
+        # Use the standard rcParams dict for the current theme
+        plot_rcParams = self.PLOT_RCParams
+
+        fig_face_color = plot_rcParams.get('figure.facecolor')
+        ax_face_color = plot_rcParams.get('axes.facecolor')
+        text_color = plot_rcParams.get('text.color')
+        edge_color = plot_rcParams.get('axes.edgecolor')
+        grid_color = plot_rcParams.get('grid.color')
+        grid_alpha = plot_rcParams.get('grid.alpha', 0.5) # Provide default alpha
+
+        if fig_face_color:
+            fig.patch.set_facecolor(fig_face_color)
+
+        if axes_list is None:
+            axes_list = fig.get_axes()
+
+        for ax in axes_list:
+            if ax_face_color:
+                ax.set_facecolor(ax_face_color)
+            if text_color:
+                ax.tick_params(axis='x', colors=text_color)
+                ax.tick_params(axis='y', colors=text_color)
+                ax.xaxis.label.set_color(text_color)
+                ax.yaxis.label.set_color(text_color)
+                if ax.get_title():
+                    ax.title.set_color(text_color)
+                 # Also set colorbar label/tick colors if it's a colorbar axis
+                if hasattr(ax, 'yaxis') and hasattr(ax.yaxis, 'label'):
+                    ax.yaxis.label.set_color(text_color) # For colorbar label
+
+            if edge_color:
+                for spine in ax.spines.values():
+                    spine.set_edgecolor(edge_color)
+            if grid_color:
+                ax.grid(True, color=grid_color, alpha=grid_alpha)
+            else:
+                ax.grid(False) # Explicitly disable grid if no color defined 
