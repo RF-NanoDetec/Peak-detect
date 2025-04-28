@@ -203,26 +203,58 @@ def add_tooltip(widget, text):
     text : str
         The tooltip text
     """
-    tooltip = tk.Label(
-        widget.master, 
+    # Use Toplevel instead of Label to ensure tooltip stays on top
+    tooltip = tk.Toplevel(widget.master)
+    tooltip.withdraw()  # Initially hidden
+    tooltip.overrideredirect(True)  # No window decorations
+    tooltip.attributes("-topmost", True)  # Stay on top of all windows
+    
+    # Create a frame with a label inside the Toplevel
+    frame = tk.Frame(tooltip, bg="#FFFFEA", relief="solid", borderwidth=1)
+    frame.pack(fill="both", expand=True)
+    
+    label = tk.Label(
+        frame, 
         text=text, 
         bg="#FFFFEA", 
-        relief="solid", 
-        borderwidth=1
+        padx=5,
+        pady=3,
+        wraplength=250,
+        justify="left"
     )
-    tooltip.place_forget()
+    label.pack()
     
     def enter(event):
-        x, y, _, _ = widget.bbox("insert")
-        x += widget.winfo_rootx() + 25
-        y += widget.winfo_rooty() + 25
-        tooltip.place(x=x, y=y)
+        # Get widget position
+        x = widget.winfo_rootx() + widget.winfo_width() + 2
+        y = widget.winfo_rooty() + widget.winfo_height() // 2
+        
+        # Check if tooltip would go off the right edge of the screen
+        tooltip.update_idletasks()  # Update to calculate tooltip size
+        tooltip_width = tooltip.winfo_reqwidth()
+        screen_width = widget.winfo_screenwidth()
+        
+        if x + tooltip_width > screen_width:
+            # Position tooltip to the left of the widget instead
+            x = widget.winfo_rootx() - tooltip_width - 2
+        
+        # Position and show tooltip
+        tooltip.geometry(f"+{x}+{y}")
+        tooltip.deiconify()
         
     def leave(event):
-        tooltip.place_forget()
+        tooltip.withdraw()
         
     widget.bind("<Enter>", enter)
     widget.bind("<Leave>", leave)
+    
+    # Hide tooltip when widget is destroyed
+    def on_widget_destroy(event):
+        tooltip.destroy()
+    
+    widget.bind("<Destroy>", on_widget_destroy)
+    
+    return tooltip
 
 def show_documentation(app):
     """
@@ -293,11 +325,11 @@ def on_file_mode_change(app):
     if app.file_mode.get() == "batch":
         app.timestamps_label.pack(side=tk.LEFT, padx=5, pady=5)
         app.timestamps_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
-        app.browse_button.config(text="Select Folder")
+        app.browse_button.config(text="Load Files with Timestamps")
     else:
         app.timestamps_label.pack_forget()
         app.timestamps_entry.pack_forget()
-        app.browse_button.config(text="Load File")
+        app.browse_button.config(text="Load Files")
     
     # Force update of the GUI
     app.update_idletasks() 
@@ -970,7 +1002,7 @@ def on_file_mode_change_with_ui(app):
         app.status_indicator.set_state('success')
         
         # Set appropriate status text based on the mode
-        mode_name = "single file" if app.file_mode.get() == "single" else "batch"
+        mode_name = "standard" if app.file_mode.get() == "single" else "timestamp"
         app.status_indicator.set_text(f"Switched to {mode_name} mode")
         
         # Update preview label

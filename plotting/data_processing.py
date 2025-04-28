@@ -8,8 +8,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
 from tkinter import ttk
+from matplotlib.lines import Line2D
 from scipy.signal import find_peaks
-from core.peak_analysis_utils import apply_butterworth_filter, adjust_lowpass_cutoff
+from core.peak_analysis_utils import apply_butterworth_filter, adjust_lowpass_cutoff, calculate_lowpass_cutoff
 
 def start_analysis(app, profile_function=None):
     """Optimized analysis and plotting of filtered data"""
@@ -148,15 +149,19 @@ def start_analysis(app, profile_function=None):
         raw_line_color = app.theme_manager.get_plot_color('line_raw')
         filtered_line_color = app.theme_manager.get_plot_color('line_filtered')
 
-        # Plot decimated raw data using SEMANTIC color
+        # Plot decimated raw data using SEMANTIC color with thin line
         ax.plot(
             t_plot,
             x_plot,
             color=raw_line_color,
             linewidth=0.05,
-            label=f'Raw Data ({len(x_plot):,} points)',
+            label=None,  # Remove label from actual plot
             alpha=0.4,
         )
+
+        # Create legend lines with thicker width
+        legend_lines = [Line2D([0], [0], color=raw_line_color, linewidth=2.0, 
+                             label=f'Raw Data ({len(x_plot):,} points)')]
 
         # Plot filtered data using SEMANTIC color if enabled
         if app.filter_enabled.get():
@@ -165,19 +170,23 @@ def start_analysis(app, profile_function=None):
                 filtered_plot,
                 color=filtered_line_color,
                 linewidth=0.05,
-                label=f'Filtered Data ({len(filtered_plot):,} points)',
+                label=None,  # Remove label from actual plot
                 alpha=0.9,
             )
+            legend_lines.append(Line2D([0], [0], color=filtered_line_color, linewidth=2.0,
+                                     label=f'Filtered Data ({len(filtered_plot):,} points)'))
             title = 'Raw and Filtered Signals (Optimized View)'
         else:
             title = 'Raw Signal Data (Processing Only)'
+
+        # Add the custom legend with thicker lines
+        ax.legend(handles=legend_lines)
 
         # Customize plot (fonts handled by apply_plot_theme)
         ax.set_xlabel('Time (min)')
         ax.set_ylabel('Amplitude (counts)')
         ax.set_title(title)
         ax.grid(True, linestyle='--') # Grid color/alpha handled by apply_plot_theme
-        ax.legend()
 
         # Annotation (text color handled by apply_plot_theme)
         if app.filter_enabled.get():
@@ -192,7 +201,6 @@ def start_analysis(app, profile_function=None):
                 f'Processing raw data only\n'
                 f'Total points: {len(app.filtered_signal):,}'
             )
-
         ax.text(0.02, 0.98, filter_text, transform=ax.transAxes,
                 verticalalignment='top', fontsize=8)
 

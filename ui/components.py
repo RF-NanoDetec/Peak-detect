@@ -198,14 +198,14 @@ def create_data_loading_tab(app, tab_control):
     # Radio buttons for file mode
     ttk.Radiobutton(
         file_mode_frame, 
-        text="Single File", 
+        text="Standard Mode", 
         variable=app.file_mode, 
         value="single",
         command=app.on_file_mode_change
     ).pack(side=tk.LEFT, padx=5, pady=5)
     ttk.Radiobutton(
         file_mode_frame, 
-        text="Batch Mode", 
+        text="Timestamp Mode", 
         variable=app.file_mode, 
         value="batch",
         command=app.on_file_mode_change
@@ -214,7 +214,7 @@ def create_data_loading_tab(app, tab_control):
     # Add tooltips for file mode selection
     app.add_tooltip(
         file_mode_frame,
-        "Choose between single file analysis or batch processing of multiple files"
+        "Standard Mode: Load single or multiple files with automatic time sequencing\nTimestamp Mode: Load multiple files with custom timestamps"
     )
 
     # Add peak analysis mode frame (normal vs double peak)
@@ -389,12 +389,16 @@ def create_data_loading_tab(app, tab_control):
 
     # Protocol information entries
     protocol_entries = [
+        ("Measurement Date:", app.protocol_measurement_date),
         ("Start Time:", app.protocol_start_time),
+        ("Setup:", app.protocol_setup),
         ("Particle:", app.protocol_particle),
-        ("Concentration:", app.protocol_concentration),
-        ("Stamp:", app.protocol_stamp),
+        ("Particle Concentration:", app.protocol_concentration),
+        ("Buffer:", app.protocol_buffer),
+        ("Buffer Concentration:", app.protocol_buffer_concentration),
+        ("ND Filter:", app.protocol_id_filter),
         ("Laser Power:", app.protocol_laser_power),
-        ("Setup:", app.protocol_setup)
+        ("Stamp:", app.protocol_stamp)
     ]
 
     # Create protocol entries first
@@ -404,12 +408,16 @@ def create_data_loading_tab(app, tab_control):
 
     # Protocol tooltips
     protocol_tooltips = {
+        "Measurement Date": "Enter the date of measurement in YYYY-MM-DD format",
         "Start Time": "Enter the experiment start time during the day in HH:MM:SS format (e.g., '13:30:00')",
-        "Particle": "Enter the type of particle or sample being analyzed",
-        "Concentration": "Enter the sample concentration",
-        "Stamp": "Enter any lithographic stamp name or identifier example: 'tripple-block'",
-        "Laser Power": "Enter the laser power settings used as ND filter",
         "Setup": "Enter the experimental setup configuration example: 'Prototype, Old Ladom'",
+        "Particle": "Enter the type of particle or sample being analyzed",
+        "Particle Concentration": "Enter the concentration of the particles or sample",
+        "Buffer": "Enter the buffer solution used in the experiment",
+        "Buffer Concentration": "Enter the concentration of the buffer solution",
+        "ND Filter": "Enter the neutral density (ND) filter value used in the experiment",
+        "Laser Power": "Enter the laser power settings used",
+        "Stamp": "Enter any lithographic stamp name or identifier example: 'tripple-block'",
         "Notes": "Enter any additional notes or observations about the experiment"
     }
 

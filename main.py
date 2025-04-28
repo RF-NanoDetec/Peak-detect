@@ -182,6 +182,10 @@ class Application(tk.Tk):
 
         # Protocol Variables
         self.protocol_start_time = tk.StringVar()
+        self.protocol_id_filter = tk.StringVar()  # New: ID filter
+        self.protocol_buffer = tk.StringVar()     # New: Buffer
+        self.protocol_buffer_concentration = tk.StringVar()  # New: Buffer concentration
+        self.protocol_measurement_date = tk.StringVar()  # New: Measurement date
         self.protocol_particle = tk.StringVar()
         self.protocol_concentration = tk.StringVar()
         self.protocol_stamp = tk.StringVar()
@@ -190,7 +194,7 @@ class Application(tk.Tk):
         self.protocol_notes = tk.StringVar()
 
         # Add file mode selection
-        self.file_mode = tk.StringVar(value="single")
+        self.file_mode = tk.StringVar(value="single")  # "single" for Standard Mode, "batch" for Timestamp Mode
         self.batch_timestamps = tk.StringVar()
         
         # Add double peak analysis toggle
@@ -1460,7 +1464,25 @@ class Application(tk.Tk):
              
         baseline_y = canvas_height // 2 + 15
 
-        # --- Re-draw signal (same logic as before) ---
+        # First draw background elements
+        # --- Draw threshold lines ---
+        low_thresh_y = baseline_y - 15
+        med_thresh_y = baseline_y - 25
+        high_thresh_y = baseline_y - 40
+
+        # Low sigma
+        canvas.create_line(10, low_thresh_y, canvas_width-10, low_thresh_y, 
+                           fill=low_thresh_color, width=1, dash=(2, 2), tags="background")
+
+        # Medium sigma
+        canvas.create_line(10, med_thresh_y, canvas_width-10, med_thresh_y, 
+                           fill=med_thresh_color, width=1, dash=(2, 2), tags="background")
+
+        # High sigma
+        canvas.create_line(10, high_thresh_y, canvas_width-10, high_thresh_y, 
+                           fill=high_thresh_color, width=1, dash=(2, 2), tags="background")
+
+        # --- Draw signal ---
         data_points = []
         np.random.seed(42)
         for x in range(10, canvas_width-10, 4):
@@ -1477,40 +1499,25 @@ class Application(tk.Tk):
             y += np.random.normal(0, 3)
             data_points.append(x)
             data_points.append(int(y))
-        canvas.create_line(data_points, fill=signal_color, width=2, smooth=True, tags="diagram_element")
+        canvas.create_line(data_points, fill=signal_color, width=2, smooth=True, tags="signal")
 
-        # --- Re-draw threshold lines and text with theme colors ---
-        low_thresh_y = baseline_y - 15
-        med_thresh_y = baseline_y - 25
-        high_thresh_y = baseline_y - 40
-
-        # Low sigma
-        canvas.create_line(10, low_thresh_y, canvas_width-10, low_thresh_y, 
-                           fill=low_thresh_color, width=1, dash=(2, 2), tags="diagram_element")
-        canvas.create_text(canvas_width-15, low_thresh_y-8, text=low_thresh_text, 
-                           fill=low_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="diagram_element")
-
-        # Medium sigma
-        canvas.create_line(10, med_thresh_y, canvas_width-10, med_thresh_y, 
-                           fill=med_thresh_color, width=1, dash=(2, 2), tags="diagram_element")
-        canvas.create_text(canvas_width-15, med_thresh_y-8, text=med_thresh_text, 
-                           fill=med_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="diagram_element")
-
-        # High sigma
-        canvas.create_line(10, high_thresh_y, canvas_width-10, high_thresh_y, 
-                           fill=high_thresh_color, width=1, dash=(2, 2), tags="diagram_element")
-        canvas.create_text(canvas_width-15, high_thresh_y-8, text=high_thresh_text, 
-                           fill=high_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="diagram_element")
-
-        # --- Re-draw markers with theme colors ---
+        # --- Draw markers ---
         for x_pos in [80, 190, 280]:
             canvas.create_oval(x_pos-3, low_thresh_y-3, x_pos+3, low_thresh_y+3, 
-                               fill=low_thresh_color, outline="", tags="diagram_element")
+                               fill=low_thresh_color, outline="", tags="markers")
         for x_pos in [190, 280]:
             canvas.create_oval(x_pos-3, med_thresh_y-3, x_pos+3, med_thresh_y+3, 
-                               fill=med_thresh_color, outline="", tags="diagram_element")
+                               fill=med_thresh_color, outline="", tags="markers")
         canvas.create_oval(190-3, high_thresh_y-3, 190+3, high_thresh_y+3, 
-                           fill=high_thresh_color, outline="", tags="diagram_element")
+                           fill=high_thresh_color, outline="", tags="markers")
+
+        # Draw tooltips last (on top)
+        canvas.create_text(canvas_width-15, low_thresh_y-8, text=low_thresh_text, 
+                           fill=low_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="tooltip")
+        canvas.create_text(canvas_width-15, med_thresh_y-8, text=med_thresh_text, 
+                           fill=med_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="tooltip")
+        canvas.create_text(canvas_width-15, high_thresh_y-8, text=high_thresh_text, 
+                           fill=high_thresh_color, anchor=tk.E, font=("TkDefaultFont", 8), tags="tooltip")
 
     # Method to redraw the manual parameters diagram with theme-appropriate colors
     def _redraw_manual_diagram(self):
@@ -1544,7 +1551,7 @@ class Application(tk.Tk):
             
         baseline_y = 60
 
-        # --- Re-draw signal (same logic as before) ---
+        # First draw the signal
         data_points = []
         np.random.seed(42)
         peaks = [
@@ -1559,35 +1566,39 @@ class Application(tk.Tk):
             y += np.random.normal(0, 0.5)
             data_points.append(x)
             data_points.append(int(y))
-        canvas.create_line(data_points, fill=signal_color, width=2, smooth=True, tags="diagram_element")
+        canvas.create_line(data_points, fill=signal_color, width=2, smooth=True, tags="signal")
 
-        # --- Re-draw indicators with theme colors ---
+        # Draw indicator lines
         # Distance
         distance_y = baseline_y + 15
         canvas.create_line(peaks[0]['x'], distance_y, peaks[1]['x'], distance_y,
-                           fill=dist_color, width=1, dash=(2, 2), tags="diagram_element")
-        canvas.create_text((peaks[0]['x'] + peaks[1]['x'])/2, distance_y + 10,
-                           text="Distance between peaks", fill=text_color, 
-                           font=("TkDefaultFont", 8), tags="diagram_element")
+                           fill=dist_color, width=1, dash=(2, 2), tags="indicator_lines")
+
         # Height
         rel_height_y = baseline_y - peaks[0]['height'] * 0.2
         canvas.create_line(peaks[0]['x'], baseline_y - peaks[0]['height'], peaks[0]['x'], rel_height_y,
-                           fill=height_color, width=1, dash=(2, 2), tags="diagram_element")
-        canvas.create_text(peaks[0]['x'], rel_height_y - 10,
-                           text="Relative Height (0.8 = 80% from top)", fill=text_color, 
-                           font=("TkDefaultFont", 8), tags="diagram_element")
+                           fill=height_color, width=1, dash=(2, 2), tags="indicator_lines")
+
         # Width
         width_y = baseline_y + 5
-        width_val = peaks[0]['width'] # Use defined width
+        width_val = peaks[0]['width']
         canvas.create_line(peaks[0]['x'] - width_val, width_y, peaks[0]['x'] + width_val, width_y,
-                           fill=width_color, width=1, dash=(2, 2), tags="diagram_element")
+                           fill=width_color, width=1, dash=(2, 2), tags="indicator_lines")
         canvas.create_line(peaks[0]['x'] - width_val, width_y, peaks[0]['x'] - width_val, rel_height_y,
-                           fill=width_color, width=1, dash=(2, 2), tags="diagram_element")
+                           fill=width_color, width=1, dash=(2, 2), tags="indicator_lines")
         canvas.create_line(peaks[0]['x'] + width_val, width_y, peaks[0]['x'] + width_val, rel_height_y,
-                           fill=width_color, width=1, dash=(2, 2), tags="diagram_element")
+                           fill=width_color, width=1, dash=(2, 2), tags="indicator_lines")
+
+        # Draw tooltips last (on top)
+        canvas.create_text((peaks[0]['x'] + peaks[1]['x'])/2, distance_y + 10,
+                           text="Distance between peaks", fill=text_color, 
+                           font=("TkDefaultFont", 8), tags="tooltip")
+        canvas.create_text(peaks[0]['x'], rel_height_y - 10,
+                           text="Relative Height (0.8 = 80% from top)", fill=text_color, 
+                           font=("TkDefaultFont", 8), tags="tooltip")
         canvas.create_text(peaks[0]['x'], width_y + 10,
                            text="Width Range", fill=text_color, 
-                           font=("TkDefaultFont", 8), tags="diagram_element")
+                           font=("TkDefaultFont", 8), tags="tooltip")
 
     # Method to update the theme styling of a Matplotlib histogram
     def _update_histogram_theme(self, canvas, ax):
@@ -1655,9 +1666,9 @@ class Application(tk.Tk):
             
         baseline_y = canvas_height // 2
 
-        # Draw axis
+        # First draw the axis (background)
         canvas.create_line(10, baseline_y, canvas_width - 10, baseline_y,
-                           fill=axis_color, dash=(4, 4), width=1, tags="compare_element")
+                           fill=axis_color, dash=(4, 4), width=1, tags="background")
 
         # Draw raw data
         raw_points = []
@@ -1667,7 +1678,7 @@ class Application(tk.Tk):
             y = baseline_y - 15 * np.sin((x-10) / 30) + noise
             raw_points.append(x)
             raw_points.append(int(y))
-        canvas.create_line(raw_points, fill=raw_color, width=1.5, smooth=False, tags="compare_element")
+        canvas.create_line(raw_points, fill=raw_color, width=1.5, smooth=False, tags="raw_data")
 
         # Draw filtered data
         filtered_points = []
@@ -1675,7 +1686,14 @@ class Application(tk.Tk):
             y = baseline_y - 15 * np.sin((x-10) / 30)
             filtered_points.append(x)
             filtered_points.append(int(y))
-        canvas.create_line(filtered_points, fill=filtered_color, width=2, smooth=True, tags="compare_element")
+        canvas.create_line(filtered_points, fill=filtered_color, width=2, smooth=True, tags="filtered_data")
+
+        # Draw tooltips last (on top)
+        # Add tooltips for raw and filtered data
+        canvas.create_text(30, baseline_y - 30, text="Raw Data", 
+                          fill=raw_color, anchor=tk.W, font=("TkDefaultFont", 8), tags="tooltip")
+        canvas.create_text(30, baseline_y + 20, text="Filtered Data", 
+                          fill=filtered_color, anchor=tk.W, font=("TkDefaultFont", 8), tags="tooltip")
 
 
 # Your main program code goes here

@@ -12,6 +12,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
 from tkinter import ttk
+from matplotlib.lines import Line2D
 
 # Import utilities from reorganized structure
 from core.performance import profile_function as profile_func
@@ -77,19 +78,23 @@ def plot_raw_data(app, profiler=None):
         # Get SEMANTIC theme color
         raw_line_color = app.theme_manager.get_plot_color('line_raw')
 
-        # Plot decimated data using SEMANTIC theme color
+        # Plot decimated data using SEMANTIC theme color with thin line
         ax.plot(t_plot, x_plot,
                 color=raw_line_color,
                 linewidth=0.05,
-                label=f'Raw Data ({len(t_plot):,} points)',
+                label=None,  # Remove label from actual plot
                 alpha=0.9)
+        
+        # Create custom legend with thicker line
+        legend_line = Line2D([0], [0], color=raw_line_color, linewidth=2.0, 
+                            label=f'Raw Data ({len(t_plot):,} points)')
+        ax.legend(handles=[legend_line])
         
         # Customize plot (fonts, etc., handled by apply_plot_theme)
         ax.set_xlabel('Time (min)')
         ax.set_ylabel('Amplitude (counts)')
         ax.set_title('Raw Data (Optimized View)')
         ax.grid(True, linestyle='--') # Grid color/alpha handled by apply_plot_theme
-        ax.legend()
         
         # Add data statistics annotation
         stats_text = (f'Total points: {len(app.data):,}\n'
@@ -147,5 +152,4 @@ def plot_raw_data(app, profiler=None):
     except Exception as e:
         app.preview_label.config(text=f"Error plotting raw data: {str(e)}",
                                   foreground=app.theme_manager.get_color('error'))
-        print(f"Detailed error: {str(e)}")
         traceback.print_exc() 

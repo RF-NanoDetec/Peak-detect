@@ -218,8 +218,6 @@ def plot_filtered_peaks(app, profile_function=None):
                 ax = new_figure.add_subplot(2, 5, i*5 + j + 1)
                 axs_flat.append(ax)
 
-        handles, labels = [], []
-
         # Plot selected peaks
         for idx, peak_idx in enumerate(selected_peaks):
             if idx >= len(axs_flat): break
@@ -238,33 +236,33 @@ def plot_filtered_peaks(app, profile_function=None):
             background = np.min(yData_sub)
             yData = yData_sub - background
 
-            # Plot filtered data segment using SEMANTIC color
+            # Plot filtered data segment using SEMANTIC color with thin line
             ax.plot((xData - xData[0]) * 1e3, yData,
-                           color=filtered_line_color,
-                           label='Filtered',
-                           alpha=0.8,
-                           linewidth=0.7)
+                    color=filtered_line_color,
+                    label=None,  # Remove label from actual plot
+                    alpha=0.8,
+                    linewidth=0.7)
 
             # Plot peak marker using SEMANTIC color
             peak_time = app.t_value[peaks_x_filter[i]]
             peak_height = app.filtered_signal[peaks_x_filter[i]] - background
             ax.plot((peak_time - xData[0]) * 1e3,
-                           peak_height,
-                           marker="x",
-                           color=peak_marker_color,
-                           linestyle='None',
-                           ms=8,
-                           label='Peak')
+                    peak_height,
+                    marker="x",
+                    color=peak_marker_color,
+                    linestyle='None',
+                    ms=8,
+                    label=None)  # Remove label from actual plot
 
-            # Plot raw data segment using SEMANTIC color
+            # Plot raw data segment using SEMANTIC color with thin line
             raw_data = app.x_value[start_idx:end_idx]
             corrected_signal = raw_data - background
             ax.plot((xData - xData[0]) * 1e3,
-                           corrected_signal,
-                           color=raw_line_color,
-                           label='Raw',
-                           alpha=0.6,
-                           linewidth=0.5)
+                    corrected_signal,
+                    color=raw_line_color,
+                    label=None,  # Remove label from actual plot
+                    alpha=0.6,
+                    linewidth=0.5)
 
             # Plot width lines using SEMANTIC color
             left_idx = int(amp_x_filter["left_ips"][i])
@@ -272,12 +270,12 @@ def plot_filtered_peaks(app, profile_function=None):
             width_height = amp_x_filter["width_heights"][i] - background
 
             ax.hlines(y=width_height,
-                            xmin=(app.t_value[left_idx] - xData[0]) * 1e3,
-                            xmax=(app.t_value[right_idx] - xData[0]) * 1e3,
-                            color=width_marker_color,
-                            linestyles='-',
-                            linewidth=1.0,
-                            label='Width Measurement')
+                     xmin=(app.t_value[left_idx] - xData[0]) * 1e3,
+                     xmax=(app.t_value[right_idx] - xData[0]) * 1e3,
+                     color=width_marker_color,
+                     linestyles='-',
+                     linewidth=1.0,
+                     label=None)  # Remove label from actual plot
 
             # Customize subplot axes (fonts handled by apply_plot_theme)
             ax.set_xlabel("Time (ms)")
@@ -290,31 +288,28 @@ def plot_filtered_peaks(app, profile_function=None):
             ax.yaxis.set_major_locator(plt.MaxNLocator(3))
             ax.tick_params(axis='both', which='major', labelsize=8)
 
-            if idx == 0:
-                handles.extend([ax.lines[0], ax.lines[1], ax.lines[2]])
-
         # Remove individual legends from subplots (with check)
         for ax in axs_flat:
             legend = ax.get_legend()
             if legend is not None:
                 legend.remove()
 
-        # Add figure legend using SEMANTIC colors
-        if handles: # Check if handles were actually created
-             unique_labels = {
-                 'Filtered': Line2D([0], [0], color=filtered_line_color, alpha=0.8, linewidth=0.7, label='Filtered Data'),
-                 'Peak': Line2D([0], [0], color=peak_marker_color, marker='x', linestyle='None', label='Peak'),
-                 'Raw': Line2D([0], [0], color=raw_line_color, alpha=0.6, linewidth=0.5, label='Raw Data'),
-                 'Width': Line2D([0], [0], color=width_marker_color, linestyle='-', linewidth=1.0, label='Peak Width')
-             }
-             new_figure.legend(handles=unique_labels.values(), labels=unique_labels.keys(),
-                              loc='upper center', ncol=len(unique_labels),
-                              fontsize=9, bbox_to_anchor=(0.5, 0.98))
+        # Create custom legend with thicker lines
+        legend_lines = [
+            Line2D([0], [0], color=filtered_line_color, linewidth=2.0, alpha=0.8, label='Filtered Data'),
+            Line2D([0], [0], color=peak_marker_color, marker='x', linestyle='None', markersize=8, label='Peak'),
+            Line2D([0], [0], color=raw_line_color, linewidth=2.0, alpha=0.6, label='Raw Data'),
+            Line2D([0], [0], color=width_marker_color, linestyle='-', linewidth=2.0, label='Peak Width')
+        ]
 
-        # Adjust the layout
+        # Add the custom legend with thicker lines in the top right
+        new_figure.legend(handles=legend_lines, loc='upper right', ncol=2,
+                         fontsize=9, bbox_to_anchor=(0.98, 0.98))
+
+        # Adjust the layout - removed right margin adjustment since we don't need to shift plots
         new_figure.subplots_adjust(top=0.92)
         new_figure.suptitle(f"Filtered Peaks Detail (Peaks {app.segment_offset+1} - {app.segment_offset+num_segments})",
-                            fontsize=14)
+                           fontsize=14)
         new_figure.tight_layout(rect=[0, 0.03, 1, 0.95])
 
         # Apply theme standard styles (bg, grid, text)
@@ -326,7 +321,7 @@ def plot_filtered_peaks(app, profile_function=None):
         canvas = None
 
         for tab_widget_id in app.plot_tab_control.tabs():
-             if app.plot_tab_control.tab(tab_widget_id, "text") == tab_name:
+            if app.plot_tab_control.tab(tab_widget_id, "text") == tab_name:
                 tab_frame = app.plot_tab_control.nametowidget(tab_widget_id)
                 app.plot_tab_control.select(tab_frame)
                 # Remove old canvas
@@ -343,29 +338,25 @@ def plot_filtered_peaks(app, profile_function=None):
             new_tab = ttk.Frame(app.plot_tab_control)
             app.plot_tab_control.add(new_tab, text=tab_name)
             app.plot_tab_control.select(new_tab)
-            # Create and pack the canvas
             canvas = FigureCanvasTkAgg(new_figure, master=new_tab)
             canvas.draw()
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Store the figure associated with the tab
+        # Store the figure
         app.tab_figures[tab_name] = new_figure
-        # Store the canvas reference if needed elsewhere (optional)
-        # app.filtered_peaks_canvas = canvas
 
         # Update status
         app.preview_label.config(
-            text=f"Filtered peaks plotted (Showing peaks {app.segment_offset+1} - {app.segment_offset+num_segments})",
+            text=f"Plotted {len(selected_peaks)} filtered peaks",
             foreground=app.theme_manager.get_color('success')
-            )
-
-        return True
+        )
 
     except Exception as e:
-        app.show_error("Error plotting filtered peaks", e)
-        # Use theme color for error message
-        app.preview_label.config(text="Error plotting filtered peaks.", foreground=app.theme_manager.get_color('error'))
-        return False
+        app.preview_label.config(
+            text=f"Error plotting filtered peaks: {str(e)}",
+            foreground=app.theme_manager.get_color('error')
+        )
+        traceback.print_exc()
 
 
 def show_next_peaks(app, profile_function=None):

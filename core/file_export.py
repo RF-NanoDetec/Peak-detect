@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def create_metadata_header(app):
     """
-    Create a metadata header for the exported file.
+    Create metadata header for the exported file.
     
     Parameters
     ----------
@@ -30,20 +30,16 @@ def create_metadata_header(app):
     Returns
     -------
     str
-        Formatted metadata header string
+        The metadata header as a string
     """
-    # Get current date and time
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Get analysis parameters
-    height_lim_factor = app.height_lim.get()
-    distance = app.distance.get()
-    rel_height = app.rel_height.get()
-    width_values = app.width_p.get().strip().split(',')
-    time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
     
     # Get protocol information
     protocol_start_time = app.protocol_start_time.get()
+    protocol_id_filter = app.protocol_id_filter.get()
+    protocol_buffer = app.protocol_buffer.get()
+    protocol_buffer_concentration = app.protocol_buffer_concentration.get()
+    protocol_measurement_date = app.protocol_measurement_date.get()
     protocol_particle = app.protocol_particle.get()
     protocol_concentration = app.protocol_concentration.get()
     protocol_stamp = app.protocol_stamp.get()
@@ -51,6 +47,13 @@ def create_metadata_header(app):
     protocol_setup = app.protocol_setup.get()
     protocol_notes = app.protocol_notes.get()
     protocol_files = app.protocol_files.get()
+    
+    # Get analysis parameters
+    height_lim_factor = app.height_lim.get()
+    distance = app.distance.get()
+    rel_height = app.rel_height.get()
+    width_values = app.width_p.get().strip().split(',')
+    time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
     
     # Get filter information
     filter_bandwidth = app.filter_bandwidth.get() if hasattr(app, 'filter_bandwidth') else "Not set"
@@ -61,14 +64,18 @@ def create_metadata_header(app):
         f"# Export Date: {current_time}",
         f"#",
         f"# Protocol Information:",
+        f"#   - Measurement Date: {protocol_measurement_date}",
         f"#   - Start Time: {protocol_start_time}",
-        f"#   - Particle Type: {protocol_particle}",
-        f"#   - Concentration: {protocol_concentration}",
-        f"#   - Stamp: {protocol_stamp}",
-        f"#   - Laser Power: {protocol_laser_power}",
         f"#   - Setup: {protocol_setup}",
-        f"#   - Files: {protocol_files}",
+        f"#   - Particle Type: {protocol_particle}",
+        f"#   - Particle Concentration: {protocol_concentration}",
+        f"#   - Buffer: {protocol_buffer}",
+        f"#   - Buffer Concentration: {protocol_buffer_concentration}",
+        f"#   - ND Filter: {protocol_id_filter}",
+        f"#   - Laser Power: {protocol_laser_power}",
+        f"#   - Stamp: {protocol_stamp}",
         f"#   - Notes: {protocol_notes}",
+        f"#   - Files: {protocol_files}",
         f"#",
         f"# Analysis Parameters:",
         f"#   - Height Limit Factor: {height_lim_factor}",
@@ -87,6 +94,101 @@ def create_metadata_header(app):
         f"#   6. Start Time (s) - Peak start time",
         f"#   7. End Time (s) - Peak end time",
         f"#   8. Interval (s) - Time between consecutive peaks",
+        f"#"
+    ]
+    
+    return "\n".join(metadata)
+
+def create_double_peak_metadata_header(app):
+    """
+    Create metadata header for the double peak export file.
+    
+    Parameters
+    ----------
+    app : Application
+        The main application instance
+        
+    Returns
+    -------
+    str
+        The metadata header as a string
+    """
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Get protocol information
+    protocol_start_time = app.protocol_start_time.get()
+    protocol_id_filter = app.protocol_id_filter.get()
+    protocol_buffer = app.protocol_buffer.get()
+    protocol_buffer_concentration = app.protocol_buffer_concentration.get()
+    protocol_measurement_date = app.protocol_measurement_date.get()
+    protocol_particle = app.protocol_particle.get()
+    protocol_concentration = app.protocol_concentration.get()
+    protocol_stamp = app.protocol_stamp.get()
+    protocol_laser_power = app.protocol_laser_power.get()
+    protocol_setup = app.protocol_setup.get()
+    protocol_notes = app.protocol_notes.get()
+    protocol_files = app.protocol_files.get()
+    
+    # Get analysis parameters
+    height_lim_factor = app.height_lim.get()
+    distance = app.distance.get()
+    rel_height = app.rel_height.get()
+    width_values = app.width_p.get().strip().split(',')
+    time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+    
+    # Get filter information
+    filter_bandwidth = app.filter_bandwidth.get() if hasattr(app, 'filter_bandwidth') else "Not set"
+    
+    # Get double peak parameters
+    double_peak_min_distance = app.double_peak_min_distance.get() * 1000  # Convert to ms
+    double_peak_max_distance = app.double_peak_max_distance.get() * 1000  # Convert to ms
+    double_peak_min_amp_ratio = app.double_peak_min_amp_ratio.get()
+    double_peak_max_amp_ratio = app.double_peak_max_amp_ratio.get()
+    double_peak_min_width_ratio = app.double_peak_min_width_ratio.get()
+    double_peak_max_width_ratio = app.double_peak_max_width_ratio.get()
+    
+    # Create metadata header
+    metadata = [
+        f"# Double Peak Analysis Export",
+        f"# Export Date: {current_time}",
+        f"#",
+        f"# Protocol Information:",
+        f"#   - Measurement Date: {protocol_measurement_date}",
+        f"#   - Start Time: {protocol_start_time}",
+        f"#   - Setup: {protocol_setup}",
+        f"#   - Particle Type: {protocol_particle}",
+        f"#   - Particle Concentration: {protocol_concentration}",
+        f"#   - Buffer: {protocol_buffer}",
+        f"#   - Buffer Concentration: {protocol_buffer_concentration}",
+        f"#   - ND Filter: {protocol_id_filter}",
+        f"#   - Laser Power: {protocol_laser_power}",
+        f"#   - Stamp: {protocol_stamp}",
+        f"#   - Notes: {protocol_notes}",
+        f"#   - Files: {protocol_files}",
+        f"#",
+        f"# Analysis Parameters:",
+        f"#   - Height Limit Factor: {height_lim_factor}",
+        f"#   - Distance: {distance}",
+        f"#   - Relative Height: {rel_height}",
+        f"#   - Width Range: {width_values}",
+        f"#   - Time Resolution: {time_res} seconds",
+        f"#   - Filter Bandwidth: {filter_bandwidth} Hz",
+        f"#",
+        f"# Double Peak Parameters:",
+        f"#   - Distance Range: {double_peak_min_distance:.1f} - {double_peak_max_distance:.1f} ms",
+        f"#   - Amplitude Ratio Range: {double_peak_min_amp_ratio:.2f} - {double_peak_max_amp_ratio:.2f}",
+        f"#   - Width Ratio Range: {double_peak_min_width_ratio:.2f} - {double_peak_max_width_ratio:.2f}",
+        f"#",
+        f"# Data Columns:",
+        f"#   1. Primary Peak Time (s) - First peak occurrence time in seconds",
+        f"#   2. Secondary Peak Time (s) - Second peak occurrence time in seconds",
+        f"#   3. Peak Distance (ms) - Time between peak maxima in milliseconds",
+        f"#   4. Start-to-Start Distance (ms) - Time between peak start points in milliseconds",
+        f"#   5. Primary Peak Width (ms) - First peak width in milliseconds",
+        f"#   6. Secondary Peak Width (ms) - Second peak width in milliseconds",
+        f"#   7. Width Ratio - Ratio of secondary peak width to primary peak width",
+        f"#   8. Amplitude Ratio - Ratio of secondary peak amplitude to primary peak amplitude",
+        f"#   9. Is Double Peak - Flag indicating if the pair meets double peak criteria",
         f"#"
     ]
     
@@ -458,7 +560,7 @@ def save_double_peak_information_to_csv(app):
             print(f"DEBUG: Saving to file: {file_path}")
             # Create metadata header if requested
             if include_metadata:
-                metadata = create_metadata_header(app)
+                metadata = create_double_peak_metadata_header(app)
                 with open(file_path, 'w') as f:
                     f.write(metadata)
             
