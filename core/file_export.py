@@ -40,6 +40,7 @@ def create_metadata_header(app):
     protocol_buffer = app.protocol_buffer.get()
     protocol_buffer_concentration = app.protocol_buffer_concentration.get()
     protocol_measurement_date = app.protocol_measurement_date.get()
+    protocol_sample_number = app.protocol_sample_number.get()
     protocol_particle = app.protocol_particle.get()
     protocol_concentration = app.protocol_concentration.get()
     protocol_stamp = app.protocol_stamp.get()
@@ -67,6 +68,7 @@ def create_metadata_header(app):
         f"#   - Measurement Date: {protocol_measurement_date}",
         f"#   - Start Time: {protocol_start_time}",
         f"#   - Setup: {protocol_setup}",
+        f"#   - Sample Number: {protocol_sample_number}",
         f"#   - Particle Type: {protocol_particle}",
         f"#   - Particle Concentration: {protocol_concentration}",
         f"#   - Buffer: {protocol_buffer}",
@@ -121,6 +123,7 @@ def create_double_peak_metadata_header(app):
     protocol_buffer = app.protocol_buffer.get()
     protocol_buffer_concentration = app.protocol_buffer_concentration.get()
     protocol_measurement_date = app.protocol_measurement_date.get()
+    protocol_sample_number = app.protocol_sample_number.get()
     protocol_particle = app.protocol_particle.get()
     protocol_concentration = app.protocol_concentration.get()
     protocol_stamp = app.protocol_stamp.get()
@@ -156,6 +159,7 @@ def create_double_peak_metadata_header(app):
         f"#   - Measurement Date: {protocol_measurement_date}",
         f"#   - Start Time: {protocol_start_time}",
         f"#   - Setup: {protocol_setup}",
+        f"#   - Sample Number: {protocol_sample_number}",
         f"#   - Particle Type: {protocol_particle}",
         f"#   - Particle Concentration: {protocol_concentration}",
         f"#   - Buffer: {protocol_buffer}",

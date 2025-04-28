@@ -199,6 +199,8 @@ def reset_application_state(app):
             app.protocol_start_time.set("")
         if hasattr(app, 'protocol_particle'):
             app.protocol_particle.set("")
+        if hasattr(app, 'protocol_sample_number'):
+            app.protocol_sample_number.set("")
         if hasattr(app, 'protocol_concentration'):
             app.protocol_concentration.set("")
         if hasattr(app, 'protocol_stamp'):

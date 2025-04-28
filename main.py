@@ -186,6 +186,7 @@ class Application(tk.Tk):
         self.protocol_buffer = tk.StringVar()     # New: Buffer
         self.protocol_buffer_concentration = tk.StringVar()  # New: Buffer concentration
         self.protocol_measurement_date = tk.StringVar()  # New: Measurement date
+        self.protocol_sample_number = tk.StringVar()  # New: Sample number
         self.protocol_particle = tk.StringVar()
         self.protocol_concentration = tk.StringVar()
         self.protocol_stamp = tk.StringVar()

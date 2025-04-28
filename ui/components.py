@@ -392,6 +392,7 @@ def create_data_loading_tab(app, tab_control):
         ("Measurement Date:", app.protocol_measurement_date),
         ("Start Time:", app.protocol_start_time),
         ("Setup:", app.protocol_setup),
+        ("Sample Number:", app.protocol_sample_number),
         ("Particle:", app.protocol_particle),
         ("Particle Concentration:", app.protocol_concentration),
         ("Buffer:", app.protocol_buffer),
@@ -411,6 +412,7 @@ def create_data_loading_tab(app, tab_control):
         "Measurement Date": "Enter the date of measurement in YYYY-MM-DD format",
         "Start Time": "Enter the experiment start time during the day in HH:MM:SS format (e.g., '13:30:00')",
         "Setup": "Enter the experimental setup configuration example: 'Prototype, Old Ladom'",
+        "Sample Number": "Enter the sample number or identifier",
         "Particle": "Enter the type of particle or sample being analyzed",
         "Particle Concentration": "Enter the concentration of the particles or sample",
         "Buffer": "Enter the buffer solution used in the experiment",
@@ -1255,6 +1257,130 @@ def create_peak_detection_tab(app, tab_control):
         "Example: '0.1,50' means only peaks between 0.1 and 50ms are kept"
     )
     
+    # Baseline ratio threshold slider
+    baseline_ratio_frame = ttk.Frame(manual_params_container)
+    baseline_ratio_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    ttk.Label(baseline_ratio_frame, text="Baseline Ratio Threshold:").pack(side=tk.LEFT, padx=5)
+    
+    # Create slider
+    app.baseline_ratio = tk.DoubleVar(value=0.3)  # Default 0.3 (30%)
+    baseline_ratio_slider = tk.Scale(
+        baseline_ratio_frame, 
+        from_=0.0, 
+        to=1.0,
+        resolution=0.05,
+        orient="horizontal",
+        variable=app.baseline_ratio,
+        bg=app.theme_manager.get_color('card_bg'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background')
+    )
+    baseline_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    # Create diagram to illustrate the concept
+    baseline_diagram_canvas = tk.Canvas(
+        manual_params_container, 
+        width=380, 
+        height=120, 
+        bg=app.theme_manager.get_color('background'),
+        highlightthickness=0
+    )
+    baseline_diagram_canvas.pack(pady=5)
+    
+    # Drawing will be done when the canvas is visible
+    def draw_baseline_diagram():
+        canvas = baseline_diagram_canvas
+        canvas.delete("all")
+        
+        # Colors
+        text_color = app.theme_manager.get_color('text')
+        signal_color = app.theme_manager.get_color('primary')
+        baseline_global_color = "#4CAF50"  # Green
+        contour_line_color = "#FF9800"     # Orange
+        subpeak_color = "#F44336"          # Red
+        
+        # Draw axis
+        canvas.create_line(10, 90, 370, 90, fill=text_color, dash=(2,2))
+        canvas.create_text(15, 95, text="0", fill=text_color, anchor="nw")
+        
+        # Draw global baseline
+        global_y = 70
+        canvas.create_line(10, global_y, 370, global_y, fill=baseline_global_color, width=1, dash=(4,4))
+        canvas.create_text(15, global_y-20, text="Global Baseline", fill=baseline_global_color, anchor="nw")
+        
+        # Draw a large peak with a subpeak
+        # Main peak
+        points = []
+        for x in range(50, 320, 5):
+            y = 90 - 60 * np.exp(-0.0015 * (x - 180) ** 2) 
+            points.append(x)
+            points.append(int(y))
+        
+        canvas.create_line(points, fill=signal_color, width=2, smooth=True)
+        
+        # Draw contour line for the main peak
+        contour_y = 40
+        canvas.create_line(50, contour_y, 320, contour_y, fill=contour_line_color, width=1, dash=(2,2))
+        canvas.create_text(240, contour_y-5, text="Contour Line", fill=contour_line_color, anchor="nw")
+        
+        # Subpeak
+        sub_points = []
+        for x in range(150, 210, 2):
+            y = 45 - 20 * np.exp(-0.005 * (x - 180) ** 2)
+            sub_points.append(x)
+            sub_points.append(int(y))
+        
+        canvas.create_line(sub_points, fill=subpeak_color, width=2, smooth=True)
+        canvas.create_text(150, 20, text="Subpeak (filtered out)", fill=subpeak_color)
+        
+        # Draw subpeak contour line 
+        sub_contour_y = contour_y  # Same as main peak's contour line
+        canvas.create_line([160, sub_contour_y, 200, sub_contour_y], fill=subpeak_color, width=1, dash=(2,2))
+        
+        # Annotations
+        canvas.create_line([180, 25, 180, contour_y], fill=subpeak_color, dash=(2,2))
+        canvas.create_line([180, contour_y, 180, global_y], fill=contour_line_color, dash=(1,1))
+        canvas.create_line([180, global_y, 180, 90], fill=baseline_global_color, dash=(1,1))
+        
+        # Add arrows for elevation
+        arrow_x = 350
+        canvas.create_line([arrow_x, global_y, arrow_x, contour_y], 
+                          fill=contour_line_color, arrow="last", width=1.5)
+        canvas.create_text(arrow_x+5, (global_y+contour_y)/2, 
+                          text="Contour\nElevation", fill=contour_line_color, anchor="w")
+        
+        canvas.create_line([arrow_x-15, global_y, arrow_x-15, 30], 
+                          fill=signal_color, arrow="last", width=1.5)
+        canvas.create_text(arrow_x-10, 50, 
+                          text="Peak\nHeight", fill=signal_color, anchor="w")
+        
+        # Ratio explanation
+        canvas.create_text(
+            20, 
+            110, 
+            text=f"Ratio = Contour Elevation / Peak Height", 
+            fill=text_color, 
+            anchor="nw",
+            font=("TkDefaultFont", 8)
+        )
+    
+    # Schedule drawing when the canvas becomes visible
+    baseline_diagram_canvas.after(100, draw_baseline_diagram)
+    
+    # Find the baseline_ratio_slider tooltip and update it
+    app.add_tooltip(
+        baseline_ratio_slider,
+        "Controls the detection of subpeaks (peaks on top of larger peaks):\n"
+        "• Lower values (0.1-0.2): Only filter very obvious subpeaks\n"
+        "• Medium values (0.3-0.5): Balanced filtering (recommended)\n"
+        "• Higher values (0.6-0.9): Aggressive filtering of potential subpeaks\n\n"
+        "The ratio measures how elevated a peak's contour line is compared to the\n"
+        "global baseline, relative to the peak's height above baseline.\n"
+        "The contour line is determined by the peak's prominence."
+    )
+
     # Action Buttons Frame
     peak_detection_frame = ttk.LabelFrame(scrollable_frame, text="Peak Detection Actions")
     peak_detection_frame.pack(fill=tk.X, padx=5, pady=10)

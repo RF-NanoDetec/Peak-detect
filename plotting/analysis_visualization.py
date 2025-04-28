@@ -291,11 +291,23 @@ def plot_scatter(app, profile_function=None):
         peak_areas = np.zeros(len(peaks_x_filter))
 
         for i in range(len(peaks_x_filter)):
-            yData = app.filtered_signal[peaks_x_filter[i] - window[i]:peaks_x_filter[i] + window[i]]
-            background = np.min(yData)
-            st = int(properties["left_ips"][i])
-            en = int(properties["right_ips"][i])
-            peak_areas[i] = np.sum(app.filtered_signal[st:en] - background)
+            # Ensure indices are within valid range
+            start_idx = max(0, peaks_x_filter[i] - window[i])
+            end_idx = min(len(app.filtered_signal), peaks_x_filter[i] + window[i])
+            
+            yData = app.filtered_signal[start_idx:end_idx]
+            # Check if yData is empty before calculating minimum
+            background = np.min(yData) if len(yData) > 0 else 0
+            
+            st = max(0, int(properties["left_ips"][i]))
+            en = min(len(app.filtered_signal), int(properties["right_ips"][i]))
+            
+            # Only calculate area if we have valid indices
+            if st < en:
+                peak_areas[i] = np.sum(app.filtered_signal[st:en] - background)
+            else:
+                peak_areas[i] = 0
+                print(f"WARNING: Invalid peak area calculation for peak {i} (st={st}, en={en})")
 
         # Create DataFrame with all peak properties
         df_all = pd.DataFrame({

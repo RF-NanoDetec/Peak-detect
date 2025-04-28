@@ -53,6 +53,9 @@ def run_peak_detection(app, profile_function=None):
         distance = app.distance.get()
         rel_height = app.rel_height.get()
         width_values = app.width_p.get().strip().split(',')
+        
+        # Get the baseline ratio threshold if available
+        baseline_ratio = app.baseline_ratio.get() if hasattr(app, 'baseline_ratio') else 0.3
 
         # Update progress
         app.update_progress_bar(1)
@@ -71,7 +74,8 @@ def run_peak_detection(app, profile_function=None):
             distance,
             rel_height,
             width_values,
-            time_resolution=time_res
+            time_resolution=time_res,
+            baseline_ratio=baseline_ratio  # Add baseline ratio parameter
         )
         
         # Calculate peak areas using the PeakDetector
@@ -163,19 +167,23 @@ def plot_filtered_peaks(app, profile_function=None):
             text="Filtered signal not available. Please start the analysis first.",
             foreground=app.theme_manager.get_color('error')
             )
-        return
+        return False
 
     try:
         # Get peaks and properties
         width_values = app.width_p.get().strip().split(',')
         width_p = [int(float(value.strip()) * 10) for value in width_values]
+        
+        # Get the baseline ratio threshold if available
+        baseline_ratio = app.baseline_ratio.get() if hasattr(app, 'baseline_ratio') else 0.3
 
         peaks_x_filter, amp_x_filter = find_peaks_with_window(
             app.filtered_signal,
             width=width_p,
             prominence=app.height_lim.get(),
             distance=app.distance.get(),
-            rel_height=app.rel_height.get()
+            rel_height=app.rel_height.get(),
+            baseline_ratio=baseline_ratio  # Add baseline ratio parameter
         )
 
         if len(peaks_x_filter) == 0:
@@ -183,7 +191,7 @@ def plot_filtered_peaks(app, profile_function=None):
                 text="No peaks found with current parameters",
                 foreground=app.theme_manager.get_color('warning')
                 )
-            return
+            return False
 
         # Divide measurement into segments and select representative peaks
         total_peaks = len(peaks_x_filter)
@@ -194,13 +202,16 @@ def plot_filtered_peaks(app, profile_function=None):
         if not hasattr(app, 'segment_offset'):
             app.segment_offset = 0
 
+        # Ensure segment_offset is within valid range
+        app.segment_offset = app.segment_offset % total_peaks
+
         # Select peaks from different segments
         selected_peaks = []
         for i in range(num_segments):
-            segment_start = (i * segment_size + app.segment_offset) % total_peaks
-            peak_idx = segment_start
-            if peak_idx < total_peaks:
-                selected_peaks.append(peak_idx)
+            # Calculate segment index with offset
+            segment_idx = (i * segment_size + app.segment_offset) % total_peaks
+            if segment_idx < total_peaks:
+                selected_peaks.append(segment_idx)
 
         window = 3*np.round(amp_x_filter['widths'], 0).astype(int)
 
@@ -308,7 +319,8 @@ def plot_filtered_peaks(app, profile_function=None):
 
         # Adjust the layout - removed right margin adjustment since we don't need to shift plots
         new_figure.subplots_adjust(top=0.92)
-        new_figure.suptitle(f"Filtered Peaks Detail (Peaks {app.segment_offset+1} - {app.segment_offset+num_segments})",
+        # Include offset in title to make navigation clearer
+        new_figure.suptitle(f"Filtered Peaks Detail (Offset: {app.segment_offset}, showing 10 peaks)",
                            fontsize=14)
         new_figure.tight_layout(rect=[0, 0.03, 1, 0.95])
 
@@ -347,9 +359,11 @@ def plot_filtered_peaks(app, profile_function=None):
 
         # Update status
         app.preview_label.config(
-            text=f"Plotted {len(selected_peaks)} filtered peaks",
+            text=f"Plotted {len(selected_peaks)} filtered peaks (offset: {app.segment_offset})",
             foreground=app.theme_manager.get_color('success')
         )
+        
+        return True
 
     except Exception as e:
         app.preview_label.config(
@@ -357,6 +371,7 @@ def plot_filtered_peaks(app, profile_function=None):
             foreground=app.theme_manager.get_color('error')
         )
         traceback.print_exc()
+        return False
 
 
 def show_next_peaks(app, profile_function=None):
@@ -369,10 +384,12 @@ def show_next_peaks(app, profile_function=None):
          return False
 
     total_peaks = len(app.peaks)
-    num_segments = 10 # Must match plot_filtered_peaks
-
-    # Increment offset, wrapping around if necessary
-    app.segment_offset = (app.segment_offset + num_segments) % total_peaks
+    
+    # Increment offset by 1, wrapping around if necessary
+    app.segment_offset = (app.segment_offset + 1) % total_peaks
+    
+    # Debug print
+    print(f"Next peaks: Offset changed to {app.segment_offset}")
 
     # Trigger redraw
     success = plot_filtered_peaks(app, profile_function)
@@ -381,7 +398,7 @@ def show_next_peaks(app, profile_function=None):
          pass
     else:
          # Error message is shown by plot_filtered_peaks
-         app.segment_offset = (app.segment_offset - num_segments + total_peaks) % total_peaks # Revert offset on error
+         app.segment_offset = (app.segment_offset - 1 + total_peaks) % total_peaks # Revert offset on error
          return False
     return True
 
@@ -395,10 +412,12 @@ def show_prev_peaks(app, profile_function=None):
          return False
 
     total_peaks = len(app.peaks)
-    num_segments = 10 # Must match plot_filtered_peaks
-
-    # Decrement offset, wrapping around if necessary
-    app.segment_offset = (app.segment_offset - num_segments + total_peaks) % total_peaks
+    
+    # Decrement offset by 1, wrapping around if necessary
+    app.segment_offset = (app.segment_offset - 1 + total_peaks) % total_peaks
+    
+    # Debug print
+    print(f"Prev peaks: Offset changed to {app.segment_offset}")
 
     # Trigger redraw
     success = plot_filtered_peaks(app, profile_function)
@@ -407,6 +426,6 @@ def show_prev_peaks(app, profile_function=None):
          pass
     else:
          # Error message is shown by plot_filtered_peaks
-         app.segment_offset = (app.segment_offset + num_segments) % total_peaks # Revert offset on error
+         app.segment_offset = (app.segment_offset + 1) % total_peaks # Revert offset on error
          return False
     return True 

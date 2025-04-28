@@ -70,7 +70,7 @@ class PeakDetector:
         self.logger.debug("Peak detector reset")
     
     @profile_function
-    def detect_peaks(self, signal, time_values, height_lim, distance, rel_height=0.5, width_range=None, time_resolution=1e-4):
+    def detect_peaks(self, signal, time_values, height_lim, distance, rel_height=0.5, width_range=None, time_resolution=1e-4, baseline_ratio=0.3):
         """
         Detect peaks in the provided signal data.
         
@@ -88,6 +88,8 @@ class PeakDetector:
                 If None, no width filtering is applied.
             time_resolution (float, optional): Time resolution in seconds per unit.
                 Defaults to 1e-4 (0.1 milliseconds per unit).
+            baseline_ratio (float, optional): Threshold for detecting subpeaks.
+                Higher values will filter more aggressively. Defaults to 0.3.
                 
         Returns:
             tuple: (indices, properties) where:
@@ -121,7 +123,8 @@ class PeakDetector:
                 width=width_p,
                 prominence=height_lim,
                 distance=distance, 
-                rel_height=rel_height
+                rel_height=rel_height,
+                baseline_ratio=baseline_ratio
             )
             
             # Store results
