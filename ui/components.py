@@ -1379,11 +1379,10 @@ def create_peak_detection_tab(app, tab_control):
     app.add_tooltip(
         prominence_ratio_slider,
         "Controls the filtering of subpeaks using the prominence-to-height ratio:\n"
-        "• Higher values (e.g., 0.8-0.9): More strict filtering, keeps only very prominent peaks\n"
-        "• Medium values (e.g., 0.5-0.7): Balanced filtering\n"
-        "• Lower values (e.g., 0.1-0.4): More permissive filtering, keeps more peaks\n\n"
-        "The ratio compares a peak's prominence to its height. A lower ratio\n"
-        "indicates the peak is likely a subpeak sitting on top of a larger peak.\n"
+        "• High filtering (0.9-1.0): Very strict, keeps only the most prominent peaks\n"
+        "• Medium filtering (0.8-0.9): Balanced filtering (recommended)\n"
+        "• Low filtering (0.0-0.8): More permissive, keeps more peaks\n\n"
+        "The default value of 0.8 works well for most measurements.\n\n"
         "Peaks with ratio < threshold are filtered out."
     )
 
@@ -1527,7 +1526,7 @@ def create_peak_analysis_tab(app, tab_control):
     
     ttk.Label(
         indicator_frame, 
-        text="= Filtered by prominence"
+        text="= Prominence ratio threshold"
     ).pack(side=tk.LEFT, padx=2)
     
     # Prominence ratio controls (right side of filter controls)
@@ -1569,9 +1568,10 @@ def create_peak_analysis_tab(app, tab_control):
         command=lambda: app.show_tooltip_popup(
             "Prominence Ratio",
             "Controls the filtering of subpeaks using the prominence-to-height ratio:\n"
-            "• Higher values (e.g., 0.8-0.9): More strict filtering\n"
-            "• Medium values (e.g., 0.5-0.7): Balanced filtering\n"
-            "• Lower values (e.g., 0.1-0.4): More permissive filtering\n\n"
+            "• High filtering (0.9-1.0): Very strict, keeps only the most prominent peaks\n"
+            "• Medium filtering (0.8-0.9): Balanced filtering (recommended)\n"
+            "• Low filtering (0.0-0.8): More permissive, keeps more peaks\n\n"
+            "The default value of 0.8 works well for most measurements.\n\n"
             "Peaks with ratio < threshold are filtered out."
         )
     )
@@ -1586,13 +1586,21 @@ def create_peak_analysis_tab(app, tab_control):
     
     app.add_tooltip(
         prominence_ratio_slider,
-        "Controls the filtering of subpeaks using the prominence-to-height ratio.\n"
-        "Higher values keep only very prominent peaks. Lower values keep more peaks."
+        "Controls the filtering of subpeaks using the prominence-to-height ratio:\n"
+        "• High filtering (0.9-1.0): Very strict, keeps only the most prominent peaks\n"
+        "• Medium filtering (0.8-0.9): Balanced filtering (recommended)\n"
+        "• Low filtering (0.0-0.8): More permissive, keeps more peaks\n\n"
+        "The default value of 0.8 works well for most measurements."
     )
 
     # Results Frame
     results_frame = ttk.LabelFrame(peak_analysis_tab, text="Results Summary")
     results_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    
+    # Add a ScrolledText widget for results summary
+    app.results_summary = ScrolledText(results_frame, wrap=tk.WORD, height=5, width=50)
+    app.results_summary.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    app.results_summary.config(state=tk.DISABLED)
 
     # Add tooltips for analysis buttons
     app.add_tooltip(
@@ -1603,6 +1611,52 @@ def create_peak_analysis_tab(app, tab_control):
         button_container.winfo_children()[1],  # Peak Property Correlations button
         "Display correlation plots between peak width, height, and area"
     )
+
+    # --- Throughput Interval Control ---
+    interval_frame = ttk.Frame(analysis_options_frame)
+    interval_frame.pack(fill=tk.X, padx=5, pady=2, anchor="w")
+    ttk.Label(interval_frame, text="Throughput Interval (s):").pack(side=tk.LEFT, padx=(0,5))
+    
+    # Entry for precise value
+    interval_entry = ttk.Entry(interval_frame, textvariable=app.throughput_interval, width=6)
+    interval_entry.pack(side=tk.LEFT, padx=(0,5))
+    
+    # Slider for interval (1-100s)
+    interval_slider = tk.Scale(
+        interval_frame,
+        from_=1,
+        to=100,
+        orient=tk.HORIZONTAL,
+        resolution=1,
+        variable=app.throughput_interval,
+        length=180,
+        showvalue=False
+    )
+    interval_slider.pack(side=tk.LEFT, padx=(0,5))
+    
+    # Tooltip for interval
+    app.add_tooltip(
+        interval_entry,
+        "Set the time window (in seconds) for throughput calculation.\n"
+        "This controls the bin size for the 'peaks per X seconds' bar plot.\n"
+        "Default is 10 seconds."
+    )
+    app.add_tooltip(
+        interval_slider,
+        "Set the time window (in seconds) for throughput calculation.\n"
+        "This controls the bin size for the 'peaks per X seconds' bar plot.\n"
+        "Default is 10 seconds."
+    )
+    
+    # Callback to update plot when interval changes
+    def on_interval_change(*args):
+        try:
+            val = float(app.throughput_interval.get())
+            if 1 <= val <= 100:
+                app.plot_data()
+        except Exception:
+            pass
+    app.throughput_interval.trace_add('write', lambda *args: on_interval_change())
 
 def create_double_peak_analysis_tab(app, tab_control):
     """Create the double peak analysis tab"""

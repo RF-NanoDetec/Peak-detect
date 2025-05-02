@@ -67,6 +67,7 @@ class PeakDetector:
         self.peaks_indices = None
         self.peaks_properties = {}
         self.peaks_data = None
+        self.all_peaks_count = 0
         self.logger.debug("Peak detector reset")
     
     @profile_function
@@ -119,7 +120,19 @@ class PeakDetector:
             else:
                 width_p = None
             
-            # Find peaks with specified parameters
+            # First find all peaks without prominence ratio filtering to get total count
+            all_peaks, all_properties = find_peaks(
+                signal, 
+                width=width_p,
+                prominence=height_lim,
+                distance=distance, 
+                rel_height=rel_height
+            )
+            
+            # Store the total number of peaks before prominence ratio filtering
+            self.all_peaks_count = len(all_peaks)
+            
+            # Now find peaks with all filters including prominence ratio
             peaks, properties = find_peaks_with_window(
                 signal, 
                 width=width_p,
@@ -134,7 +147,7 @@ class PeakDetector:
             self.peaks_properties = properties
             
             # Log results
-            self.logger.info(f"Detected {len(peaks)} peaks")
+            self.logger.info(f"Detected {len(peaks)} peaks out of {self.all_peaks_count} total peaks")
             self.logger.info(f"Peak indices: {peaks[:10]}...")
             
             return peaks, properties

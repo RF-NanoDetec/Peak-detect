@@ -235,7 +235,7 @@ def plot_data(app, profile_function=None):
         axes[2].set_yscale('log' if app.log_scale_enabled.get() else 'linear')
 
         # Calculate and plot throughput
-        interval = 10  # seconds
+        interval = app.throughput_interval.get() if hasattr(app, 'throughput_interval') else 10  # seconds
         # Include filtered peaks in throughput calculation if toggle is enabled
         if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0 and app.show_filtered_peaks.get():
             all_peak_times = np.concatenate([peak_times, filtered_peak_times])
@@ -251,10 +251,10 @@ def plot_data(app, profile_function=None):
             
             # Plot stacked bar chart
             axes[3].bar(bin_centers/60, included_throughput, width=(interval/60)*0.8,
-                      color=bar_color, alpha=0.6, label=f'Included Peaks ({interval}s bins)')
+                      color=bar_color, alpha=0.6, label=f'Included Peaks ({interval:.0f}s bins)')
             axes[3].bar(bin_centers/60, filtered_throughput, width=(interval/60)*0.8, 
                       bottom=included_throughput, color=filtered_color, alpha=0.6, 
-                      label=f'Filtered Peaks ({interval}s bins)')
+                      label=f'Filtered Peaks ({interval:.0f}s bins)')
             
             # Set up throughput for moving average calculation
             throughput = total_throughput if app.show_filtered_peaks.get() else included_throughput
@@ -265,7 +265,7 @@ def plot_data(app, profile_function=None):
             
             # Plot throughput bars using SEMANTIC color
             axes[3].bar(bin_centers/60, throughput, width=(interval/60)*0.8,
-                      color=bar_color, alpha=0.6, label=f'Throughput ({interval}s bins)')
+                      color=bar_color, alpha=0.6, label=f'Throughput ({interval:.0f}s bins)')
 
         # Add moving average line using SEMANTIC color
         window = 5  # Number of points for moving average
@@ -283,7 +283,8 @@ def plot_data(app, profile_function=None):
         # Add statistics annotation to throughput plot (Removed bbox, fontsize=8)
         stats_text = (f'Total Peaks: {len(peaks):,}\n'
                      f'Avg Rate: {len(peaks)/(np.max(t)-np.min(t))*60:.1f} peaks/min\n'
-                     f'Max Rate: {np.max(throughput)/(interval/60):.1f} peaks/min')
+                     f'Max Rate: {np.max(throughput)/(interval/60):.1f} peaks/min\n'
+                     f'Interval: {interval:.0f} s')
         axes[3].text(0.02, 0.98, stats_text,
                     transform=axes[3].transAxes,
                     verticalalignment='top',
@@ -376,7 +377,7 @@ def plot_scatter(app, profile_function=None):
 
         # Check if we should show filtered peaks
         show_filtered_peaks = hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get()
-        prominence_ratio_threshold = app.prominence_ratio_threshold.get() if hasattr(app, 'prominence_ratio_threshold') else 0.8
+        prominence_ratio_threshold = app.prominence_ratio.get() if hasattr(app, 'prominence_ratio') else 0.8
         
         # Get all peaks first without the prominence ratio filter
         all_peaks, all_properties = find_peaks_with_window(
@@ -538,23 +539,26 @@ def plot_scatter(app, profile_function=None):
         hist_color = app.theme_manager.get_plot_color('hist_bars')
         hist_edge_color = app.theme_manager.get_plot_color('patch.edgecolor') # Use standard edge color
         filtered_color = "#FF8080" # Light red for filtered peaks
+        scatter_color = app.theme_manager.get_plot_color('scatter_points') # Use same color as time-resolved
 
-        # Colormap for density
-        cmap = plt.cm.viridis
-        scatter_size = 3 # Smaller points for less overplotting
-        scatter_alpha = 0.6
+        # Parameters for scatter plots - use consistent values with time-resolved visualization
+        scatter_size = 2  # Base size for dots
+        scatter_alpha = 0.5  # Lower alpha for better visibility when overlapping
+        filtered_alpha = 0.7  # Higher alpha for filtered peaks
+        filtered_size = 3  # Slightly larger size for filtered peaks
 
-        # Plot 1: Width vs Amplitude (Density cmap, fonts from apply_plot_theme)
-        density1 = stats.gaussian_kde(np.vstack([df_all['width'], df_all['amplitude']]))
-        density1_points = density1(np.vstack([df_all['width'], df_all['amplitude']]))
-        sc1 = ax[0].scatter(df_all['width'], df_all['amplitude'],
-                          c=density1_points, s=scatter_size, alpha=scatter_alpha, cmap=cmap)
-                          
+        # Plot 1: Width vs Amplitude (simple scatter, no density gradient)
+        # Scale dot size by area (normalized to a reasonable range)
+        area_scaled = (df_all['area'] / df_all['area'].max()) * 10 + 1  # Scale to 1-11 size range
+        ax[0].scatter(df_all['width'], df_all['amplitude'],
+                    color=scatter_color, s=area_scaled, alpha=scatter_alpha)
+                    
         # Add filtered peaks if available
         if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
+            filtered_area_scaled = (df_filtered['area'] / df_all['area'].max()) * 10 + 1  # Use same scale as main data
             ax[0].scatter(df_filtered['width'], df_filtered['amplitude'], 
-                       color=filtered_color, s=5, alpha=0.8, 
-                       label=f'Filtered Peaks (n={len(df_filtered)})')
+                    color=filtered_color, s=filtered_area_scaled, alpha=filtered_alpha, 
+                    label=f'Filtered Peaks (n={len(df_filtered)})')
             ax[0].legend(fontsize=8)
             
         ax[0].set_xlabel('Width (ms)')
@@ -565,19 +569,20 @@ def plot_scatter(app, profile_function=None):
         ax[0].set_title('Width vs Amplitude')
         corr1 = df_all['width'].corr(df_all['amplitude'])
         ax[0].text(0.05, 0.95, f'r = {corr1:.2f}', transform=ax[0].transAxes,
-                   fontsize=9, verticalalignment='top') # Keep annotation font small
+                fontsize=9, verticalalignment='top') # Keep annotation font small
 
-        # Plot 2: Width vs Area (Density cmap, fonts from apply_plot_theme)
-        density2 = stats.gaussian_kde(np.vstack([df_all['width'], df_all['area']]))
-        density2_points = density2(np.vstack([df_all['width'], df_all['area']]))
-        sc2 = ax[1].scatter(df_all['width'], df_all['area'],
-                          c=density2_points, s=scatter_size, alpha=scatter_alpha, cmap=cmap)
-                          
+        # Plot 2: Width vs Area (simple scatter, no density gradient)
+        # Scale dot size by amplitude
+        amplitude_scaled = (df_all['amplitude'] / df_all['amplitude'].max()) * 10 + 1  # Scale to 1-11 size range
+        ax[1].scatter(df_all['width'], df_all['area'],
+                    color=scatter_color, s=amplitude_scaled, alpha=scatter_alpha)
+                    
         # Add filtered peaks if available
         if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
+            filtered_amplitude_scaled = (df_filtered['amplitude'] / df_all['amplitude'].max()) * 10 + 1  # Use same scale
             ax[1].scatter(df_filtered['width'], df_filtered['area'], 
-                       color=filtered_color, s=5, alpha=0.8, 
-                       label=f'Filtered Peaks (n={len(df_filtered)})')
+                    color=filtered_color, s=filtered_amplitude_scaled, alpha=filtered_alpha, 
+                    label=f'Filtered Peaks (n={len(df_filtered)})')
             ax[1].legend(fontsize=8)
             
         ax[1].set_xlabel('Width (ms)')
@@ -588,19 +593,20 @@ def plot_scatter(app, profile_function=None):
         ax[1].set_title('Width vs Area')
         corr2 = df_all['width'].corr(df_all['area'])
         ax[1].text(0.05, 0.95, f'r = {corr2:.2f}', transform=ax[1].transAxes,
-                   fontsize=9, verticalalignment='top')
+                fontsize=9, verticalalignment='top')
 
-        # Plot 3: Amplitude vs Area (Density cmap, fonts from apply_plot_theme)
-        density3 = stats.gaussian_kde(np.vstack([df_all['amplitude'], df_all['area']]))
-        density3_points = density3(np.vstack([df_all['amplitude'], df_all['area']]))
-        sc3 = ax[2].scatter(df_all['amplitude'], df_all['area'],
-                          c=density3_points, s=scatter_size, alpha=scatter_alpha, cmap=cmap)
-                          
+        # Plot 3: Amplitude vs Area (simple scatter, no density gradient)
+        # Scale dot size by width
+        width_scaled = (df_all['width'] / df_all['width'].max()) * 10 + 1  # Scale to 1-11 size range
+        ax[2].scatter(df_all['amplitude'], df_all['area'],
+                    color=scatter_color, s=width_scaled, alpha=scatter_alpha)
+                    
         # Add filtered peaks if available
         if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
+            filtered_width_scaled = (df_filtered['width'] / df_all['width'].max()) * 10 + 1  # Use same scale
             ax[2].scatter(df_filtered['amplitude'], df_filtered['area'], 
-                       color=filtered_color, s=5, alpha=0.8, 
-                       label=f'Filtered Peaks (n={len(df_filtered)})')
+                    color=filtered_color, s=filtered_width_scaled, alpha=filtered_alpha, 
+                    label=f'Filtered Peaks (n={len(df_filtered)})')
             ax[2].legend(fontsize=8)
             
         ax[2].set_xlabel('Amplitude (counts)')
@@ -611,7 +617,7 @@ def plot_scatter(app, profile_function=None):
         ax[2].set_title('Amplitude vs Area')
         corr3 = df_all['amplitude'].corr(df_all['area'])
         ax[2].text(0.05, 0.95, f'r = {corr3:.2f}', transform=ax[2].transAxes,
-                   fontsize=9, verticalalignment='top')
+                fontsize=9, verticalalignment='top')
 
         # Plot 4: Width distribution using SEMANTIC colors
         import seaborn as sns
@@ -661,11 +667,6 @@ def plot_scatter(app, profile_function=None):
         ax[3].text(0.95, 0.95, stats_text, transform=ax[3].transAxes,
                   fontsize=9, verticalalignment='top', horizontalalignment='right') # Keep font small
 
-        # Add colorbar
-        cbar_ax = new_figure.add_axes([0.93, 0.15, 0.02, 0.7]) # Adjusted position slightly
-        cbar = new_figure.colorbar(sc1, cax=cbar_ax, label='Density')
-        # Colorbar label/ticks set by apply_plot_theme
-
         # Main title (text color from apply_plot_theme)
         if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
             summary_stats = (
@@ -684,9 +685,17 @@ def plot_scatter(app, profile_function=None):
         new_figure.suptitle('Peak Property Correlations\n' + summary_stats,
                            y=0.96) # Adjusted y slightly
 
-        # Apply theme standard styles (bg, grid, text) including colorbar axis
-        all_axes_to_theme = ax + [cbar.ax]
-        app.theme_manager.apply_plot_theme(new_figure, all_axes_to_theme)
+        # Add legend explaining dot sizes
+        # Add a small legend to explain dot sizes
+        legend_text_1 = "Dot sizes in Width vs Amplitude plot represent peak area"
+        legend_text_2 = "Dot sizes in Width vs Area plot represent peak amplitude"
+        legend_text_3 = "Dot sizes in Amplitude vs Area plot represent peak width"
+        new_figure.text(0.02, 0.03, legend_text_1 + "\n" + legend_text_2 + "\n" + legend_text_3, 
+                        fontsize=8, color=app.theme_manager.get_plot_color('text'),
+                        horizontalalignment='left', verticalalignment='bottom')
+
+        # Apply theme standard styles (bg, grid, text)
+        app.theme_manager.apply_plot_theme(new_figure, ax)
 
         # --- Update or create tab ---
         tab_name = "Peak Properties"

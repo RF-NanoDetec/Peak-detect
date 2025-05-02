@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from functools import wraps
 from PIL import Image
 from config import resource_path, APP_VERSION
+import numpy as np
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -45,17 +46,112 @@ def update_results_summary(app, events=None, max_amp=None, peak_areas=None,
         app.results_summary.config(state=tk.NORMAL)
         app.results_summary.delete(1.0, tk.END)  # Clear existing content
         
-        summary_text = ""
+        summary_text = "=== PEAK DETECTION SUMMARY ===\n"
+        
+        # Most critical information first - peak counts and throughput
         if events is not None:
             summary_text += f"Number of Peaks Detected: {events}\n"
+            
+            # Calculate and add throughput information if we have time values
+            if hasattr(app, 't_value') and app.t_value is not None and len(app.t_value) > 1:
+                total_time_minutes = (app.t_value[-1] - app.t_value[0]) / 60  # Convert to minutes
+                if total_time_minutes > 0:
+                    avg_throughput = events / total_time_minutes
+                    summary_text += f"Average Throughput: {avg_throughput:.2f} events/minute\n"
+                    
+                    # If we have peak intervals, we can calculate more detailed throughput stats
+                    if peak_intervals is not None and len(peak_intervals) > 1:
+                        valid_intervals = [i for i in peak_intervals[1:] if i > 0]  # Skip first and zero intervals
+                        if len(valid_intervals) > 0:
+                            min_interval = np.min(valid_intervals)
+                            max_throughput = 60.0 / min_interval if min_interval > 0 else 0  # Max possible throughput
+                            summary_text += f"Maximum Throughput: {max_throughput:.2f} events/minute\n"
+                            
+                            # Calculate throughput in different time windows
+                            windows = [60, 30, 10]  # seconds
+                            for window in windows:
+                                bins = np.arange(app.t_value[0], app.t_value[-1], window)
+                                if len(bins) > 1:
+                                    counts, _ = np.histogram(app.t_value[peaks], bins=bins)
+                                    max_window_throughput = np.max(counts) * (60 / window)  # Convert to per minute
+                                    summary_text += f"Max {window}s Window Throughput: {max_window_throughput:.2f} events/minute\n"
+            
+            summary_text += "\n"  # Add spacing after throughput section
+        
+        # Add peak height statistics if available
+        if hasattr(app, 'peak_heights') and app.peak_heights is not None and len(app.peak_heights) > 0:
+            mean_height = np.mean(app.peak_heights)
+            median_height = np.median(app.peak_heights)
+            std_height = np.std(app.peak_heights)
+            summary_text += f"Peak Heights (Mean ± SD): {mean_height:.2f} ± {std_height:.2f}\n"
+            summary_text += f"Peak Heights (Median): {median_height:.2f}\n"
+            
+        # Add max amplitude if available
         if max_amp is not None:
-            summary_text += f"Maximum Peak Amplitude: {max_amp}\n"
-        if peak_areas is not None:
-            summary_text += f"Peak Areas: {peak_areas[:10]}\n"
-        if peak_intervals is not None:
-            summary_text += f"Peak Intervals: {peak_intervals[:10]}\n"
+            summary_text += f"Maximum Peak Amplitude: {max_amp:.2f}\n"
+            
+        # Add peak width statistics if available
+        if hasattr(app, 'peak_widths') and app.peak_widths is not None and len(app.peak_widths) > 0:
+            # Get time resolution to convert from samples to ms
+            time_res = app.time_resolution.get() if hasattr(app, 'time_resolution') else 1e-4
+            
+            mean_width_samples = np.mean(app.peak_widths)
+            median_width_samples = np.median(app.peak_widths)
+            std_width_samples = np.std(app.peak_widths)
+            
+            # Convert from samples to milliseconds
+            mean_width_ms = mean_width_samples * time_res * 1000
+            median_width_ms = median_width_samples * time_res * 1000
+            std_width_ms = std_width_samples * time_res * 1000
+            
+            summary_text += f"Peak Widths (Mean ± SD): {mean_width_ms:.2f} ± {std_width_ms:.2f} ms\n"
+            summary_text += f"Peak Widths (Median): {median_width_ms:.2f} ms\n"
+            
+        # Add statistics section
+        if peak_areas is not None or peak_intervals is not None:
+            summary_text += "\n=== PEAK STATISTICS ===\n"
+            
+            if peak_areas is not None:
+                # Calculate statistics for peak areas
+                mean_area = np.mean(peak_areas) if len(peak_areas) > 0 else 0
+                median_area = np.median(peak_areas) if len(peak_areas) > 0 else 0
+                std_area = np.std(peak_areas) if len(peak_areas) > 0 else 0
+                
+                summary_text += f"Peak Areas (Mean ± SD): {mean_area:.2f} ± {std_area:.2f}\n"
+                summary_text += f"Peak Areas (Median): {median_area:.2f}\n"
+                summary_text += f"First 5 Areas: {[round(a, 2) for a in peak_areas[:5]]}\n"
+            
+            if peak_intervals is not None:
+                # Calculate statistics for peak intervals
+                valid_intervals = [i for i in peak_intervals[1:] if i > 0]  # Skip first and zero intervals
+                
+                if len(valid_intervals) > 0:
+                    mean_interval = np.mean(valid_intervals)
+                    median_interval = np.median(valid_intervals)
+                    min_interval = np.min(valid_intervals)
+                    max_interval = np.max(valid_intervals)
+                    
+                    summary_text += f"Peak Intervals (Mean): {mean_interval:.2f} seconds\n"
+                    summary_text += f"Peak Intervals (Median): {median_interval:.2f} seconds\n"
+                    summary_text += f"Peak Intervals (Range): {min_interval:.2f} - {max_interval:.2f} seconds\n"
+                    summary_text += f"First 5 Intervals: {[round(i, 2) for i in peak_intervals[1:6]]}\n"
+                    
+                    # Estimate throughput
+                    if mean_interval > 0:
+                        mean_throughput = 60.0 / mean_interval  # Events per minute based on mean
+                        summary_text += f"Throughput (Mean): {mean_throughput:.2f} events/minute\n"
+                    
+                    if median_interval > 0:
+                        median_throughput = 60.0 / median_interval  # Events per minute based on median
+                        summary_text += f"Throughput (Median): {median_throughput:.2f} events/minute\n"
+                    
+                    if min_interval > 0:
+                        max_throughput = 60.0 / min_interval  # Max possible throughput
+                        summary_text += f"Max Throughput: {max_throughput:.2f} events/minute\n"
+        
+        # Add filter information and metadata as provided
         if preview_text is not None:
-            summary_text += f"\nData Preview:\n{preview_text}\n"
+            summary_text += f"\n{preview_text}\n"
         
         app.results_summary.insert(tk.END, summary_text)
         app.results_summary.config(state=tk.DISABLED)
@@ -987,6 +1083,138 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
                     text=f"Calculated peak areas",
                     foreground=app.theme_manager.get_color('success')
                 )
+        
+        # Call the core update_results_summary function to update the text widget
+        if hasattr(app, 'results_summary'):
+            # Format important information in sections
+            additional_info = ""
+            
+            # === FILTERING INFORMATION ===
+            filtering_info = "=== FILTERING INFORMATION ===\n"
+            
+            # Add prominence ratio threshold info if available
+            if hasattr(app, 'prominence_ratio'):
+                prominence_ratio = app.prominence_ratio.get()
+                filtering_info += f"Prominence Ratio Threshold: {prominence_ratio:.2f}\n"
+            
+            # Add filter mode information if available
+            if hasattr(app, 'filter_enabled'):
+                filter_mode = "Enabled" if app.filter_enabled.get() else "Disabled"
+                filtering_info += f"Signal Filtering: {filter_mode}\n"
+                
+                if app.filter_enabled.get() and hasattr(app, 'cutoff_value'):
+                    filtering_info += f"Cutoff Frequency: {app.cutoff_value.get()} Hz\n"
+            
+            # Add filtered peaks count and percentage if available
+            if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') and app.peak_detector.all_peaks_count > 0:
+                total_peaks = app.peak_detector.all_peaks_count
+                filtered_out = total_peaks - events if events is not None else 0
+                filtered_percentage = (filtered_out / total_peaks * 100) if total_peaks > 0 else 0
+                
+                filtering_info += f"Total Peaks Detected: {total_peaks}\n"
+                filtering_info += f"Peaks Filtered Out: {filtered_out} ({filtered_percentage:.1f}%)\n"
+                filtering_info += f"Peaks Retained: {events} ({100-filtered_percentage:.1f}%)\n"
+            
+            additional_info += filtering_info + "\n"
+            
+            # === DETECTION PARAMETERS ===
+            if hasattr(app, 'height_lim') or hasattr(app, 'distance') or hasattr(app, 'rel_height'):
+                parameters_info = "=== DETECTION PARAMETERS ===\n"
+                
+                if hasattr(app, 'height_lim'):
+                    parameters_info += f"Height Threshold: {app.height_lim.get()}\n"
+                    
+                if hasattr(app, 'distance'):
+                    parameters_info += f"Minimum Distance: {app.distance.get()} samples\n"
+                    
+                if hasattr(app, 'rel_height'):
+                    parameters_info += f"Relative Height: {app.rel_height.get()}\n"
+                    
+                if hasattr(app, 'width_p'):
+                    # Get the width range and convert to ms if possible
+                    width_range = app.width_p.get()
+                    
+                    try:
+                        # Try to convert to ms values for better readability
+                        width_values = [float(w) for w in width_range.split(',')]
+                        parameters_info += f"Width Range: {width_values[0]}-{width_values[1]} ms\n"
+                    except:
+                        # Fall back to the raw string if conversion fails
+                        parameters_info += f"Width Range: {width_range}\n"
+                
+                if hasattr(app, 'time_resolution'):
+                    time_res_ms = app.time_resolution.get() * 1000  # Convert to ms
+                    parameters_info += f"Time Resolution: {time_res_ms:.2f} ms\n"
+                
+                additional_info += parameters_info + "\n"
+            
+            # === SIGNAL INFORMATION ===
+            if hasattr(app, 'filtered_signal') and app.filtered_signal is not None:
+                signal_info = "=== SIGNAL INFORMATION ===\n"
+                
+                # Basic signal statistics
+                signal = app.filtered_signal
+                signal_mean = np.mean(signal)
+                signal_median = np.median(signal)
+                signal_std = np.std(signal)
+                signal_min = np.min(signal)
+                signal_max = np.max(signal)
+                
+                signal_info += f"Signal Mean: {signal_mean:.2f}\n"
+                signal_info += f"Signal Median: {signal_median:.2f}\n"
+                signal_info += f"Signal Standard Deviation: {signal_std:.2f}\n"
+                signal_info += f"Signal Range: {signal_min:.2f} - {signal_max:.2f}\n"
+                
+                # Signal-to-noise estimate
+                if signal_std > 0:
+                    snr = (signal_max - signal_mean) / signal_std
+                    signal_info += f"Estimated Signal-to-Noise Ratio: {snr:.2f}\n"
+                
+                signal_info += f"Signal Length: {len(signal)} samples\n"
+                
+                # Calculate signal duration if time values are available
+                if hasattr(app, 't_value') and app.t_value is not None:
+                    duration = (app.t_value[-1] - app.t_value[0]) / 60  # Convert to minutes
+                    signal_info += f"Signal Duration: {duration:.2f} minutes\n"
+                
+                additional_info += signal_info + "\n"
+            
+            # === METADATA ===
+            if hasattr(app, 'protocol_info') and app.protocol_info:
+                metadata_info = "=== METADATA ===\n"
+                
+                # Order metadata by importance
+                important_fields = [
+                    'sample_number', 'particle', 'concentration', 
+                    'buffer', 'buffer_concentration', 'measurement_date',
+                    'start_time', 'setup', 'laser_power', 'stamp', 'notes'
+                ]
+                
+                # First add important fields in order
+                for field in important_fields:
+                    if field in app.protocol_info and app.protocol_info[field]:
+                        field_name = field.replace('_', ' ').title()
+                        metadata_info += f"{field_name}: {app.protocol_info[field]}\n"
+                
+                # Then add any remaining fields
+                for key, value in app.protocol_info.items():
+                    if (key not in important_fields and 
+                        key not in ['file_path', 'raw_data'] and 
+                        value):  # Skip large or private items and already added items
+                        field_name = key.replace('_', ' ').title()
+                        metadata_info += f"{field_name}: {value}\n"
+                
+                additional_info += metadata_info
+            
+            # Call the core function with the organized information
+            update_results_summary(
+                app, 
+                events=events, 
+                max_amp=max_amp, 
+                peak_areas=peak_areas, 
+                peak_intervals=peak_intervals, 
+                preview_text=additional_info
+            )
         
         return True
     except Exception as e:

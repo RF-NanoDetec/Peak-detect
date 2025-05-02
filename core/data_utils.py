@@ -215,7 +215,11 @@ def reset_application_state(app):
             app.protocol_files.set("")
 
         # Clear results summary
-        app.update_results_summary(preview_text="")
+        if hasattr(app, 'results_summary'):
+            app.update_results_summary(preview_text="")
+        else:
+            # Fallback to just updating the preview label
+            app.preview_label.config(text="", foreground=app.theme_manager.get_color('text'))
 
         # Clear all tabs except Welcome tab
         for tab in app.plot_tab_control.tabs():

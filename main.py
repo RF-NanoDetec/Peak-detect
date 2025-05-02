@@ -223,6 +223,9 @@ class Application(tk.Tk):
         # Add a specific entry for file order in protocol
         self.protocol_files = tk.StringVar()
         
+        # Add throughput interval parameter for time-resolved analysis
+        self.throughput_interval = tk.DoubleVar(value=10.0)  # Default 10 seconds, adjustable 1-100
+        
         # Create the menu bar
         self.menu_bar = create_menu_bar(self)
 
@@ -1774,11 +1777,11 @@ class Application(tk.Tk):
         -------
         None
         """
-        popup = tk.Toplevel(self.root)
+        popup = tk.Toplevel(self)  # Use self instead of self.root since Application inherits from tk.Tk
         popup.title(title)
         popup.geometry("400x300")
         popup.resizable(True, True)
-        popup.transient(self.root)
+        popup.transient(self)  # Use self instead of self.root
         popup.grab_set()
         
         # Apply theme
@@ -1803,10 +1806,10 @@ class Application(tk.Tk):
         close_button.pack(side=tk.RIGHT, padx=10)
         
         # Position the popup window relative to the root window
-        root_x = self.root.winfo_rootx()
-        root_y = self.root.winfo_rooty()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
+        root_x = self.winfo_rootx()  # Use self instead of self.root
+        root_y = self.winfo_rooty()  # Use self instead of self.root
+        root_width = self.winfo_width()  # Use self instead of self.root
+        root_height = self.winfo_height()  # Use self instead of self.root
         
         popup_width = 400
         popup_height = 300
