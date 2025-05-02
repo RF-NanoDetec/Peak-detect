@@ -474,6 +474,79 @@ def ui_action(processing_message, success_message, error_message):
         return wrapper
     return decorator 
 
+def ui_operation(processing_message, success_message, error_message):
+    """
+    Decorator for Application class methods that perform UI operations.
+    
+    Similar to ui_action, but with a more neutral name for operations that
+    aren't specifically user-initiated actions but still need UI feedback.
+    
+    Parameters
+    ----------
+    processing_message : str
+        Status message during processing
+    success_message : str
+        Status message on success
+    error_message : str
+        Status message on error
+        
+    Returns
+    -------
+    function
+        Decorated function with UI updates and error handling
+        
+    Example
+    -------
+    @ui_operation("Adding tooltip...", "Tooltip added", "Error adding tooltip")
+    def add_tooltip(self, widget, text):
+        # Method code for adding tooltip
+        return tooltip_object
+    """
+    # Implementation is identical to ui_action but kept separate for semantic clarity
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                # Update status for processing
+                self.status_indicator.set_state('processing')
+                self.status_indicator.set_text(processing_message)
+                self.update_idletasks()
+                
+                # Call the method
+                result = func(self, *args, **kwargs)
+                
+                # Update status for success
+                self.status_indicator.set_state('success')
+                self.status_indicator.set_text(success_message)
+                
+                # Update preview label if appropriate
+                if hasattr(self, 'preview_label'):
+                    self.preview_label.config(
+                        text=success_message,
+                        foreground=self.theme_manager.get_color('success')
+                    )
+                    
+                return result
+                
+            except Exception as e:
+                # Update status for error
+                self.status_indicator.set_state('error')
+                self.status_indicator.set_text(error_message)
+                
+                # Show error dialog
+                show_error(self, error_message, e)
+                
+                # Update preview label if appropriate
+                if hasattr(self, 'preview_label'):
+                    self.preview_label.config(
+                        text=f"{error_message}: {str(e)}",
+                        foreground=self.theme_manager.get_color('error')
+                    )
+                    
+                return None
+        return wrapper
+    return decorator
+
 def show_documentation_with_ui(app):
     """
     Display comprehensive application documentation in a separate window.

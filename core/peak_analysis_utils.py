@@ -206,7 +206,7 @@ def timestamps_array_to_seconds(timestamps, start_time):
 
 # Detect peaks with a sliding window and filter out invalid ones
 @profile_function
-def find_peaks_with_window(signal, width, prominence, distance, rel_height, baseline_ratio=0.3):
+def find_peaks_with_window(signal, width, prominence, distance, rel_height, prominence_ratio=0.8):
     """
     Detect peaks in a signal with specified window parameters.
     
@@ -219,8 +219,9 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, base
         prominence (float): Minimum prominence of peaks
         distance (int): Minimum distance between peaks
         rel_height (float): Relative height at which width is measured
-        baseline_ratio (float, optional): Threshold for detecting subpeaks.
-            Higher values will filter more aggressively. Defaults to 0.3.
+        prominence_ratio (float, optional): Threshold for the ratio of prominence
+            to peak height. Peaks with ratio < threshold are filtered out as subpeaks.
+            Higher values (e.g., 0.9) are more strict. Defaults to 0.8 (80%).
         
     Returns:
         tuple: (peaks, properties) where:
@@ -235,7 +236,7 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, base
     peaks, properties = find_peaks(signal, 
                                  width=width,
                                  prominence=prominence,
-                                 distance=distance,
+                                 distance=distance, 
                                  rel_height=rel_height)
     
     # Calculate peak widths and interpolated positions
@@ -267,36 +268,32 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, base
         properties['right_ips'] = np.array([])
     
     # Filter out subpeaks (peaks that sit on top of larger peaks)
-    peaks, properties = filter_subpeaks(signal, peaks, properties, baseline_ratio_threshold=baseline_ratio)
+    peaks, properties = filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=prominence_ratio)
     
     return peaks, properties
 
-def filter_subpeaks(signal, peaks, properties, baseline_ratio_threshold=0.3, window_size=20):
+def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=0.8):
     """
     Filter out peaks that are likely subpeaks sitting on top of larger peaks.
     
-    This function uses the prominence values directly from the peak detection algorithm 
-    to identify peaks that are part of a larger peak's structure rather than
-    independent peaks.
+    This function uses the ratio of peak prominence to peak height to identify
+    subpeaks. Peaks with low prominence-to-height ratios are considered subpeaks
+    and are filtered out.
     
     Parameters:
         signal (numpy.ndarray): The signal to analyze
         peaks (numpy.ndarray): Array of peak indices
         properties (dict): Dictionary of peak properties from find_peaks
-        baseline_ratio_threshold (float, optional): Threshold for the ratio of contour line
-            elevation to peak height. Peaks with a ratio above this are considered subpeaks.
-            Default is 0.3 (30% above global baseline).
-        window_size (int, optional): Legacy parameter, kept for compatibility but not used
-            when prominence-based filtering is applied.
+        prominence_ratio_threshold (float, optional): Threshold for the ratio of prominence
+            to peak height. Peaks with ratio < threshold are filtered out as subpeaks.
+            Higher values (e.g., 0.9) are more strict, keeping only very prominent peaks.
+            Lower values (e.g., 0.5) are more permissive. Defaults to 0.8 (80%).
     
     Returns:
         tuple: (filtered_peaks, filtered_properties) with subpeaks removed
     """
     if len(peaks) == 0 or 'prominences' not in properties:
         return peaks, properties
-    
-    # Calculate global baseline (5th percentile of entire signal)
-    global_baseline = np.percentile(signal, 5)
     
     # Track which peaks to keep
     keep_mask = np.ones(len(peaks), dtype=bool)
@@ -307,20 +304,13 @@ def filter_subpeaks(signal, peaks, properties, baseline_ratio_threshold=0.3, win
         peak_height = signal[peak_idx]
         prominence = properties['prominences'][i]
         
-        # Calculate the contour line (baseline) for this peak
-        # In scipy implementation: contour_line = peak_height - prominence
-        contour_line = peak_height - prominence
-        
-        # Calculate the ratio of how much the contour line is above the global baseline
-        # relative to the peak height above the global baseline
-        if peak_height > global_baseline:  # Avoid division by zero
-            contour_elevation = contour_line - global_baseline
-            peak_elevation = peak_height - global_baseline
-            ratio = contour_elevation / peak_elevation
+        # Calculate ratio of prominence to peak height
+        if peak_height > 0:  # Avoid division by zero
+            ratio = prominence / peak_height
             
-            # If the contour line is significantly above the global baseline
-            # compared to the peak height, it's likely a subpeak
-            if ratio > baseline_ratio_threshold:
+            # If the prominence is significantly less than the peak height,
+            # it's likely a subpeak
+            if ratio < prominence_ratio_threshold:
                 keep_mask[i] = False
     
     # Apply the mask to filter peaks and properties
@@ -335,7 +325,7 @@ def filter_subpeaks(signal, peaks, properties, baseline_ratio_threshold=0.3, win
             filtered_properties[key] = values
     
     print(f"Filtered out {len(peaks) - len(filtered_peaks)} subpeaks out of {len(peaks)} total peaks")
-    print(f"Using prominence-based contour lines to identify subpeaks")
+    print(f"Using prominence-to-height ratio threshold of {prominence_ratio_threshold:.2f}")
     
     return filtered_peaks, filtered_properties
 

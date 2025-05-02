@@ -48,7 +48,8 @@ from ui.ui_utils import (
     add_tooltip,
     show_documentation_with_ui,
     show_about_dialog_with_ui,
-    on_file_mode_change_with_ui
+    on_file_mode_change_with_ui,
+    ui_operation
 )
 
 # Import core modules
@@ -468,7 +469,7 @@ class Application(tk.Tk):
             
         Returns
         -------
-        object
+        ui.tooltips.Tooltip
             The tooltip object
         """
         return add_tooltip(widget, text)
@@ -1556,7 +1557,7 @@ class Application(tk.Tk):
         data_points = []
         np.random.seed(42)
         peaks = [
-            {'x': 100, 'height': 50, 'width': 30},
+            {'x': 100, 'height': 50, 'width': 20},
             {'x': 250, 'height': 35, 'width': 25}
         ]
         for x in range(10, canvas_width-10, 2):
@@ -1695,6 +1696,127 @@ class Application(tk.Tk):
                           fill=raw_color, anchor=tk.W, font=("TkDefaultFont", 8), tags="tooltip")
         canvas.create_text(30, baseline_y + 20, text="Filtered Data", 
                           fill=filtered_color, anchor=tk.W, font=("TkDefaultFont", 8), tags="tooltip")
+
+    @ui_action(
+        processing_message="Toggling filtered peaks visibility...",
+        success_message="Filtered peaks visibility updated",
+        error_message="Error toggling filtered peaks visibility"
+    )
+    def toggle_filtered_peaks_visibility(self):
+        """
+        Toggle the visibility of peaks filtered by the prominence ratio threshold.
+        
+        When enabled, peaks that would be filtered out are shown in light red color
+        in both the time-resolved and scatter plots, making it easier to visualize
+        which peaks are being excluded by the current threshold setting.
+        """
+        try:
+            # Get the new visibility state from the toggle button
+            show_filtered = self.show_filtered_peaks.get()
+            
+            # Update status indicator
+            if show_filtered:
+                self.status_indicator.set_text("Showing filtered peaks in light red")
+            else:
+                self.status_indicator.set_text("Filtered peaks hidden")
+            
+            # Check if we have any plots to update
+            tab_to_update = None
+            
+            # Identify which tab is currently visible
+            for tab_name in ["Peak Analysis", "Peak Properties"]:
+                if tab_name in self.tab_figures:
+                    tab_to_update = tab_name
+                    break
+            
+            if tab_to_update:
+                # Re-plot the data with the new visibility setting
+                if tab_to_update == "Peak Analysis":
+                    self.plot_data()
+                elif tab_to_update == "Peak Properties":
+                    self.plot_scatter()
+                
+                # Show a message in the preview label
+                self.preview_label.config(
+                    text=f"Filtered peaks {'shown' if show_filtered else 'hidden'} in plots",
+                    foreground=self.theme_manager.get_color('success')
+                )
+            else:
+                # No plots to update yet
+                self.preview_label.config(
+                    text="No plots to update. Generate plots first using the analysis buttons.",
+                    foreground=self.theme_manager.get_color('warning')
+                )
+            
+            return True
+            
+        except Exception as e:
+            self.show_error("Error toggling filtered peaks visibility", str(e))
+            return False
+
+    @ui_action(
+        processing_message="Showing tooltip popup...",
+        success_message="Tooltip popup shown",
+        error_message="Error showing tooltip popup"
+    )
+    def show_tooltip_popup(self, title, text):
+        """
+        Show a popup window with information text.
+        
+        Parameters
+        ----------
+        title : str
+            The title of the popup window
+        text : str
+            The text to display in the popup
+            
+        Returns
+        -------
+        None
+        """
+        popup = tk.Toplevel(self.root)
+        popup.title(title)
+        popup.geometry("400x300")
+        popup.resizable(True, True)
+        popup.transient(self.root)
+        popup.grab_set()
+        
+        # Apply theme
+        popup.configure(bg=self.theme_manager.get_color('background'))
+        
+        # Add text
+        frame = ttk.Frame(popup)
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        text_widget = tk.Text(frame, wrap=tk.WORD, bg=self.theme_manager.get_color('card_bg'),
+                             fg=self.theme_manager.get_color('text'), relief=tk.FLAT,
+                             highlightthickness=0, padx=10, pady=10)
+        text_widget.pack(fill=tk.BOTH, expand=True)
+        text_widget.insert(tk.END, text)
+        text_widget.config(state=tk.DISABLED)
+        
+        # Add close button
+        button_frame = ttk.Frame(popup)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        close_button = ttk.Button(button_frame, text="Close", command=popup.destroy)
+        close_button.pack(side=tk.RIGHT, padx=10)
+        
+        # Position the popup window relative to the root window
+        root_x = self.root.winfo_rootx()
+        root_y = self.root.winfo_rooty()
+        root_width = self.root.winfo_width()
+        root_height = self.root.winfo_height()
+        
+        popup_width = 400
+        popup_height = 300
+        
+        x = root_x + (root_width - popup_width) // 2
+        y = root_y + (root_height - popup_height) // 2
+        
+        popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
+        
+        return popup
 
 
 # Your main program code goes here

@@ -96,6 +96,10 @@ def create_control_panel(app, main_frame):
     control_frame = ttk.Frame(main_frame)
     control_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
     
+    # Set a fixed width for the control panel
+    control_frame.grid_propagate(False)  # Prevent the frame from resizing to its children
+    control_frame.configure(width=400)   # Set a fixed width
+    
     # Add status indicator at the top
     status_frame = ttk.Frame(control_frame)
     status_frame.pack(fill=tk.X, pady=(0, 10))
@@ -139,7 +143,11 @@ def create_preview_frame(app, main_frame):
     preview_frame.columnconfigure(0, weight=1)
     preview_frame.rowconfigure(0, weight=1)
     preview_frame.rowconfigure(1, weight=0)
-
+    
+    # Configure main_frame to give more weight to the preview column
+    main_frame.columnconfigure(0, weight=0)  # Control panel doesn't need to expand
+    main_frame.columnconfigure(1, weight=1)  # Preview frame gets all extra space
+    
     # Tab Control for Multiple Plots on the right
     app.plot_tab_control = ttk.Notebook(preview_frame)
     app.plot_tab_control.grid(row=0, column=0, sticky="nsew")
@@ -223,9 +231,7 @@ def create_data_loading_tab(app, tab_control):
     
     # Radio buttons for normal vs double peak analysis
     peak_mode_container = ttk.Frame(peak_mode_frame)
-    peak_mode_container.pack(padx=5, pady=5)
-    
-    ttk.Label(peak_mode_container, text="Analysis Type:").pack(side=tk.LEFT, padx=5)
+    peak_mode_container.pack(padx=5, pady=5, anchor=tk.W)
     
     # Radio buttons for normal vs double peak analysis
     ttk.Radiobutton(
@@ -235,7 +241,6 @@ def create_data_loading_tab(app, tab_control):
         value="0",
         command=app.on_double_peak_mode_change
     ).pack(side=tk.LEFT, padx=10)
-    
     ttk.Radiobutton(
         peak_mode_container,
         text="Double Peak Analysis",
@@ -480,7 +485,7 @@ def create_preprocessing_tab(app, tab_control):
     
     # Create horizontal layout for mode selection
     mode_selector = ttk.Frame(toggle_frame)
-    mode_selector.pack(pady=5)
+    mode_selector.pack(pady=5, anchor=tk.W)
     
     # Radio buttons with icons/colors for better visual representation
     filter_radio = ttk.Radiobutton(
@@ -538,7 +543,7 @@ def create_preprocessing_tab(app, tab_control):
         bg=app.theme_manager.get_color('card_bg'),
         highlightthickness=0
     )
-    app.preprocessing_comparison_canvas.pack(pady=5)
+    app.preprocessing_comparison_canvas.pack(pady=5, anchor=tk.W)
     
     # Draw a comparison of raw vs filtered data
     baseline_y = canvas_height // 2
@@ -1257,128 +1262,129 @@ def create_peak_detection_tab(app, tab_control):
         "Example: '0.1,50' means only peaks between 0.1 and 50ms are kept"
     )
     
-    # Baseline ratio threshold slider
-    baseline_ratio_frame = ttk.Frame(manual_params_container)
-    baseline_ratio_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Prominence ratio threshold slider
+    prominence_ratio_frame = ttk.Frame(manual_params_container)
+    prominence_ratio_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    ttk.Label(baseline_ratio_frame, text="Baseline Ratio Threshold:").pack(side=tk.LEFT, padx=5)
+    ttk.Label(prominence_ratio_frame, text="Prominence Ratio Threshold:").pack(side=tk.LEFT, padx=5)
     
-    # Create slider
-    app.baseline_ratio = tk.DoubleVar(value=0.3)  # Default 0.3 (30%)
-    baseline_ratio_slider = tk.Scale(
-        baseline_ratio_frame, 
-        from_=0.0, 
+    # Create variable if it doesn't exist, otherwise use the existing one
+    if not hasattr(app, 'prominence_ratio'):
+        app.prominence_ratio = tk.DoubleVar(value=0.8)  # Default 0.8 (80%)
+    prominence_ratio_slider = tk.Scale(
+        prominence_ratio_frame,
+        from_=0.0,
         to=1.0,
         resolution=0.05,
-        orient="horizontal",
-        variable=app.baseline_ratio,
+        orient=tk.HORIZONTAL,
+        variable=app.prominence_ratio,
         bg=app.theme_manager.get_color('card_bg'),
         fg=app.theme_manager.get_color('text'),
-        highlightthickness=0,
         troughcolor=app.theme_manager.get_color('background')
     )
-    baseline_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    prominence_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
     # Create diagram to illustrate the concept
-    baseline_diagram_canvas = tk.Canvas(
+    prominence_diagram_canvas = tk.Canvas(
         manual_params_container, 
         width=380, 
         height=120, 
         bg=app.theme_manager.get_color('background'),
         highlightthickness=0
     )
-    baseline_diagram_canvas.pack(pady=5)
+    prominence_diagram_canvas.pack(pady=5)
     
     # Drawing will be done when the canvas is visible
-    def draw_baseline_diagram():
-        canvas = baseline_diagram_canvas
+    def draw_prominence_diagram():
+        canvas = prominence_diagram_canvas
         canvas.delete("all")
         
         # Colors
         text_color = app.theme_manager.get_color('text')
         signal_color = app.theme_manager.get_color('primary')
-        baseline_global_color = "#4CAF50"  # Green
-        contour_line_color = "#FF9800"     # Orange
-        subpeak_color = "#F44336"          # Red
+        prominence_color = "#4CAF50"  # Green
+        height_color = "#FF9800"      # Orange
+        subpeak_color = "#F44336"     # Red
         
         # Draw axis
         canvas.create_line(10, 90, 370, 90, fill=text_color, dash=(2,2))
         canvas.create_text(15, 95, text="0", fill=text_color, anchor="nw")
         
-        # Draw global baseline
-        global_y = 70
-        canvas.create_line(10, global_y, 370, global_y, fill=baseline_global_color, width=1, dash=(4,4))
-        canvas.create_text(15, global_y-20, text="Global Baseline", fill=baseline_global_color, anchor="nw")
+        # Draw a main peak
+        peak_x = 180
+        peak_height = 60
+        peak_y = 90 - peak_height  # 90 is baseline
         
-        # Draw a large peak with a subpeak
-        # Main peak
+        # Draw main peak
         points = []
         for x in range(50, 320, 5):
-            y = 90 - 60 * np.exp(-0.0015 * (x - 180) ** 2) 
+            y = 90 - peak_height * np.exp(-0.0015 * (x - peak_x) ** 2) 
             points.append(x)
             points.append(int(y))
         
         canvas.create_line(points, fill=signal_color, width=2, smooth=True)
         
-        # Draw contour line for the main peak
-        contour_y = 40
-        canvas.create_line(50, contour_y, 320, contour_y, fill=contour_line_color, width=1, dash=(2,2))
-        canvas.create_text(240, contour_y-5, text="Contour Line", fill=contour_line_color, anchor="nw")
-        
-        # Subpeak
+        # Draw a subpeak
+        subpeak_x = 180
+        subpeak_height = 20
         sub_points = []
         for x in range(150, 210, 2):
-            y = 45 - 20 * np.exp(-0.005 * (x - 180) ** 2)
+            y = peak_y - subpeak_height * np.exp(-0.005 * (x - subpeak_x) ** 2)
             sub_points.append(x)
             sub_points.append(int(y))
         
         canvas.create_line(sub_points, fill=subpeak_color, width=2, smooth=True)
         canvas.create_text(150, 20, text="Subpeak (filtered out)", fill=subpeak_color)
         
-        # Draw subpeak contour line 
-        sub_contour_y = contour_y  # Same as main peak's contour line
-        canvas.create_line([160, sub_contour_y, 200, sub_contour_y], fill=subpeak_color, width=1, dash=(2,2))
+        # Draw prominence and height measurements for subpeak
+        left_ref_x = 130
+        right_ref_x = 230
         
-        # Annotations
-        canvas.create_line([180, 25, 180, contour_y], fill=subpeak_color, dash=(2,2))
-        canvas.create_line([180, contour_y, 180, global_y], fill=contour_line_color, dash=(1,1))
-        canvas.create_line([180, global_y, 180, 90], fill=baseline_global_color, dash=(1,1))
+        # Main peak reference lines
+        peak_base_y = 90  # Baseline
         
-        # Add arrows for elevation
+        # Subpeak reference lines
+        subpeak_base_y = peak_y  # Subpeak's base is on the main peak
+        subpeak_top_y = peak_y - subpeak_height
+        
+        # Draw measurement arrows
         arrow_x = 350
-        canvas.create_line([arrow_x, global_y, arrow_x, contour_y], 
-                          fill=contour_line_color, arrow="last", width=1.5)
-        canvas.create_text(arrow_x+5, (global_y+contour_y)/2, 
-                          text="Contour\nElevation", fill=contour_line_color, anchor="w")
         
-        canvas.create_line([arrow_x-15, global_y, arrow_x-15, 30], 
-                          fill=signal_color, arrow="last", width=1.5)
-        canvas.create_text(arrow_x-10, 50, 
-                          text="Peak\nHeight", fill=signal_color, anchor="w")
+        # Peak height (from baseline to peak)
+        canvas.create_line([arrow_x, peak_base_y, arrow_x, peak_y], 
+                          fill=height_color, arrow="last", width=1.5)
+        canvas.create_text(arrow_x+5, (peak_base_y+peak_y)/2, 
+                          text="Peak\nHeight", fill=height_color, anchor="w")
+        
+        # Subpeak prominence (from subpeak base to top)
+        canvas.create_line([arrow_x-20, subpeak_base_y, arrow_x-20, subpeak_top_y], 
+                          fill=prominence_color, arrow="last", width=1.5)
+        canvas.create_text(arrow_x-15, (subpeak_base_y+subpeak_top_y)/2, 
+                          text="Prominence", fill=prominence_color, anchor="w")
         
         # Ratio explanation
         canvas.create_text(
             20, 
             110, 
-            text=f"Ratio = Contour Elevation / Peak Height", 
+            text="Ratio = Prominence / Peak Height  (Keep peaks with ratio ≥ threshold)", 
             fill=text_color, 
             anchor="nw",
             font=("TkDefaultFont", 8)
         )
     
     # Schedule drawing when the canvas becomes visible
-    baseline_diagram_canvas.after(100, draw_baseline_diagram)
+    prominence_diagram_canvas.after(100, draw_prominence_diagram)
     
-    # Find the baseline_ratio_slider tooltip and update it
+    # Add tooltip for prominence ratio slider
     app.add_tooltip(
-        baseline_ratio_slider,
-        "Controls the detection of subpeaks (peaks on top of larger peaks):\n"
-        "• Lower values (0.1-0.2): Only filter very obvious subpeaks\n"
-        "• Medium values (0.3-0.5): Balanced filtering (recommended)\n"
-        "• Higher values (0.6-0.9): Aggressive filtering of potential subpeaks\n\n"
-        "The ratio measures how elevated a peak's contour line is compared to the\n"
-        "global baseline, relative to the peak's height above baseline.\n"
-        "The contour line is determined by the peak's prominence."
+        prominence_ratio_slider,
+        "Controls the filtering of subpeaks using the prominence-to-height ratio:\n"
+        "• Higher values (e.g., 0.8-0.9): More strict filtering, keeps only very prominent peaks\n"
+        "• Medium values (e.g., 0.5-0.7): Balanced filtering\n"
+        "• Lower values (e.g., 0.1-0.4): More permissive filtering, keeps more peaks\n\n"
+        "The ratio compares a peak's prominence to its height. A lower ratio\n"
+        "indicates the peak is likely a subpeak sitting on top of a larger peak.\n"
+        "Peaks with ratio < threshold are filtered out."
     )
 
     # Action Buttons Frame
@@ -1443,35 +1449,158 @@ def create_peak_analysis_tab(app, tab_control):
     peak_analysis_tab = ttk.Frame(tab_control)
     tab_control.add(peak_analysis_tab, text="Peak Analysis")
 
-    # Analysis Options Frame
-    analysis_options_frame = ttk.LabelFrame(peak_analysis_tab, text="Analysis Options")
-    analysis_options_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Create a main container for all controls
+    main_container = ttk.Frame(peak_analysis_tab)
+    main_container.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+    
+    # Analysis Options Frame - placed at the top
+    analysis_options_frame = ttk.LabelFrame(main_container, text="Analysis Options")
+    analysis_options_frame.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+
+    # Button container for analysis buttons
+    button_container = ttk.Frame(analysis_options_frame)
+    button_container.pack(fill=tk.X, padx=5, pady=5, anchor="w")
 
     # Time-resolved analysis button (first)
     ttk.Button(
-        analysis_options_frame,
-        text="Time-Resolved Analysis",  # Changed from "Plot Peak Analysis"
+        button_container,
+        text="Time-Resolved Analysis",
         command=app.plot_data
     ).pack(side=tk.LEFT, padx=5, pady=5)
 
     # Peak properties correlation button (second)
     ttk.Button(
-        analysis_options_frame,
-        text="Peak Property Correlations",  # Changed from "Plot Peak Properties"
+        button_container,
+        text="Peak Property Correlations",
         command=app.plot_scatter
     ).pack(side=tk.LEFT, padx=5, pady=5)
+    
+    # Filter Controls Frame - placed below the analysis options
+    filter_frame = ttk.LabelFrame(main_container, text="Peak Filtering")
+    filter_frame.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+    
+    # Create top row container for filter controls
+    filter_controls_row = ttk.Frame(filter_frame)
+    filter_controls_row.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+    
+    # Create variable for tracking filtered peaks visibility if it doesn't exist
+    if not hasattr(app, 'show_filtered_peaks'):
+        app.show_filtered_peaks = tk.BooleanVar(value=False)
+    
+    # Peak display options (left side of filter controls)
+    peaks_display_frame = ttk.Frame(filter_controls_row)
+    peaks_display_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=2)
+    
+    ttk.Label(peaks_display_frame, text="Display:").pack(anchor="w", padx=5, pady=2)
+    
+    # Radio buttons for peak display options
+    ttk.Radiobutton(
+        peaks_display_frame,
+        text="All Peaks",
+        variable=app.show_filtered_peaks,
+        value=False,
+        command=app.toggle_filtered_peaks_visibility
+    ).pack(anchor="w", padx=5, pady=2)
+    
+    filtered_peaks_radio = ttk.Radiobutton(
+        peaks_display_frame,
+        text="Show Filtered Peaks",
+        variable=app.show_filtered_peaks,
+        value=True,
+        command=app.toggle_filtered_peaks_visibility
+    )
+    filtered_peaks_radio.pack(anchor="w", padx=5, pady=2)
+    
+    # Visual indicator for filtered peaks
+    indicator_frame = ttk.Frame(peaks_display_frame)
+    indicator_frame.pack(fill=tk.X, padx=5, pady=2)
+    
+    filtered_color_indicator = tk.Label(
+        indicator_frame, 
+        text="", 
+        width=2, 
+        height=1, 
+        background="#FF8080",  # Light red color
+        relief=tk.RAISED
+    )
+    filtered_color_indicator.pack(side=tk.LEFT)
+    
+    ttk.Label(
+        indicator_frame, 
+        text="= Filtered by prominence"
+    ).pack(side=tk.LEFT, padx=2)
+    
+    # Prominence ratio controls (right side of filter controls)
+    prominence_frame = ttk.Frame(filter_controls_row) 
+    prominence_frame.pack(side=tk.LEFT, fill=tk.Y, padx=20, pady=2)
+    
+    ttk.Label(prominence_frame, text="Prominence Ratio:").pack(anchor="w", padx=5, pady=2)
+    
+    # Create variable if it doesn't exist, otherwise use the existing one
+    if not hasattr(app, 'prominence_ratio'):
+        app.prominence_ratio = tk.DoubleVar(value=0.8)  # Default 0.8 (80%)
+    
+    ratio_control_frame = ttk.Frame(prominence_frame)
+    ratio_control_frame.pack(fill=tk.X, padx=5, pady=2)
+    
+    prominence_ratio_slider = tk.Scale(
+        ratio_control_frame,
+        from_=0.0,
+        to=1.0,
+        resolution=0.05,
+        orient=tk.HORIZONTAL,
+        variable=app.prominence_ratio,
+        length=200,
+        bg=app.theme_manager.get_color('card_bg'),
+        fg=app.theme_manager.get_color('text'),
+        troughcolor=app.theme_manager.get_color('background')
+    )
+    prominence_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    
+    # Entry for precise value control
+    ratio_entry = ttk.Entry(ratio_control_frame, textvariable=app.prominence_ratio, width=4)
+    ratio_entry.pack(side=tk.LEFT, padx=5)
+    
+    # Info button for prominence ratio
+    info_button = ttk.Button(
+        ratio_control_frame, 
+        text="?", 
+        width=2,
+        command=lambda: app.show_tooltip_popup(
+            "Prominence Ratio",
+            "Controls the filtering of subpeaks using the prominence-to-height ratio:\n"
+            "• Higher values (e.g., 0.8-0.9): More strict filtering\n"
+            "• Medium values (e.g., 0.5-0.7): Balanced filtering\n"
+            "• Lower values (e.g., 0.1-0.4): More permissive filtering\n\n"
+            "Peaks with ratio < threshold are filtered out."
+        )
+    )
+    info_button.pack(side=tk.LEFT, padx=2)
+    
+    # Add tooltips
+    app.add_tooltip(
+        filtered_peaks_radio,
+        "When enabled, peaks that would be filtered out are shown in light red.\n"
+        "This helps visualize which peaks are being excluded by the current threshold setting."
+    )
+    
+    app.add_tooltip(
+        prominence_ratio_slider,
+        "Controls the filtering of subpeaks using the prominence-to-height ratio.\n"
+        "Higher values keep only very prominent peaks. Lower values keep more peaks."
+    )
 
     # Results Frame
     results_frame = ttk.LabelFrame(peak_analysis_tab, text="Results Summary")
     results_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-    # Add tooltips for better user guidance
+    # Add tooltips for analysis buttons
     app.add_tooltip(
-        analysis_options_frame.winfo_children()[0],  # Time-Resolved Analysis button
+        button_container.winfo_children()[0],  # Time-Resolved Analysis button
         "Display peak properties changes over time and throughput analysis"
     )
     app.add_tooltip(
-        analysis_options_frame.winfo_children()[1],  # Peak Property Correlations button
+        button_container.winfo_children()[1],  # Peak Property Correlations button
         "Display correlation plots between peak width, height, and area"
     )
 
