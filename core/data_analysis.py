@@ -40,24 +40,43 @@ def calculate_peak_areas(detector, signal, time_values, height_lim, distance, re
         tuple: (peak_areas, start_indices, end_indices) if peaks are detected, None otherwise
     """
     try:
-        # Detect peaks if not already detected
-        if detector.peaks_indices is None:
-            detector.detect_peaks(
-                signal,
-                time_values,
-                height_lim,
-                distance,
-                prominence_ratio,
-                rel_height,
-                width_values,
-                time_resolution=time_resolution
-            )
+        if signal is None:
+            return None
+            
+        # Convert width from ms to samples
+        sampling_rate = 1 / time_resolution
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
         
-        # Calculate areas using the PeakDetector
-        peak_area, start, end = detector.calculate_peak_areas(signal)
+        # Find peaks with the current parameters
+        peaks, properties = find_peaks_with_window(
+            signal,
+            width=width_p,
+            prominence=height_lim,
+            distance=distance,
+            rel_height=rel_height,
+            prominence_ratio=prominence_ratio
+        )
         
-        return peak_area, start, end 
-
+        if len(peaks) == 0:
+            return None
+            
+        # Calculate areas under peaks
+        areas = []
+        start_indices = []
+        end_indices = []
+        
+        for i, peak in enumerate(peaks):
+            left_idx = int(properties["left_ips"][i])
+            right_idx = int(properties["right_ips"][i])
+            
+            if left_idx < right_idx:
+                area = np.trapz(signal[left_idx:right_idx])
+                areas.append(area)
+                start_indices.append(left_idx)
+                end_indices.append(right_idx)
+            
+        return areas, start_indices, end_indices
+        
     except Exception as e:
         logger.error(f"Error calculating peak areas: {str(e)}\n{traceback.format_exc()}")
         return None
@@ -94,6 +113,81 @@ def calculate_peak_intervals(t_value, peaks_indices):
     except Exception as e:
         logger.error(f"Error calculating peak intervals: {str(e)}\n{traceback.format_exc()}")
         return []
+
+@profile_function
+def analyze_time_resolved(app):
+    """
+    Analyze time-resolved data using current parameters and update the visualization.
+    
+    This function performs time-resolved analysis of peak data, including:
+    - Peak detection with current parameters
+    - Area calculations
+    - Interval measurements
+    - Statistical analysis
+    
+    Parameters
+    ----------
+    app : Application
+        The main application instance containing the data and parameters
+        
+    Returns
+    -------
+    tuple or None
+        (peaks, areas, intervals) if analysis is successful, None otherwise
+        - peaks: array of peak indices
+        - areas: array of peak areas
+        - intervals: array of peak intervals
+    """
+    try:
+        if app.filtered_signal is None:
+            return None
+            
+        # Get current parameters
+        width_values = app.width_p.get().strip().split(',')
+        time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+        if time_res <= 0:
+            time_res = 0.0001  # Default to 0.1ms if invalid
+        sampling_rate = 1 / time_res
+        
+        # Convert width from ms to samples
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+        
+        # Get the prominence ratio threshold
+        prominence_ratio = app.prominence_ratio.get()
+        
+        # Find peaks with current parameters
+        peaks, properties = find_peaks_with_window(
+            app.filtered_signal,
+            width=width_p,
+            prominence=app.height_lim.get(),
+            distance=app.distance.get(),
+            rel_height=app.rel_height.get(),
+            prominence_ratio=prominence_ratio
+        )
+        
+        if len(peaks) == 0:
+            return None
+            
+        # Calculate areas under peaks
+        areas = []
+        for i, peak in enumerate(peaks):
+            left_idx = int(properties["left_ips"][i])
+            right_idx = int(properties["right_ips"][i])
+            if left_idx < right_idx:
+                area = np.trapz(app.filtered_signal[left_idx:right_idx])
+                areas.append(area)
+            else:
+                areas.append(0)
+        areas = np.array(areas)
+        
+        # Calculate intervals between peaks
+        intervals = calculate_peak_intervals(app.t_value, peaks)
+        
+        return peaks, areas, intervals
+        
+    except Exception as e:
+        logger.error(f"Error in analyze_time_resolved: {str(e)}\n{traceback.format_exc()}")
+        return None
 
 @profile_function
 def calculate_auto_threshold(signal, percentile=95, sigma_multiplier=None):

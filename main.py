@@ -13,7 +13,7 @@ from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Third-party libraries
-import numpy as np
+import numpy as np  # numpy.trapz will be used instead of auc
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -24,7 +24,7 @@ from scipy.signal import savgol_filter, find_peaks, butter, filtfilt, peak_width
 from scipy import stats
 import seaborn as sns
 import psutil
-from numba import njit  # Add this import at the top of your file
+from numba import njit
 # Tkinter
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, Tcl
@@ -58,7 +58,8 @@ from core.file_handler import browse_files_with_ui
 from core.data_analysis import (
     calculate_peak_areas as calculate_peak_areas_function,
     calculate_peak_intervals,
-    calculate_auto_threshold
+    calculate_auto_threshold,
+    analyze_time_resolved as analyze_time_resolved_function
 )
 from core.data_utils import (
     decimate_for_plot as decimate_for_plot_function,
@@ -419,15 +420,43 @@ class Application(tk.Tk):
     def create_widgets(self):
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=3)
-        main_frame.rowconfigure(0, weight=1)
-
-        # Create left control panel
-        create_control_panel(self, main_frame)
         
-        # Create preview frame with plot tabs on the right
-        create_preview_frame(self, main_frame)
+        # Configure columns - control panel (0), plot area (1), and results summary (2)
+        main_frame.columnconfigure(0, weight=0)  # Control panel - fixed width
+        main_frame.columnconfigure(1, weight=3)  # Plot area gets most space
+        main_frame.columnconfigure(2, weight=0)  # Results summary - fixed width
+        
+        # Configure rows - only one row now since results summary is on the right
+        main_frame.rowconfigure(0, weight=1)  # All elements share the same row
+        
+        # Create left control panel
+        control_frame = create_control_panel(self, main_frame)
+        control_frame.grid(row=0, column=0, sticky="nsew")
+        
+        # Create preview frame with plot tabs (center)
+        preview_frame = create_preview_frame(self, main_frame)
+        preview_frame.grid(row=0, column=1, sticky="nsew")
+        
+        # Create results summary panel frame (right side)
+        summary_frame = ttk.Frame(main_frame)
+        summary_frame.grid(row=0, column=2, sticky="nsew", padx=10, pady=10)
+        
+        # Configure the summary frame's grid
+        summary_frame.columnconfigure(0, weight=1)
+        summary_frame.rowconfigure(0, weight=1)
+        
+        # Set a fixed width for the results summary panel
+        summary_frame.grid_propagate(False)  # Prevent the frame from resizing to its children
+        summary_frame.configure(width=300)   # Set a fixed width
+        
+        # Create the results summary label frame
+        results_label_frame = ttk.LabelFrame(summary_frame, text="Results Summary")
+        results_label_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        
+        # Add a ScrolledText widget for results summary
+        self.results_summary = ScrolledText(results_label_frame, wrap=tk.WORD, height=30, width=30)
+        self.results_summary.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.results_summary.config(state=tk.DISABLED)
 
     @ui_action(
         processing_message="Loading documentation...",
@@ -704,13 +733,23 @@ class Application(tk.Tk):
                     f"- Amplitude ratio range: {self.double_peak_min_amp_ratio.get():.2f} - {self.double_peak_max_amp_ratio.get():.2f}\n"
                     f"- Width ratio range: {self.double_peak_min_width_ratio.get():.2f} - {self.double_peak_max_width_ratio.get():.2f}\n"
                 )
-                self.update_results_summary(preview_text=summary_text)
+                
+                # Update the right panel results summary
+                if hasattr(self, 'results_summary'):
+                    # Update only preview label and status - no need to change main summary for export
+                    if hasattr(self, 'preview_label'):
+                        self.preview_label.config(text=summary_text, foreground=self.theme_manager.get_color('success'))
+                    if hasattr(self, 'status_indicator'):
+                        self.status_indicator.set_text(summary_text)
+                return True
             else:
                 # If there was an error or no results, show a message
                 self.preview_label.config(text="No double peaks found with current parameters", foreground="orange")
+                return False
             
         except Exception as e:
             show_error_with_ui(self, "Error during double peak analysis", str(e))
+            return False
 
     def show_double_peaks_grid(self):
         """
@@ -884,7 +923,10 @@ class Application(tk.Tk):
             peak_area, start, end = result
             
             # Update results summary
-            self.update_results_summary(peak_areas=peak_area)
+            # Just update preview label for single area calculation
+            self.preview_label.config(
+                text=f"Peak Area: {peak_area:.2f}",
+                foreground=self.theme_manager.get_color('success'))
             return peak_area, start, end
         else:
             return None
@@ -1014,40 +1056,13 @@ class Application(tk.Tk):
 
     # Function to update the results summary text box
     def update_results_summary(self, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
-        """
-        Update the results summary text widget with analysis results.
-        """
-        try:
-            self.results_summary.config(state=tk.NORMAL)
-            self.results_summary.delete(1.0, tk.END)  # Clear existing content
-
-            summary_text = "=== PEAK DETECTION SUMMARY ===\n"
-
-            # Add the current prominence ratio value used
-            if hasattr(self, 'prominence_ratio'):
-                summary_text += f"Prominence Ratio Used: {self.prominence_ratio.get():.2f}\n"
-
-            # Most critical information first - peak counts and throughput
-            if events is not None:
-                summary_text += f"Number of Peaks Detected: {events}\n"
-            if max_amp is not None:
-                summary_text += f"Maximum Amplitude: {max_amp:.2f}\n"
-            if peak_areas is not None:
-                import numpy as np
-                if hasattr(peak_areas, '__len__') and len(peak_areas) > 0 and not isinstance(peak_areas, (float, int)):
-                    summary_text += f"Peak Areas (Mean ± SD): {np.mean(peak_areas):.2f} ± {np.std(peak_areas):.2f}\n"
-                    summary_text += f"First 5 Areas: {[round(a, 2) for a in peak_areas[:5]]}\n"
-                else:
-                    summary_text += f"Peak Areas: {peak_areas}\n"
-            if peak_intervals is not None:
-                summary_text += f"Total Peak Intervals: {peak_intervals:.2f}\n"
-            if preview_text is not None:
-                summary_text += preview_text + "\n"
-
-            self.results_summary.insert(tk.END, summary_text)
-            self.results_summary.config(state=tk.DISABLED)
-        except Exception as e:
-            self.show_error("Error updating results summary", str(e))
+       """
+       DEPRECATED: Use ui.ui_utils.update_results_summary_with_ui instead.
+       """
+       from ui.ui_utils import update_results_summary_with_ui
+       print("WARNING: Called deprecated update_results_summary. Please use update_results_summary_with_ui.")
+       update_results_summary_with_ui(self, events=events, max_amp=max_amp, peak_areas=peak_areas, 
+                                    peak_intervals=peak_intervals, preview_text=preview_text)
 
     # Add this validation method to your class
     def validate_float(self, value):
@@ -1930,15 +1945,108 @@ class Application(tk.Tk):
                 self.filtered_peaks_feedback.config(text=msg, foreground="blue")
                 
                 # Update peak_detector.all_peaks_count to ensure results summary uses the same total count
-                self.peak_detector.all_peaks_count = total_peaks
+                if hasattr(self, 'peak_detector'):
+                    self.peak_detector.all_peaks_count = total_peaks
+                else:
+                    print("Warning: peak_detector not found when setting all_peaks_count in on_apply_prominence_ratio")
             else:
                 self.filtered_peaks_feedback.config(text="No peaks detected.", foreground="red")
+                if hasattr(self, 'peak_detector'):
+                    self.peak_detector.all_peaks_count = 0
 
             # Update the results summary (will include filtering info)
-            from ui.ui_utils import update_results_summary_with_ui
-            update_results_summary_with_ui(self, events=filtered_kept)
+            update_results_summary_with_ui(self, events=filtered_kept, context='peak_analysis')
         except Exception as e:
             self.filtered_peaks_feedback.config(text=f"Error: {e}", foreground="red")
+            update_results_summary_with_ui(self, context='peak_analysis')
+
+    @ui_action(
+        processing_message="Analyzing time-resolved data...",
+        success_message="Time-resolved data analyzed successfully",
+        error_message="Error analyzing time-resolved data"
+    )
+    def analyze_time_resolved(self):
+        """
+        Analyze time-resolved data using current parameters and update the visualization.
+        """
+        try:
+            # Run time-resolved analysis
+            results = analyze_time_resolved_function(self)
+            
+            if results:
+                peaks, areas, intervals = results
+                
+                # Update results summary
+                summary_text = (
+                    f"Time-Resolved Analysis Results:\n"
+                    f"Found {len(peaks)} peaks\n"
+                    f"Average peak area: {np.mean(areas):.2f} ± {np.std(areas):.2f}\n"
+                    f"Average interval: {np.mean(intervals)*1000:.1f} ± {np.std(intervals)*1000:.1f} ms\n"
+                    f"Parameters used:\n"
+                    f"- Prominence ratio: {self.prominence_ratio.get():.2f}\n"
+                    f"- Min peak distance: {self.min_peak_distance.get()*1000:.1f} ms\n"
+                )
+                
+                # Update the right panel results summary
+                if hasattr(self, 'results_summary'):
+                    self.update_results_summary(
+                        events=len(peaks),
+                        peak_areas=areas,
+                        peak_intervals=intervals,
+                        preview_text=summary_text
+                    )
+                
+                return True
+            else:
+                # If there was an error or no results, show a message
+                self.preview_label.config(text="No peaks found with current parameters", foreground="orange")
+                return False
+                
+        except Exception as e:
+            show_error_with_ui(self, "Error during time-resolved analysis", str(e))
+            return False
+
+    @ui_action(
+        processing_message="Exporting peak properties...",
+        success_message="Peak properties exported successfully",
+        error_message="Error exporting peak properties"
+    )
+    def export_peak_properties(self):
+        """Export peak properties to a CSV file."""
+        try:
+            # Get file path from user
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                title="Export Peak Properties"
+            )
+            
+            if not file_path:  # User cancelled
+                self.status_indicator.set_state('idle')
+                self.status_indicator.set_text("Export cancelled")
+                return False
+
+            # Call the core export function (assuming it exists)
+            success = save_peak_information_to_csv_function(self, file_path)
+            
+            if success:
+                # Update status indicators
+                summary_text = f"Exported peak properties to {os.path.basename(file_path)}"
+                if hasattr(self, 'preview_label'):
+                    self.preview_label.config(
+                        text=summary_text,
+                        foreground=self.theme_manager.get_color('success')
+                    )
+                if hasattr(self, 'status_indicator'):
+                    self.status_indicator.set_text(summary_text)
+                return True
+            else:
+                self.show_error("Export Error", "Failed to export peak properties")
+                return False
+                
+        except Exception as e:
+            self.show_error("Export Error", str(e))
+            return False
 
 
 # Your main program code goes here

@@ -1594,19 +1594,11 @@ def create_peak_analysis_tab(app, tab_control):
         "The default value of 0.8 works well for most measurements."
     )
 
-    # Results Frame
-    results_frame = ttk.LabelFrame(peak_analysis_tab, text="Results Summary")
-    results_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-    
-    # Add a ScrolledText widget for results summary
-    app.results_summary = ScrolledText(results_frame, wrap=tk.WORD, height=5, width=50)
-    app.results_summary.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-    app.results_summary.config(state=tk.DISABLED)
-
     # Add tooltips for analysis buttons
     app.add_tooltip(
         button_container.winfo_children()[0],  # Time-Resolved Analysis button
-        "Display peak properties changes over time and throughput analysis"
+        "Display peak properties changes over time and throughput analysis.\n"
+        "Also applies any changes to the throughput interval setting."
     )
     app.add_tooltip(
         button_container.winfo_children()[1],  # Peak Property Correlations button
@@ -1640,24 +1632,25 @@ def create_peak_analysis_tab(app, tab_control):
         interval_entry,
         "Set the time window (in seconds) for throughput calculation.\n"
         "This controls the bin size for the 'peaks per X seconds' bar plot.\n"
-        "Default is 10 seconds."
+        "Default is 10 seconds.\n"
+        "Click 'Time Resolved Analysis' to apply changes."
     )
     app.add_tooltip(
         interval_slider,
         "Set the time window (in seconds) for throughput calculation.\n"
         "This controls the bin size for the 'peaks per X seconds' bar plot.\n"
-        "Default is 10 seconds."
+        "Default is 10 seconds.\n"
+        "Click 'Time Resolved Analysis' to apply changes."
     )
     
-    # Callback to update plot when interval changes
-    def on_interval_change(*args):
-        try:
-            val = float(app.throughput_interval.get())
-            if 1 <= val <= 100:
-                app.plot_data()
-        except Exception:
-            pass
-    app.throughput_interval.trace_add('write', lambda *args: on_interval_change())
+    # Note: Throughput interval changes are applied when clicking the Time Resolved Analysis button
+    
+    # Add tooltips for analysis buttons
+    app.add_tooltip(
+        button_container.winfo_children()[0],  # Time-Resolved Analysis button
+        "Display peak properties changes over time and throughput analysis.\n"
+        "Also applies any changes to the throughput interval setting."
+    )
 
 def create_double_peak_analysis_tab(app, tab_control):
     """Create the double peak analysis tab"""

@@ -315,7 +315,10 @@ def plot_data(app, profile_function=None):
             f"Prominence ratio threshold: {prominence_ratio:.2f}\n"
             f"Average peak area: {np.mean(areas) if len(areas) > 0 else 0:.2f} ± {np.std(areas) if len(areas) > 0 else 0:.2f}"
         )
-        app.update_results_summary(events=filtered_kept, peak_areas=areas, preview_text=preview_text)
+        
+        # Update the right panel results summary
+        if hasattr(app, 'results_summary'):
+            app.update_results_summary(events=filtered_kept, peak_areas=areas, preview_text=preview_text)
 
         app.preview_label.config(
             text="Peak analysis plot created successfully",
@@ -434,7 +437,6 @@ def plot_scatter(app, profile_function=None):
             print(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
         
         # Calculate peak properties
-        heights = app.filtered_signal[peaks]
         prominences = properties['prominences']
         widths = properties['widths']  # Width in samples
         widths_in_seconds = widths * rate  # Convert from samples to seconds
@@ -442,7 +444,6 @@ def plot_scatter(app, profile_function=None):
         
         # Calculate filtered peak properties if available
         if len(filtered_out_peaks) > 0:
-            filtered_heights = app.filtered_signal[filtered_out_peaks]
             filtered_prominences = filtered_out_properties['prominences']
             filtered_widths = filtered_out_properties['widths']
             filtered_widths_in_ms = filtered_widths * rate * 1000
@@ -477,57 +478,33 @@ def plot_scatter(app, profile_function=None):
         hist_edge_color = app.theme_manager.get_plot_color('patch.edgecolor')
 
         # Parameters for scatter plots
-        scatter_size = 5  # Base size for dots
-        scatter_alpha = 0.7  # Alpha for visibility
+        scatter_size = 4  # Base size for dots
+        scatter_alpha = 0.2  # Alpha for visibility
         
-        # Plot 1: Height vs Prominence (with prominence ratio line)
-        ax[0].scatter(heights, prominences, s=scatter_size, alpha=scatter_alpha, color=scatter_color, label='Kept Peaks')
+        # Plot 1: Prominence vs Width
+        ax[0].scatter(prominences, widths_in_ms, s=scatter_size, alpha=scatter_alpha, color=scatter_color, label='Kept Peaks')
         if show_filtered_peaks and len(filtered_out_peaks) > 0:
-            ax[0].scatter(filtered_heights, filtered_prominences, s=scatter_size, alpha=scatter_alpha, color=filtered_color, label='Filtered Peaks')
+            ax[0].scatter(filtered_prominences, filtered_widths_in_ms, s=scatter_size, alpha=scatter_alpha, color=filtered_color, label='Filtered Peaks')
             
-            # Draw prominence ratio threshold line
-            max_height = max(np.max(heights), np.max(filtered_heights))
-            x_values = np.linspace(0, max_height, 100)
-            y_values = x_values * prominence_ratio  # prominence = height * ratio
-            ax[0].plot(x_values, y_values, 'r--', alpha=0.7, label=f'Ratio={prominence_ratio:.2f}')
-        else:
-            max_height = np.max(heights)
-            x_values = np.linspace(0, max_height, 100)
-            y_values = x_values * prominence_ratio  # prominence = height * ratio
-            ax[0].plot(x_values, y_values, 'r--', alpha=0.7, label=f'Ratio={prominence_ratio:.2f}')
-            
-        ax[0].set_xlabel('Peak Height')
-        ax[0].set_ylabel('Peak Prominence')
-        ax[0].set_title('Height vs Prominence')
+        ax[0].set_xlabel('Peak Prominence')
+        ax[0].set_ylabel('Width (ms)')
+        ax[0].set_title('Prominence vs Width')
         ax[0].grid(True)
         ax[0].legend(fontsize=8)
         
-        # Plot 2: Width vs Height
-        if len(areas) > 0:
-            # Scale dot size by area
-            area_scaled = (areas / np.max(areas)) * 20 + 1  # Scale to 1-21 size range
-            ax[1].scatter(heights, widths_in_ms, s=area_scaled, alpha=scatter_alpha, color=scatter_color)
-        else:
-            ax[1].scatter(heights, widths_in_ms, s=scatter_size, alpha=scatter_alpha, color=scatter_color)
-            
-        if show_filtered_peaks and len(filtered_out_peaks) > 0:
-            if len(filtered_areas) > 0:
-                # Scale dot size by area, using the same scale as the main data
-                max_area = np.max(areas) if len(areas) > 0 else np.max(filtered_areas)
-                filtered_area_scaled = (filtered_areas / max_area) * 20 + 1
-                ax[1].scatter(filtered_heights, filtered_widths_in_ms, s=filtered_area_scaled, alpha=scatter_alpha, 
-                            color=filtered_color, label=f'Filtered Peaks ({len(filtered_out_peaks)})')
-            else:
-                ax[1].scatter(filtered_heights, filtered_widths_in_ms, s=scatter_size, alpha=scatter_alpha, 
-                            color=filtered_color, label=f'Filtered Peaks ({len(filtered_out_peaks)})')
+        # Plot 2: Prominence vs Area
+        ax[1].scatter(prominences, areas, s=scatter_size, alpha=scatter_alpha, color=scatter_color, label='Kept Peaks')
+        if show_filtered_peaks and len(filtered_out_peaks) > 0 and len(filtered_areas) > 0:
+            ax[1].scatter(filtered_prominences, filtered_areas, s=scatter_size, alpha=scatter_alpha, 
+                        color=filtered_color, label=f'Filtered Peaks ({len(filtered_out_peaks)})')
                 
-        ax[1].set_xlabel('Peak Height')
-        ax[1].set_ylabel('Width (ms)')
-        ax[1].set_title('Height vs Width')
+        ax[1].set_xlabel('Peak Prominence')
+        ax[1].set_ylabel('Area')
+        ax[1].set_title('Prominence vs Area')
         ax[1].grid(True)
         ax[1].legend(fontsize=8)
         
-        # Plot 3: Area vs Width
+        # Plot 3: Width vs Area
         ax[2].scatter(widths_in_ms, areas, s=scatter_size, alpha=scatter_alpha, color=scatter_color, label='Kept Peaks')
         if show_filtered_peaks and len(filtered_out_peaks) > 0 and len(filtered_areas) > 0:
             ax[2].scatter(filtered_widths_in_ms, filtered_areas, s=scatter_size, alpha=scatter_alpha, 
@@ -569,9 +546,13 @@ def plot_scatter(app, profile_function=None):
                   fontsize=8, verticalalignment='top', horizontalalignment='right')
         
         # Update all axes with correct scale
-        for axis in ax:
-            axis.set_xscale('log' if app.log_scale_enabled.get() else 'linear')
-            axis.set_yscale('log' if app.log_scale_enabled.get() else 'linear')
+        for i, axis in enumerate(ax):
+            if i < 3:  # Only apply log scale to the first three plots, not the width distribution
+                axis.set_xscale('log' if app.log_scale_enabled.get() else 'linear')
+                axis.set_yscale('log' if app.log_scale_enabled.get() else 'linear')
+            else:  # For the width distribution plot, force linear scale
+                axis.set_xscale('linear')
+                axis.set_yscale('linear')
         
         # Add main title with summary statistics
         total_peaks = len(peaks)
@@ -583,10 +564,6 @@ def plot_scatter(app, profile_function=None):
             + f' - Prominence Ratio: {prominence_ratio:.2f}'
         )
         new_figure.suptitle(summary_text, fontsize=12, y=0.98)
-        
-        # Add legend for dot sizes in Height vs Width plot
-        new_figure.text(0.02, 0.02, "Note: In the Height vs Width plot, dot sizes represent peak areas.", 
-                      fontsize=8, transform=new_figure.transFigure)
         
         # Apply theme standard styles (bg, grid, text)
         app.theme_manager.apply_plot_theme(new_figure, ax)

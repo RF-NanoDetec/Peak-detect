@@ -160,11 +160,12 @@ class PeakDetector:
     @profile_function
     def calculate_peak_areas(self, signal, window_extension=40):
         """
-        Calculate the area under each detected peak.
+        Calculate the area under each detected peak using trapezoidal integration.
         
         This method computes the area under each peak by integrating the signal
-        over a window around each peak. The window size is determined by the
-        peak width and can be extended by the window_extension parameter.
+        over a window around each peak using the trapezoidal rule. The window size 
+        is determined by the peak width and can be extended by the window_extension 
+        parameter.
         
         Parameters:
             signal (numpy.ndarray): The signal data to analyze
@@ -173,6 +174,8 @@ class PeakDetector:
                 
         Returns:
             numpy.ndarray: Array of calculated peak areas
+            numpy.ndarray: Array of start indices for each peak
+            numpy.ndarray: Array of end indices for each peak
             
         Raises:
             ValueError: If peaks have not been detected before calling this method
@@ -180,6 +183,7 @@ class PeakDetector:
         Notes:
             The results are also stored in the peaks_properties dictionary
             under the key 'areas'.
+            Uses numpy.trapz for accurate numerical integration.
         """
         if self.peaks_indices is None or self.peaks_properties is None:
             raise ValueError("No peaks detected. Run detect_peaks first.")
@@ -198,16 +202,6 @@ class PeakDetector:
             
             # Calculate area for each peak
             for i in range(events):
-                # Determine window boundaries
-                start_idx = max(0, peaks[i] - window[i])
-                end_idx = min(len(signal), peaks[i] + window[i])
-                
-                # Extract data within window
-                y_data = signal[start_idx:end_idx]
-                
-                # Find background level (minimum value in window)
-                background = np.min(y_data)
-                
                 # Get start and end indices from peak properties
                 st = int(self.peaks_properties["left_ips"][i])
                 en = int(self.peaks_properties["right_ips"][i])
@@ -216,15 +210,21 @@ class PeakDetector:
                 start[i] = st
                 end[i] = en
                 
-                # Calculate area as sum of signal minus background
-                peak_area[i] = np.sum(signal[st:en] - background)
+                # Extract signal segment for this peak
+                y_data = signal[st:en]
+                
+                # Find background level (minimum value in window)
+                background = np.min(y_data)
+                
+                # Calculate area using trapezoidal integration of signal minus background
+                peak_area[i] = np.trapz(y_data - background)
             
             # Store results
             self.peaks_properties['areas'] = peak_area
             self.peaks_properties['start_indices'] = start
             self.peaks_properties['end_indices'] = end
             
-            self.logger.info(f"Calculated {events} peak areas")
+            self.logger.info(f"Calculated {events} peak areas using trapezoidal integration")
             
             return peak_area, start, end
             

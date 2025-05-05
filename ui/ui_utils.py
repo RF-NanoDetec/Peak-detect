@@ -1066,10 +1066,19 @@ def take_screenshot_with_ui(app):
         
         return None 
 
-def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
+def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None, context="peak_analysis"):
     """
     Update the results summary text widget with analysis results.
-    This is a UI wrapper around the core update_results_summary function.
+    Now includes sections for different processing stages based on context or available data.
+
+    Args:
+        app: The main application instance.
+        events (int, optional): Number of events (e.g., peaks kept).
+        max_amp (float, optional): Maximum amplitude detected.
+        peak_areas (list/np.ndarray, optional): Calculated peak areas.
+        peak_intervals (float, optional): Total peak intervals.
+        preview_text (str, optional): Text for the preview label.
+        context (str, optional): Hint about which process triggered the update (e.g., 'data_loading', 'preprocessing', 'peak_detection', 'peak_analysis', 'double_peaks'). Defaults to 'peak_analysis'.
     """
     try:
         # Only update preview label if it exists
@@ -1086,142 +1095,256 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
                     text=f"Calculated peak areas",
                     foreground=app.theme_manager.get_color('success')
                 )
-        
-        # Call the core update_results_summary function to update the text widget
+
+        # Update the core results_summary text widget if it exists
         if hasattr(app, 'results_summary'):
-            # Format important information in sections
-            additional_info = ""
-            
-            # === FILTERING INFORMATION ===
-            filtering_info = "=== FILTERING INFORMATION ===\n"
-            
-            # Add prominence ratio threshold info if available
-            if hasattr(app, 'prominence_ratio'):
-                prominence_ratio = app.prominence_ratio.get()
-                filtering_info += f"Prominence Ratio Threshold: {prominence_ratio:.2f}\n"
-            
-            # Add filter mode information if available
-            if hasattr(app, 'filter_enabled'):
-                filter_mode = "Enabled" if app.filter_enabled.get() else "Disabled"
-                filtering_info += f"Signal Filtering: {filter_mode}\n"
-                
-                if app.filter_enabled.get() and hasattr(app, 'cutoff_value'):
-                    filtering_info += f"Cutoff Frequency: {app.cutoff_value.get()} Hz\n"
-            
-            # Add filtered peaks count and percentage if available
-            if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') and app.peak_detector.all_peaks_count > 0:
-                total_peaks = app.peak_detector.all_peaks_count
-                filtered_out = total_peaks - events if events is not None else 0
-                filtered_percentage = (filtered_out / total_peaks * 100) if total_peaks > 0 else 0
-                
-                filtering_info += f"Total Peaks Detected: {total_peaks}\n"
-                filtering_info += f"Peaks Filtered Out: {filtered_out} ({filtered_percentage:.1f}%)\n"
-                filtering_info += f"Peaks Retained: {events} ({100-filtered_percentage:.1f}%)\n"
-            
-            additional_info += filtering_info + "\n"
-            
+            summary_content = ""
+
+            # === DATA LOADING ===
+            # Display if data handler exists and has file info
+            if hasattr(app, 'data_handler') and hasattr(app.data_handler, 'file_path') and app.data_handler.file_path:
+                data_info = "=== DATA LOADING ===\n"
+                data_info += f"File: {os.path.basename(app.data_handler.file_path)}\n"
+                if hasattr(app.data_handler, 'raw_data') and app.data_handler.raw_data is not None:
+                    data_info += f"Data Points: {len(app.data_handler.raw_data)}\n"
+                if hasattr(app, 't_value') and app.t_value is not None and len(app.t_value) > 1:
+                    duration_seconds = app.t_value[-1] - app.t_value[0]
+                    data_info += f"Duration: {duration_seconds:.2f} s ({duration_seconds/60:.2f} min)\n"
+                summary_content += data_info + "\n"
+
+            # === PREPROCESSING ===
+            # Display if preprocessing parameters are set
+            preprocessing_info = ""
+            if hasattr(app, 'baseline_correction_method') and app.baseline_correction_method.get() != 'None':
+                 if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n"
+                 preprocessing_info += f"Baseline Correction: {app.baseline_correction_method.get()}\n"
+                 # Add specific baseline parameters if available (e.g., window size)
+                 if app.baseline_correction_method.get() == 'Rolling Ball' and hasattr(app, 'baseline_window_size'):
+                     preprocessing_info += f"  Window Size: {app.baseline_window_size.get()}\n"
+                 elif app.baseline_correction_method.get() == 'ALS' and hasattr(app, 'als_lambda') and hasattr(app, 'als_p'):
+                     preprocessing_info += f"  Lambda: {app.als_lambda.get()}, P: {app.als_p.get()}\n"
+
+
+            if hasattr(app, 'filter_enabled') and app.filter_enabled.get():
+                if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n"
+                filtering_mode = app.filter_mode.get() if hasattr(app, 'filter_mode') else "Unknown" # Assuming filter_mode exists
+                cutoff = app.cutoff_value.get() if hasattr(app, 'cutoff_value') else "N/A"
+                filter_order = app.filter_order.get() if hasattr(app, 'filter_order') else "N/A" # Assuming filter_order exists
+                preprocessing_info += f"Signal Filtering: Enabled ({filtering_mode})\n"
+                preprocessing_info += f"  Cutoff Frequency: {cutoff} Hz\n"
+                preprocessing_info += f"  Filter Order: {filter_order}\n"
+            elif hasattr(app, 'filter_enabled') and not app.filter_enabled.get():
+                 if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n"
+                 preprocessing_info += f"Signal Filtering: Disabled\n"
+
+            if preprocessing_info:
+                summary_content += preprocessing_info + "\n"
+
+
             # === DETECTION PARAMETERS ===
-            if hasattr(app, 'height_lim') or hasattr(app, 'distance') or hasattr(app, 'rel_height'):
+            # Display if detection parameters are available
+            if hasattr(app, 'height_lim') or hasattr(app, 'distance') or hasattr(app, 'rel_height') or hasattr(app, 'width_p'):
                 parameters_info = "=== DETECTION PARAMETERS ===\n"
-                
                 if hasattr(app, 'height_lim'):
                     parameters_info += f"Height Threshold: {app.height_lim.get()}\n"
-                    
                 if hasattr(app, 'distance'):
                     parameters_info += f"Minimum Distance: {app.distance.get()} samples\n"
-                    
                 if hasattr(app, 'rel_height'):
                     parameters_info += f"Relative Height: {app.rel_height.get()}\n"
-                    
                 if hasattr(app, 'width_p'):
-                    # Get the width range and convert to ms if possible
                     width_range = app.width_p.get()
-                    
+                    time_res_ms = app.time_resolution.get() * 1000 if hasattr(app, 'time_resolution') else None
                     try:
-                        # Try to convert to ms values for better readability
-                        width_values = [float(w) for w in width_range.split(',')]
-                        parameters_info += f"Width Range: {width_values[0]}-{width_values[1]} ms\n"
+                        # Convert samples (from entry) to ms if possible
+                        width_samples = [int(w.strip()) for w in width_range.split(',')]
+                        if time_res_ms:
+                             parameters_info += f"Width Range: {width_samples[0] * time_res_ms:.2f} - {width_samples[1] * time_res_ms:.2f} ms ({width_samples[0]}-{width_samples[1]} samples)\n"
+                        else:
+                             parameters_info += f"Width Range: {width_samples[0]} - {width_samples[1]} samples\n"
                     except:
-                        # Fall back to the raw string if conversion fails
-                        parameters_info += f"Width Range: {width_range}\n"
-                
+                        parameters_info += f"Width Range: {width_range} (raw samples)\n" # Fallback
                 if hasattr(app, 'time_resolution'):
-                    time_res_ms = app.time_resolution.get() * 1000  # Convert to ms
-                    parameters_info += f"Time Resolution: {time_res_ms:.2f} ms\n"
-                
-                additional_info += parameters_info + "\n"
-            
+                    time_res_ms = app.time_resolution.get() * 1000
+                    parameters_info += f"Time Resolution: {time_res_ms:.4f} ms/sample\n"
+
+                summary_content += parameters_info + "\n"
+
+            # === PEAK ANALYSIS (FILTERING) ===
+            # Display if prominence ratio or filter stats are available
+            filtering_analysis_info = ""
+            if hasattr(app, 'prominence_ratio'):
+                 if not filtering_analysis_info: filtering_analysis_info = "=== PEAK ANALYSIS (FILTERING) ===\n"
+                 prominence_ratio = app.prominence_ratio.get()
+                 filtering_analysis_info += f"Prominence Ratio Threshold: {prominence_ratio:.2f}\n"
+
+            # Use peak detector's total count and passed 'events' (kept count) for stats
+            if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') and app.peak_detector.all_peaks_count is not None:
+                total_peaks = app.peak_detector.all_peaks_count
+                if total_peaks >= 0: # Ensure we have a valid count
+                    if not filtering_analysis_info: filtering_analysis_info = "=== PEAK ANALYSIS (FILTERING) ===\n"
+                    filtered_kept = events if events is not None else total_peaks # Assume all kept if 'events' not passed
+                    filtered_out = total_peaks - filtered_kept
+                    filtered_percentage = (filtered_out / total_peaks * 100) if total_peaks > 0 else 0
+                    kept_percentage = 100 - filtered_percentage
+
+                    filtering_analysis_info += f"Total Peaks Detected (Pre-Filter): {total_peaks}\n"
+                    filtering_analysis_info += f"Peaks Filtered Out (Prominence): {filtered_out} ({filtered_percentage:.1f}%)\n"
+                    filtering_analysis_info += f"Peaks Retained (Post-Filter): {filtered_kept} ({kept_percentage:.1f}%)\n"
+
+            if filtering_analysis_info:
+                 summary_content += filtering_analysis_info + "\n"
+
+            # === DOUBLE PEAK ANALYSIS ===
+            # Display if double peak results are available
+            if hasattr(app, 'double_peak_results'): # Assuming results are stored here
+                 double_peak_info = "=== DOUBLE PEAK ANALYSIS ===\n"
+                 results = app.double_peak_results # e.g., a dict {'analyzed': X, 'double_peaks': Y, 'min_dist': A, 'max_dist': B}
+                 analyzed = results.get('analyzed', 'N/A')
+                 double_peaks = results.get('double_peaks', 'N/A')
+                 min_dist = results.get('min_dist_ms', 'N/A')
+                 max_dist = results.get('max_dist_ms', 'N/A')
+                 percentage = (double_peaks / analyzed * 100) if isinstance(analyzed, int) and isinstance(double_peaks, int) and analyzed > 0 else 0
+
+                 double_peak_info += f"Distance Range Analyzed: {min_dist} - {max_dist} ms\n"
+                 double_peak_info += f"Peak Pairs Analyzed: {analyzed}\n"
+                 double_peak_info += f"Double Peaks Found: {double_peaks} ({percentage:.1f}%)\n"
+                 summary_content += double_peak_info + "\n"
+
+
             # === SIGNAL INFORMATION ===
+            # Display if filtered signal is available
             if hasattr(app, 'filtered_signal') and app.filtered_signal is not None:
                 signal_info = "=== SIGNAL INFORMATION ===\n"
-                
-                # Basic signal statistics
+                # ... (keep existing signal info logic: mean, median, std, range, snr, length) ...
                 signal = app.filtered_signal
                 signal_mean = np.mean(signal)
                 signal_median = np.median(signal)
                 signal_std = np.std(signal)
                 signal_min = np.min(signal)
                 signal_max = np.max(signal)
-                
+
                 signal_info += f"Signal Mean: {signal_mean:.2f}\n"
                 signal_info += f"Signal Median: {signal_median:.2f}\n"
                 signal_info += f"Signal Standard Deviation: {signal_std:.2f}\n"
                 signal_info += f"Signal Range: {signal_min:.2f} - {signal_max:.2f}\n"
-                
+
                 # Signal-to-noise estimate
                 if signal_std > 0:
-                    snr = (signal_max - signal_mean) / signal_std
-                    signal_info += f"Estimated Signal-to-Noise Ratio: {snr:.2f}\n"
-                
+                    # Basic SNR: Ratio of max deviation from mean to std dev
+                    snr_est = (signal_max - signal_mean) / signal_std
+                    # Alternative: Ratio of mean signal to std dev (if signal is mostly positive)
+                    # snr_alt = signal_mean / signal_std if signal_mean > 0 else "N/A"
+                    signal_info += f"Estimated Signal-to-Noise Ratio: {snr_est:.2f}\n"
+
                 signal_info += f"Signal Length: {len(signal)} samples\n"
-                
-                # Calculate signal duration if time values are available
-                if hasattr(app, 't_value') and app.t_value is not None:
-                    duration = (app.t_value[-1] - app.t_value[0]) / 60  # Convert to minutes
-                    signal_info += f"Signal Duration: {duration:.2f} minutes\n"
-                
-                additional_info += signal_info + "\n"
-            
+
+                # Display duration from t_value if available (already calculated in Data Loading section if present)
+                if not ('Duration:' in summary_content) and hasattr(app, 't_value') and app.t_value is not None and len(app.t_value) > 1:
+                     duration_seconds = app.t_value[-1] - app.t_value[0]
+                     signal_info += f"Signal Duration: {duration_seconds:.2f} s ({duration_seconds/60:.2f} min)\n"
+
+                summary_content += signal_info + "\n"
+
+
+            # === PEAK STATISTICS (Post-Filter) ===
+            # Calculate and display stats for the *retained* peaks
+            peak_stats_info = ""
+            retained_peaks_count = events if events is not None else (app.peak_detector.all_peaks_count if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') else 0)
+
+            if retained_peaks_count > 0:
+                 peak_stats_info = f"=== PEAK STATISTICS (Retained: {retained_peaks_count}) ===\n"
+
+                 # Heights (Prominences) - assuming app.peak_heights corresponds to retained peaks
+                 if hasattr(app, 'peak_heights') and app.peak_heights is not None and len(app.peak_heights) == retained_peaks_count:
+                     heights = app.peak_heights
+                     peak_stats_info += f"Peak Height (Mean ± SD): {np.mean(heights):.2f} ± {np.std(heights):.2f}\n"
+                     peak_stats_info += f"Peak Height (Median): {np.median(heights):.2f}\n"
+                     peak_stats_info += f"Peak Height (Min/Max): {np.min(heights):.2f} / {np.max(heights):.2f}\n"
+
+                 # Widths - assuming app.peak_widths corresponds to retained peaks
+                 if hasattr(app, 'peak_widths') and app.peak_widths is not None and len(app.peak_widths) == retained_peaks_count:
+                     widths_samples = app.peak_widths
+                     time_res = app.time_resolution.get() if hasattr(app, 'time_resolution') else None
+                     if time_res:
+                         widths_ms = widths_samples * time_res * 1000
+                         peak_stats_info += f"Peak Width (Mean ± SD): {np.mean(widths_ms):.2f} ± {np.std(widths_ms):.2f} ms\n"
+                         peak_stats_info += f"Peak Width (Median): {np.median(widths_ms):.2f} ms\n"
+                         peak_stats_info += f"Peak Width (Min/Max): {np.min(widths_ms):.2f} / {np.max(widths_ms):.2f} ms\n"
+                     else: # Fallback to samples if no time resolution
+                         peak_stats_info += f"Peak Width (Mean ± SD): {np.mean(widths_samples):.1f} ± {np.std(widths_samples):.1f} samples\n"
+                         peak_stats_info += f"Peak Width (Median): {np.median(widths_samples):.1f} samples\n"
+
+                 # Areas - use passed peak_areas if available and matches count
+                 if peak_areas is not None and hasattr(peak_areas, '__len__') and len(peak_areas) == retained_peaks_count:
+                     areas = peak_areas
+                     peak_stats_info += f"Peak Area (Mean ± SD): {np.mean(areas):.2f} ± {np.std(areas):.2f}\n"
+                     peak_stats_info += f"Peak Area (Median): {np.median(areas):.2f}\n"
+                 elif hasattr(app, 'peak_areas') and app.peak_areas is not None and len(app.peak_areas) == retained_peaks_count: # Check if app has areas for retained peaks
+                     areas = app.peak_areas
+                     peak_stats_info += f"Peak Area (Mean ± SD): {np.mean(areas):.2f} ± {np.std(areas):.2f}\n"
+                     peak_stats_info += f"Peak Area (Median): {np.median(areas):.2f}\n"
+
+
+                 # Intervals - calculated from retained peak times
+                 if hasattr(app, 'peaks') and app.peaks is not None and len(app.peaks) == retained_peaks_count and hasattr(app, 't_value'):
+                     if len(app.peaks) > 1:
+                         retained_peak_times = app.t_value[app.peaks] # Assumes app.peaks stores indices of retained peaks
+                         intervals_sec = np.diff(retained_peak_times)
+                         peak_stats_info += f"Peak Interval (Mean ± SD): {np.mean(intervals_sec):.3f} ± {np.std(intervals_sec):.3f} s\n"
+                         peak_stats_info += f"Peak Interval (Median): {np.median(intervals_sec):.3f} s\n"
+                         # Calculate Throughput (Events per Second)
+                         if duration_seconds > 0:
+                            throughput_hz = retained_peaks_count / duration_seconds
+                            peak_stats_info += f"Throughput: {throughput_hz:.2f} peaks/s\n"
+
+            if peak_stats_info:
+                summary_content += peak_stats_info + "\n"
+
             # === METADATA ===
             if hasattr(app, 'protocol_info') and app.protocol_info:
                 metadata_info = "=== METADATA ===\n"
-                
-                # Order metadata by importance
+                # ... (keep existing metadata logic) ...
                 important_fields = [
-                    'sample_number', 'particle', 'concentration', 
+                    'sample_number', 'particle', 'concentration',
                     'buffer', 'buffer_concentration', 'measurement_date',
                     'start_time', 'setup', 'laser_power', 'stamp', 'notes'
                 ]
-                
                 # First add important fields in order
                 for field in important_fields:
                     if field in app.protocol_info and app.protocol_info[field]:
                         field_name = field.replace('_', ' ').title()
                         metadata_info += f"{field_name}: {app.protocol_info[field]}\n"
-                
                 # Then add any remaining fields
                 for key, value in app.protocol_info.items():
-                    if (key not in important_fields and 
-                        key not in ['file_path', 'raw_data'] and 
-                        value):  # Skip large or private items and already added items
+                    if (key not in important_fields and
+                        key not in ['file_path', 'raw_data'] and # Skip large/internal items
+                        value):
                         field_name = key.replace('_', ' ').title()
                         metadata_info += f"{field_name}: {value}\n"
-                
-                additional_info += metadata_info
-            
-            # Call the core function with the organized information
-            update_results_summary(
-                app, 
-                events=events, 
-                max_amp=max_amp, 
-                peak_areas=peak_areas, 
-                peak_intervals=peak_intervals, 
-                preview_text=additional_info
-            )
-        
+
+                summary_content += metadata_info # No extra newline needed if it's the last section
+
+            # Update the actual Tkinter Text widget
+            app.results_summary.config(state=tk.NORMAL)
+            app.results_summary.delete(1.0, tk.END)
+            app.results_summary.insert(tk.END, summary_content)
+            app.results_summary.config(state=tk.DISABLED)
+
         return True
     except Exception as e:
-        app.show_error("Error updating results summary", str(e))
+        # Add import for traceback if not already present
+        import traceback
+        error_details = traceback.format_exc()
+        app.show_error("Error updating results summary", f"{str(e)}\n\nDetails:\n{error_details}")
+        # Attempt to update summary with error message
+        if hasattr(app, 'results_summary'):
+            try:
+                app.results_summary.config(state=tk.NORMAL)
+                app.results_summary.delete(1.0, tk.END)
+                app.results_summary.insert(tk.END, f"Error updating summary:\n{str(e)}")
+                app.results_summary.config(state=tk.DISABLED)
+            except Exception as E:
+                print(f"Further error setting error message in results summary: {E}") # Log fallback
         return False
 
 def validate_float_with_ui(app, value):
