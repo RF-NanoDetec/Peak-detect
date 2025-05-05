@@ -31,7 +31,7 @@ from tkinter import filedialog, messagebox, ttk, Tcl
 from tkinter.scrolledtext import ScrolledText
 import sys
 from PIL import Image, ImageTk
-from app_state import AppState
+
 # Local imports
 from config.settings import Config
 from config import resource_path, APP_VERSION
@@ -45,7 +45,7 @@ from ui.ui_utils import (
     update_progress_bar_with_ui,
     take_screenshot_with_ui,
     show_error_with_ui,
-    add_tooltip, # Import the plain add_tooltip function
+    add_tooltip,
     show_documentation_with_ui,
     show_about_dialog_with_ui,
     on_file_mode_change_with_ui,
@@ -59,8 +59,7 @@ from core.data_analysis import (
     calculate_peak_areas as calculate_peak_areas_function,
     calculate_peak_intervals,
     calculate_auto_threshold,
-    analyze_time_resolved as analyze_time_resolved_function,
-    calculate_auto_cutoff # Import the new function
+    analyze_time_resolved as analyze_time_resolved_function
 )
 from core.data_utils import (
     decimate_for_plot as decimate_for_plot_function,
@@ -84,7 +83,7 @@ from ui.status_indicator import StatusIndicator
 # Import all plotting functions directly
 from plotting.raw_data import plot_raw_data as plot_raw_data_function
 from plotting.data_processing import start_analysis as start_analysis_function
-from plotting.peak_visualization import run_peak_detection as plot_detected_peaks_function # Rename import
+from plotting.peak_visualization import run_peak_detection as run_peak_detection_function
 from plotting.peak_visualization import plot_filtered_peaks as plot_filtered_peaks_function
 from plotting.peak_visualization import show_next_peaks as show_next_peaks_function
 from plotting.analysis_visualization import plot_data as plot_data_function
@@ -169,69 +168,81 @@ class Application(tk.Tk):
         # Initialize figure and canvas as None
         self.canvas = None
 
-        # --- State Initialization moved to AppState ---
-        # (Deleting the large block of self.variable = tk.Var() initializations)
+        self.file_path = tk.StringVar()
+        self.start_time = tk.StringVar(value="0:00")
+        self.height_lim = tk.DoubleVar(value=20)
+        self.distance = tk.IntVar(value=5)  # Default value for minimum distance between peaks
+        self.rel_height = tk.DoubleVar(value=0.8)  # Default value for relative height
+        self.width_p = tk.StringVar(value="0.1,50")  # Default value for width range
+        self.time_resolution = tk.DoubleVar(value=1e-4)  # Time resolution factor (default: 0.1ms)
+        self.cutoff_value = tk.DoubleVar(value=0)  # Default 0 means auto-detect
+        self.filter_enabled = tk.BooleanVar(value=True)  # Toggle for filtering (True=enabled)
+        self.sigma_multiplier = tk.DoubleVar(value=5.0)  # Sigma multiplier for auto threshold detection (1-10)
+        self.filter_bandwidth = tk.DoubleVar(value=0)  # Store the current filter bandwidth
+        self.filtered_signal = None
+        self.rect_selector = None
 
-        # --- Variables remaining in Application ---
-        self.rect_selector = None # For plot interaction
-        self.tab_figures = {}  # Dictionary to store figures for each tab
-        # Initialize data plot attributes (likely related to plot management, keep here for now)
+        # Protocol Variables
+        self.protocol_start_time = tk.StringVar()
+        self.protocol_id_filter = tk.StringVar()  # New: ID filter
+        self.protocol_buffer = tk.StringVar()     # New: Buffer
+        self.protocol_buffer_concentration = tk.StringVar()  # New: Buffer concentration
+        self.protocol_measurement_date = tk.StringVar()  # New: Measurement date
+        self.protocol_sample_number = tk.StringVar()  # New: Sample number
+        self.protocol_particle = tk.StringVar()
+        self.protocol_concentration = tk.StringVar()
+        self.protocol_stamp = tk.StringVar()
+        self.protocol_laser_power = tk.StringVar()
+        self.protocol_setup = tk.StringVar()
+        self.protocol_notes = tk.StringVar()
+
+        # Add file mode selection
+        self.file_mode = tk.StringVar(value="single")  # "single" for Standard Mode, "batch" for Timestamp Mode
+        self.batch_timestamps = tk.StringVar()
+        
+        # Add double peak analysis toggle
+        self.double_peak_analysis = tk.StringVar(value="0")  # "0" for normal, "1" for double peak
+
+        # Add double peak analysis parameters
+        self.double_peak_min_distance = tk.DoubleVar(value=0.001)  # 1 ms
+        self.double_peak_max_distance = tk.DoubleVar(value=0.010)  # 10 ms
+        self.double_peak_min_amp_ratio = tk.DoubleVar(value=0.1)   # 10%
+        self.double_peak_max_amp_ratio = tk.DoubleVar(value=5.0)   # 500%
+        self.double_peak_min_width_ratio = tk.DoubleVar(value=0.1) # 10%
+        self.double_peak_max_width_ratio = tk.DoubleVar(value=5.0) # 500%
+        
+        # Add scale mode tracking
+        self.log_scale_enabled = tk.BooleanVar(value=True)  # True for logarithmic, False for linear
+        
+        # Variables for double peak analysis results
+        self.double_peaks = None
+        self.current_double_peak_page = 0
+
+        # Add loaded files tracking
+        self.loaded_files = []
+        
+        # Add a specific entry for file order in protocol
+        self.protocol_files = tk.StringVar()
+        
+        # Add throughput interval parameter for time-resolved analysis
+        self.throughput_interval = tk.DoubleVar(value=10.0)  # Default 10 seconds, adjustable 1-100
+        
+        # Create the menu bar
+        self.menu_bar = create_menu_bar(self)
+
+        self.create_widgets()
+        self.blank_tab_exists = True  # Track if the blank tab exists
+
+        # Initialize data plot attributes
         self.data_figure = None
         self.data_canvas = None
         self.data_original_xlims = None
         self.data_original_ylims = None
-        self.blank_tab_exists = True # Track if the blank tab exists
-        # Peak detector instance
-        self.peak_detector = PeakDetector(logger=self.logger)
-        # --- End Variables remaining in Application ---
 
-        # Instantiate the application state model
-        self.state = AppState()
-
-        # Define callbacks for the menu bar
-        menu_callbacks = {
-            'browse_file': self.browse_file,
-            'save_peak_info': self.save_peak_information_to_csv,
-            'export_plot': self.export_plot,
-            'take_screenshot': self.take_screenshot,
-            'quit': self.quit,
-            'reset_state': self.reset_application_state,
-            'plot_raw_data': self.plot_raw_data,
-            'start_analysis': self.start_analysis,
-            'run_peak_detection': self.run_peak_detection,
-            'plot_data': self.plot_data,
-            'plot_scatter': self.plot_scatter,
-            'toggle_theme': self.toggle_theme,
-            'calc_auto_threshold': self.calculate_auto_threshold,
-            'calc_auto_cutoff': self.calculate_auto_cutoff_frequency,
-            'plot_filtered_peaks': self.plot_filtered_peaks,
-            'show_next_peaks': self.show_next_peaks,
-            'show_documentation': self.show_documentation,
-            'show_about': self.show_about_dialog,
-            # Add missing callbacks used by components
-            'add_tooltip': add_tooltip, # Use the imported plain function
-            'show_tooltip_popup': self.show_tooltip_popup,
-            'on_file_mode_change': self.on_file_mode_change,
-            'on_double_peak_mode_change': self.on_double_peak_mode_change,
-            'analyze_double_peaks': self.analyze_double_peaks, # Used in double peak tab
-            'show_double_peaks_grid': self.show_double_peaks_grid, # Used in double peak tab
-            'save_double_peak_info': self.save_double_peak_information_to_csv, # Used in double peak tab
-            'show_prev_double_peaks_page': self.show_prev_double_peaks_page, # Used in double peak tab
-            'show_next_double_peaks_page': self.show_next_double_peaks_page, # Used in double peak tab
-            'toggle_filtered_peaks_visibility': self.toggle_filtered_peaks_visibility, # Used in analysis tab
-            'on_apply_prominence_ratio': self.on_apply_prominence_ratio # Used in analysis tab
-        }
-        self.menu_callbacks = menu_callbacks # Store for use in create_widgets
-
-        # Pass self (as parent window), callbacks, and current theme name
-        self.menu_bar = create_menu_bar(self, menu_callbacks, self.theme_manager.current_theme)
-
-        self.create_widgets()
-        # self.blank_tab_exists = True # Moved earlier
-
-        # self.tab_figures = {} # Moved earlier
+        self.tab_figures = {}  # Dictionary to store figures for each tab
         
-        # self.peak_detector = PeakDetector(logger=self.logger) # Moved earlier
+        # Initialize the PeakDetector
+        self.peak_detector = PeakDetector(logger=self.logger)
         
         # Set icon and window title
         self.iconbitmap(self.get_icon_path())
@@ -299,7 +310,7 @@ class Application(tk.Tk):
         Wrapper around the core.data_analysis.calculate_auto_threshold function.
         This method handles the UI updates and error handling for the threshold calculation.
         """
-        if self.state.filtered_signal is None:
+        if self.filtered_signal is None:
             self.preview_label.config(
                 text="No filtered signal available. Please run analysis first.", 
                 foreground=self.theme_manager.get_color('error')
@@ -308,14 +319,14 @@ class Application(tk.Tk):
             self.status_indicator.set_text("No data available")
             return None
             
-        # Get the current sigma multiplier value from the state
-        sigma_multiplier = self.state.sigma_multiplier.get()
+        # Get the current sigma multiplier value from the slider
+        sigma_multiplier = self.sigma_multiplier.get()
         
         # Use the core module function with current sigma value
-        suggested_threshold = calculate_auto_threshold(self.state.filtered_signal, sigma_multiplier=sigma_multiplier)
+        suggested_threshold = calculate_auto_threshold(self.filtered_signal, sigma_multiplier=sigma_multiplier)
         
-        # Update the UI component (state variable)
-        self.state.height_lim.set(suggested_threshold)
+        # Update the UI component
+        self.height_lim.set(suggested_threshold)
         
         # Update status with the sigma value used
         self.preview_label.config(
@@ -333,12 +344,15 @@ class Application(tk.Tk):
     )
     def calculate_auto_cutoff_frequency(self):
         """
-        UI Wrapper for core.data_analysis.calculate_auto_cutoff.
-        Calculates cutoff based on signal, updates UI state and labels.
+        Calculate an appropriate cutoff frequency based on signal characteristics.
+        
+        This method finds the highest signal value and uses 70% of that value as a 
+        threshold for determining the appropriate cutoff frequency. This approach
+        ensures that the filter preserves the most important peaks while removing noise.
         """
-        if self.state.x_value is None or self.state.time_resolution.get() <= 0:
+        if self.x_value is None:
             self.preview_label.config(
-                text="No data or invalid time resolution. Please load data and set dwell time.",
+                text="No data available. Please load a file first.", 
                 foreground=self.theme_manager.get_color('error')
             )
             self.status_indicator.set_state('warning')
@@ -346,25 +360,59 @@ class Application(tk.Tk):
             return None
         
         try:
-            # Call the core function
-            suggested_cutoff = calculate_auto_cutoff(
-                signal_data=self.state.x_value,
-                time_resolution=self.state.time_resolution.get()
-            )
+            print("DEBUG: Starting calculate_auto_cutoff_frequency")
             
-            # Update the cutoff value in GUI state
-            self.state.cutoff_value.set(suggested_cutoff)
+            # Get time resolution
+            try:
+                time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
+                print(f"DEBUG: Successfully retrieved time_resolution: {time_res}")
+            except Exception as e:
+                print(f"DEBUG: Error getting time_resolution: {str(e)}")
+                print(f"DEBUG: Falling back to default value 0.0001")
+                time_res = 0.0001  # Default fallback value
+            
+            # Calculate sampling rate
+            fs = 1 / time_res
+            print(f"DEBUG: Calculated sampling rate (fs): {fs} Hz from time_res: {time_res}")
+            
+            # Find the highest signal value and calculate 70% threshold
+            signal_max = np.max(self.x_value)
+            threshold = signal_max * 0.7  # 70% of max value (30% below max)
+            print(f"DEBUG: Maximum signal value: {signal_max}")
+            print(f"DEBUG: Using 70% threshold: {threshold}")
+            
+            # Detect peaks above the 70% threshold to measure their widths
+            peaks, _ = find_peaks(self.x_value, height=threshold)
+            
+            if len(peaks) == 0:
+                print("DEBUG: No peaks found above 70% threshold, using default cutoff")
+                suggested_cutoff = 10.0  # Default cutoff if no peaks found
+            else:
+                print(f"DEBUG: Found {len(peaks)} peaks above 70% threshold")
+                
+                # Use the existing core functions but with our calculated threshold
+                # instead of the big_counts and normalization_factor parameters
+                suggested_cutoff = calculate_lowpass_cutoff(
+                    self.x_value, fs, threshold, 1.0, time_resolution=time_res
+                )
+            
+            print(f"DEBUG: Calculated cutoff frequency: {suggested_cutoff} Hz")
+            
+            # Update the cutoff value in GUI
+            self.cutoff_value.set(suggested_cutoff)
             
             # Custom success message with the calculated value
             self.preview_label.config(
-                text=f"Auto cutoff frequency set to {suggested_cutoff:.1f} Hz",
+                text=f"Cutoff frequency set to {suggested_cutoff:.1f} Hz (using 70% of max signal)",
                 foreground=self.theme_manager.get_color('success')
             )
             
             return suggested_cutoff
             
         except Exception as e:
-            # Error is logged within calculate_auto_cutoff, just update UI here
+            print(f"DEBUG: Exception in calculate_auto_cutoff_frequency: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.show_error("Error calculating cutoff frequency", str(e))
             return None
 
@@ -381,73 +429,15 @@ class Application(tk.Tk):
         # Configure rows - only one row now since results summary is on the right
         main_frame.rowconfigure(0, weight=1)  # All elements share the same row
         
-        # Define callbacks for the control panel tabs (subset of menu_callbacks might be sufficient)
-        # For now, let's reuse menu_callbacks, but could refine later
-        control_callbacks = self.menu_callbacks # Reuse callbacks defined in __init__
-        
-        # Create left control panel - Pass necessary args
-        # Capture the returned dictionary of widgets
-        control_panel_widgets = create_control_panel(
-            main_frame, 
-            self.state, 
-            self.theme_manager, 
-            control_callbacks, 
-            self.status_indicator_class
-        )
-        
-        # Assign returned widgets to self attributes
-        control_frame = control_panel_widgets["frame"]
-        self.status_indicator = control_panel_widgets["status_indicator"]
-        self.tab_control = control_panel_widgets["tab_control"]
-        self.progress = control_panel_widgets["progress_bar"] 
-        self.preview_label = control_panel_widgets["preview_label"]
-        
+        # Create left control panel
+        control_frame = create_control_panel(self, main_frame)
         control_frame.grid(row=0, column=0, sticky="nsew")
         
         # Create preview frame with plot tabs (center)
-        # Pass necessary args and capture returned widgets
-        preview_frame_widgets = create_preview_frame(
-            main_frame, 
-            self.theme_manager,
-            self.menu_callbacks # Reusing menu callbacks, ensure 'add_tooltip' is included
-            )
-        # preview_frame = create_preview_frame(self, main_frame)
-        preview_frame = preview_frame_widgets["frame"]
-        self.plot_tab_control = preview_frame_widgets["plot_tab_control"]
-        self.blank_tab = preview_frame_widgets["blank_tab"]
-        
+        preview_frame = create_preview_frame(self, main_frame)
         preview_frame.grid(row=0, column=1, sticky="nsew")
         
-        # === Assign widgets returned by tab creation functions via control_panel_widgets ===
-        peak_detection_widgets = control_panel_widgets.get("peak_detection_widgets")
-        if peak_detection_widgets:
-            self.threshold_diagram_canvas = peak_detection_widgets.get("threshold_diagram_canvas")
-            self.sigma_slider = peak_detection_widgets.get("sigma_slider")
-            self.manual_diagram_canvas = peak_detection_widgets.get("manual_diagram_canvas")
-            self.distance_slider = peak_detection_widgets.get("distance_slider")
-            self.rel_height_slider = peak_detection_widgets.get("rel_height_slider")
-        else:
-            # Initialize to None if the widgets weren't returned (e.g., error during creation)
-            self.threshold_diagram_canvas = None
-            self.sigma_slider = None
-            self.manual_diagram_canvas = None
-            self.distance_slider = None
-            self.rel_height_slider = None
-
-        double_peak_widgets = control_panel_widgets.get("double_peak_widgets")
-        if double_peak_widgets: # This dict might be None if the tab wasn't created
-            self.amp_hist_canvas = double_peak_widgets.get("amp_hist_canvas")
-            self.amp_hist_ax = double_peak_widgets.get("amp_hist_ax")
-            self.width_hist_canvas = double_peak_widgets.get("width_hist_canvas")
-            self.width_hist_ax = double_peak_widgets.get("width_hist_ax")
-        else:
-            # Initialize to None if the double peak tab wasn't created
-            self.amp_hist_canvas = None
-            self.amp_hist_ax = None
-            self.width_hist_canvas = None
-            self.width_hist_ax = None
- 
-        # Create results summary panel frame (right side) - No changes needed here yet
+        # Create results summary panel frame (right side)
         summary_frame = ttk.Frame(main_frame)
         summary_frame.grid(row=0, column=2, sticky="nsew", padx=10, pady=10)
         
@@ -527,11 +517,11 @@ class Application(tk.Tk):
         Browse and load file(s) based on current mode.
         This method now uses the integrated UI function from core.file_handler.
         """
-        time_res = self.state.time_resolution.get()
+        time_res = self.time_resolution.get()
         print(f"Using time resolution: {time_res}")
         
         # Update status if double peak analysis is enabled
-        if self.state.double_peak_analysis.get() == "1":
+        if self.double_peak_analysis.get() == "1":
             self.status_indicator.set_text("Double Peak Analysis Mode Enabled")
             
         return browse_files_with_ui(self, time_resolution=time_res)
@@ -580,25 +570,29 @@ class Application(tk.Tk):
     )
     def run_peak_detection(self):
         """
-        Executes peak detection and updates the corresponding plot.
-        Calls the plotting function which internally calls the core detection logic.
-        Updates the application state with the detected peaks and properties.
+        Execute peak detection algorithm with current parameters.
+        This is a UI wrapper around the peak detection pipeline function.
         """
         try:
-            # Call the refactored plotting function which handles detection and plotting
-            peaks, properties, peak_areas = plot_detected_peaks_function(self, profile_function=profile_function)
+            # Debug: Print width values used for peak detection
+            width_values = self.width_p.get().strip().split(',')
+            time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
+            sampling_rate = 1 / time_res
+            width_samples = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+            print(f"[DEBUG][run_peak_detection] width_p (ms): {width_values}, width_p (samples): {width_samples}, sampling_rate: {sampling_rate}")
+
+            # Run peak detection
+            peaks, properties, peak_areas = run_peak_detection_function(self, profile_function=profile_function)
             
             if peaks is not None and properties is not None:
-                # Store peak properties in app state
-                self.state.peaks = peaks
-                self.state.peak_properties = properties
-                # Extract specific properties if they exist in the returned dict
-                self.state.peak_heights = properties.get('prominences')
-                self.state.peak_widths = properties.get('widths')
-                self.state.peak_left_ips = properties.get('left_ips')
-                self.state.peak_right_ips = properties.get('right_ips')
-                self.state.peak_width_heights = properties.get('width_heights')
-                self.state.peak_areas = properties.get('areas') # Areas are now in properties
+                # Store peak properties in app instance
+                self.peaks = peaks
+                self.peak_heights = properties['prominences']
+                self.peak_widths = properties['widths']
+                self.peak_left_ips = properties['left_ips']
+                self.peak_right_ips = properties['right_ips']
+                self.peak_width_heights = properties['width_heights']
+                self.peak_areas = peak_areas  # Store peak areas
                 
                 # Update status
                 self.preview_label.config(
@@ -612,20 +606,21 @@ class Application(tk.Tk):
                     foreground=self.theme_manager.get_color('warning')
                 )
                 return False
+                
         except Exception as e:
             self.show_error("Error during peak detection", str(e))
             return False
         
-        @ui_action(
-            processing_message="Plotting filtered peaks...",
-            success_message="Filtered peaks plotted successfully",
-            error_message="Error plotting filtered peaks"
-        )
-        def plot_filtered_peaks(self):
-            """
-            Plot the peaks detected in the filtered signal.
-            This is a UI wrapper around the plotting.peak_visualization function.
-            """
+    @ui_action(
+        processing_message="Plotting filtered peaks...",
+        success_message="Filtered peaks plotted successfully",
+        error_message="Error plotting filtered peaks"
+    )
+    def plot_filtered_peaks(self):
+        """
+        Plot the peaks detected in the filtered signal.
+        This is a UI wrapper around the plotting.peak_visualization function.
+        """
         return plot_filtered_peaks_function(self, profile_function=profile_function)
         
     @ui_action(
@@ -734,9 +729,9 @@ class Application(tk.Tk):
                     f"Double Peak Analysis Results:\n"
                     f"Found {len(double_peaks)} double peak pairs matching the criteria.\n"
                     f"Parameters used:\n"
-                    f"- Distance range: {self.state.double_peak_min_distance.get()*1000:.1f} - {self.state.double_peak_max_distance.get()*1000:.1f} ms\n"
-                    f"- Amplitude ratio range: {self.state.double_peak_min_amp_ratio.get():.2f} - {self.state.double_peak_max_amp_ratio.get():.2f}\n"
-                    f"- Width ratio range: {self.state.double_peak_min_width_ratio.get():.2f} - {self.state.double_peak_max_width_ratio.get():.2f}\n"
+                    f"- Distance range: {self.double_peak_min_distance.get()*1000:.1f} - {self.double_peak_max_distance.get()*1000:.1f} ms\n"
+                    f"- Amplitude ratio range: {self.double_peak_min_amp_ratio.get():.2f} - {self.double_peak_max_amp_ratio.get():.2f}\n"
+                    f"- Width ratio range: {self.double_peak_min_width_ratio.get():.2f} - {self.double_peak_max_width_ratio.get():.2f}\n"
                 )
                 
                 # Update the right panel results summary
@@ -811,8 +806,8 @@ class Application(tk.Tk):
                     self.tab_figures[grid_tab_name] = grid_figure
                     
                     # Update status
-                    page_num = self.state.current_double_peak_page + 1
-                    total_pages = (len(self.state.double_peaks) - 1) // 25 + 1 if self.state.double_peaks is not None else 0
+                    page_num = self.current_double_peak_page + 1
+                    total_pages = (len(self.double_peaks) - 1) // 25 + 1
                     self.preview_label.config(
                         text=f"Showing double peaks page {page_num} of {total_pages}",
                         foreground="green"
@@ -866,8 +861,8 @@ class Application(tk.Tk):
                     self.tab_figures[grid_tab_name] = grid_figure
                     
                     # Update status
-                    page_num = self.state.current_double_peak_page + 1
-                    total_pages = (len(self.state.double_peaks) - 1) // 25 + 1 if self.state.double_peaks is not None else 0
+                    page_num = self.current_double_peak_page + 1
+                    total_pages = (len(self.double_peaks) - 1) // 25 + 1
                     self.preview_label.config(
                         text=f"Showing double peaks page {page_num} of {total_pages}",
                         foreground="green"
@@ -894,7 +889,7 @@ class Application(tk.Tk):
         Calculate the areas of detected peaks in the signal.
         This is a UI wrapper around the core.data_analysis.calculate_peak_areas function.
         """
-        if self.state.filtered_signal is None:
+        if self.filtered_signal is None:
             self.preview_label.config(
                 text="Filtered signal not available. Please start the analysis first.", 
                 foreground=self.theme_manager.get_color('error')
@@ -903,27 +898,25 @@ class Application(tk.Tk):
             self.status_indicator.set_text("No data available")
             return None
 
-        # Get current parameters from state
-        height_lim_factor = self.state.height_lim.get()
-        distance = self.state.distance.get()
-        rel_height = self.state.rel_height.get()
-        width_values = self.state.width_p.get().strip().split(',')
-        time_res = self.state.time_resolution.get()
-        prominence_ratio = self.state.prominence_ratio.get()
+        # Get current parameters
+        height_lim_factor = self.height_lim.get()
+        distance = self.distance.get()
+        rel_height = self.rel_height.get()
+        width_values = self.width_p.get().strip().split(',')
+        time_res = self.time_resolution.get()
+        prominence_ratio = self.prominence_ratio.get()
         
-        # Use the core module function, passing state data
-        # NOTE: calculate_peak_areas_function needs refactoring to not need self.peak_detector directly?
-        # Or pass self.peak_detector instance? Let's pass it for now.
+        # Use the core module function
         result = calculate_peak_areas_function(
             self.peak_detector,
-            self.state.filtered_signal,
-            self.state.t_value,
+            self.filtered_signal,
+            self.t_value,
             height_lim_factor,
             distance,
             rel_height,
             width_values,
             time_resolution=time_res,
-            prominence_ratio=prominence_ratio 
+            prominence_ratio=prominence_ratio  # Pass the prominence ratio parameter
         )
         
         if result:
@@ -1004,8 +997,8 @@ class Application(tk.Tk):
         This method adds or removes the double peak analysis tab based on the mode.
         """
         try:
-            # Check state variable
-            double_peak_enabled = self.state.double_peak_analysis.get() == "1"
+            # Check if double peak mode is enabled
+            double_peak_enabled = self.double_peak_analysis.get() == "1"
             
             # Update status message
             if double_peak_enabled:
@@ -1013,7 +1006,7 @@ class Application(tk.Tk):
             else:
                 self.status_indicator.set_text("Normal Analysis Mode")
             
-            # Look for existing double peak tab in control panel
+            # Look for existing double peak tab
             found_tab = False
             for tab in self.tab_control.tabs():
                 tab_text = self.tab_control.tab(tab, "text")
@@ -1059,7 +1052,7 @@ class Application(tk.Tk):
         Parse width parameter string into a usable range.
         This is a UI wrapper around the core.data_utils.get_width_range function.
         """
-        return get_width_range_function(self.state.width_p.get())
+        return get_width_range_function(self.width_p.get())
 
     # Function to update the results summary text box
     def update_results_summary(self, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
@@ -1460,10 +1453,10 @@ class Application(tk.Tk):
         """
         try:
             # Toggle the scale mode
-            self.state.log_scale_enabled.set(not self.state.log_scale_enabled.get())
+            self.log_scale_enabled.set(not self.log_scale_enabled.get())
             
             # Get the current scale mode
-            scale_mode = 'log' if self.state.log_scale_enabled.get() else 'linear'
+            scale_mode = 'log' if self.log_scale_enabled.get() else 'linear'
             
             # Update the plots if they exist
             if hasattr(self, 'data_figure') and self.data_figure is not None:
@@ -1775,7 +1768,7 @@ class Application(tk.Tk):
         """
         try:
             # Get the new visibility state from the toggle button
-            show_filtered = self.state.show_filtered_peaks.get()
+            show_filtered = self.show_filtered_peaks.get()
             
             # Update status indicator
             if show_filtered:
@@ -1888,23 +1881,23 @@ class Application(tk.Tk):
         """
         import numpy as np
         from core.peak_analysis_utils import find_peaks_with_window
-        if self.state.filtered_signal is None or self.state.peak_properties is None:
+        if self.filtered_signal is None:
             return 0, 0, 0
-        width_values = self.state.width_p.get().strip().split(',')
-        rate = self.state.time_resolution.get()
+        width_values = self.width_p.get().strip().split(',')
+        rate = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
         if rate <= 0:
             rate = 0.0001
         sampling_rate = 1 / rate
         width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
         print(f"[DEBUG][get_peak_filter_stats] width_p (ms): {width_values}, width_p (samples): {width_p}, sampling_rate: {sampling_rate}")
         # Only use the current prominence ratio value, don't fall back to a default value
-        prominence_ratio = self.state.prominence_ratio.get()
+        prominence_ratio = self.prominence_ratio.get()
         all_peaks, all_properties = find_peaks_with_window(
-            self.state.filtered_signal,
+            self.filtered_signal,
             width=width_p,
-            prominence=self.state.height_lim.get(),
-            distance=self.state.distance.get(),
-            rel_height=self.state.rel_height.get(),
+            prominence=self.height_lim.get(),
+            distance=self.distance.get(),
+            rel_height=self.rel_height.get(),
             prominence_ratio=prominence_ratio
         )
         # The peaks returned by find_peaks_with_window already have the filter applied
@@ -1913,16 +1906,16 @@ class Application(tk.Tk):
         from scipy.signal import find_peaks, peak_widths
         # Find all peaks without prominence_ratio filtering
         all_unfiltered_peaks, all_unfiltered_properties = find_peaks(
-            self.state.filtered_signal,
+            self.filtered_signal,
             width=width_p,
-            prominence=self.state.height_lim.get(),
-            distance=self.state.distance.get(),
-            rel_height=self.state.rel_height.get()
+            prominence=self.height_lim.get(),
+            distance=self.distance.get(),
+            rel_height=self.rel_height.get()
         )
         
         if len(all_unfiltered_peaks) > 0:
             # Calculate widths and add to properties
-            width_results = peak_widths(self.state.filtered_signal, all_unfiltered_peaks, rel_height=self.state.rel_height.get())
+            width_results = peak_widths(self.filtered_signal, all_unfiltered_peaks, rel_height=self.rel_height.get())
             all_unfiltered_properties['widths'] = width_results[0]
             all_unfiltered_properties['width_heights'] = width_results[1]
             all_unfiltered_properties['left_ips'] = width_results[2]
@@ -1976,48 +1969,42 @@ class Application(tk.Tk):
         """
         Analyze time-resolved data using current parameters and update the visualization.
         """
-        if self.state.filtered_signal is None or self.state.t_value is None: 
-            self.show_error("Analysis Error", "Data must be loaded and processed first.")
-            return None
-
-        # Call the refactored core function with arguments from state
-        results = analyze_time_resolved_function(
-            filtered_signal=self.state.filtered_signal,
-            t_value=self.state.t_value,
-            width_p_str=self.state.width_p.get(),
-            time_resolution=self.state.time_resolution.get(),
-            height_lim=self.state.height_lim.get(),
-            distance=self.state.distance.get(),
-            rel_height=self.state.rel_height.get(),
-            prominence_ratio=self.state.prominence_ratio.get()
-        )
-
-        if results:
-            peaks, areas, intervals = results
+        try:
+            # Run time-resolved analysis
+            results = analyze_time_resolved_function(self)
             
-            # Update results summary panel (using the helper function)
-            # Prepare summary text (can be improved)
-            summary_text = (
-                f"Analysis Results:\\n"
-                f"Found {len(peaks)} peaks matching criteria.\\n"
-                f"Avg. Area: {np.mean(areas):.2f} ± {np.std(areas):.2f}\\n"
-                f"Avg. Interval: {np.mean(intervals)*1000:.1f} ± {np.std(intervals)*1000:.1f} ms\\n"
-                # Add more relevant stats?
-            )
-            # Call the UI update function (which still needs self for now)
-            update_results_summary_with_ui(self, 
-                                         events=len(peaks), 
-                                         peak_areas=areas, 
-                                         peak_intervals=intervals,
-                                         preview_text=summary_text # Also update preview label
-                                         )
-            return results # Return the raw results
-        else:
-            # If there was an error or no results, show a message
-            self.preview_label.config(text="No peaks found with current parameters", foreground="orange")
-            # Clear results summary?
-            update_results_summary_with_ui(self, events=0, preview_text="No peaks found") 
-            return None
+            if results:
+                peaks, areas, intervals = results
+                
+                # Update results summary
+                summary_text = (
+                    f"Time-Resolved Analysis Results:\n"
+                    f"Found {len(peaks)} peaks\n"
+                    f"Average peak area: {np.mean(areas):.2f} ± {np.std(areas):.2f}\n"
+                    f"Average interval: {np.mean(intervals)*1000:.1f} ± {np.std(intervals)*1000:.1f} ms\n"
+                    f"Parameters used:\n"
+                    f"- Prominence ratio: {self.prominence_ratio.get():.2f}\n"
+                    f"- Min peak distance: {self.min_peak_distance.get()*1000:.1f} ms\n"
+                )
+                
+                # Update the right panel results summary
+                if hasattr(self, 'results_summary'):
+                    self.update_results_summary(
+                        events=len(peaks),
+                        peak_areas=areas,
+                        peak_intervals=intervals,
+                        preview_text=summary_text
+                    )
+                
+                return True
+            else:
+                # If there was an error or no results, show a message
+                self.preview_label.config(text="No peaks found with current parameters", foreground="orange")
+                return False
+                
+        except Exception as e:
+            show_error_with_ui(self, "Error during time-resolved analysis", str(e))
+            return False
 
     @ui_action(
         processing_message="Exporting peak properties...",

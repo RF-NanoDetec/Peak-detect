@@ -14,7 +14,6 @@ from tkinter import ttk
 from matplotlib.lines import Line2D
 from core.peak_analysis_utils import find_peaks_with_window
 import matplotlib.pyplot as plt
-from core.peak_detection import detect_peaks
 
 def run_peak_detection(app, profile_function=None):
     """Run peak detection and overlay peaks on existing plot"""
@@ -29,7 +28,7 @@ def run_peak_detection(app, profile_function=None):
 
     try:
         # Initialize progress
-        total_steps = 2
+        total_steps = 3
         app.update_progress_bar(0, total_steps)
 
         # Remove previously plotted peaks and width indicators
@@ -58,31 +57,41 @@ def run_peak_detection(app, profile_function=None):
         # Get the prominence ratio threshold
         prominence_ratio = app.prominence_ratio.get()
 
+        # Update progress
+        app.update_progress_bar(1)
+
+        # Reset PeakDetector
+        app.peak_detector.reset()
+        
         # Get time resolution - handle both Tkinter variable and float value
         time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
         
-        # --- Call Core Peak Detection Function --- 
-        peaks_x_filter, properties = detect_peaks(
-            signal=app.filtered_signal,
-            time_resolution=time_res,
-            height_lim=height_lim_factor,
-            distance=distance,
-            prominence_ratio=prominence_ratio,
-            rel_height=rel_height,
-            width_range=width_values # Pass width range in ms
+        # Use PeakDetector instance to detect peaks
+        app.peak_detector.detect_peaks(
+            app.filtered_signal,
+            app.t_value,
+            height_lim_factor,
+            distance,
+            prominence_ratio,  # Moved to match new parameter order
+            rel_height,
+            width_values,
+            time_resolution=time_res
         )
         
-        # Check if detection was successful
-        if peaks_x_filter is None or properties is None or len(peaks_x_filter) == 0:
+        # Calculate peak areas using the PeakDetector
+        peak_areas, start_indices, end_indices = app.peak_detector.calculate_peak_areas(app.filtered_signal)
+        
+        # Get detected peaks
+        peaks_x_filter = app.peak_detector.peaks_indices
+        amp_x_filter = app.peak_detector.peaks_properties
+
+        if len(peaks_x_filter) == 0:
             app.show_error("No peaks found with current parameters. Try adjusting threshold or width range.")
             if hasattr(app, 'canvas'): app.canvas.draw()
-            return None, None, None # Return None for all values
-
-        # Extract areas from properties (already calculated by detect_peaks)
-        peak_areas = properties.get('areas', np.zeros(len(peaks_x_filter)))
+            return None
 
         # Update progress
-        app.update_progress_bar(1)
+        app.update_progress_bar(2)
 
         # Get SEMANTIC color for peak markers
         peak_marker_color = app.theme_manager.get_plot_color('marker_peak')
@@ -122,8 +131,8 @@ def run_peak_detection(app, profile_function=None):
 
         # Set or update app.peaks property for use in other functions
         app.peaks = peaks_x_filter
-        app.peak_heights = properties['prominences']
-        app.peak_widths = properties['widths']
+        app.peak_heights = amp_x_filter['prominences']
+        app.peak_widths = amp_x_filter['widths']
 
         # Apply theme standard styles (bg, grid, text)
         app.theme_manager.apply_plot_theme(app.figure, [ax])
@@ -135,12 +144,12 @@ def run_peak_detection(app, profile_function=None):
              print("Warning: app.canvas not found during peak detection update.")
 
         # Update progress and status using theme colors
-        app.update_progress_bar(2)
+        app.update_progress_bar(3)
         app.status_indicator.set_state('success')
         app.status_indicator.set_text(f"Peak detection completed, found {len(peaks_x_filter)} peaks")
 
         # Return peaks data
-        return peaks_x_filter, properties, peak_areas
+        return peaks_x_filter, amp_x_filter, peak_areas
 
     except Exception as e:
         # Show error in status and provide traceback

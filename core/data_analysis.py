@@ -10,7 +10,7 @@ import traceback
 import logging
 from scipy.signal import find_peaks, peak_widths
 from core.performance import profile_function
-from core.peak_analysis_utils import find_peaks_with_window, adjust_lowpass_cutoff, calculate_lowpass_cutoff
+from core.peak_analysis_utils import find_peaks_with_window, adjust_lowpass_cutoff
 from functools import wraps
 # Import the calculate_auto_threshold function from peak_detection
 from core.peak_detection import calculate_auto_threshold as peak_detection_auto_threshold
@@ -115,100 +115,73 @@ def calculate_peak_intervals(t_value, peaks_indices):
         return []
 
 @profile_function
-def analyze_time_resolved(filtered_signal, t_value, width_p_str, time_resolution, 
-                          height_lim, distance, rel_height, prominence_ratio):
+def analyze_time_resolved(app):
     """
-    Analyze time-resolved data using provided parameters.
+    Analyze time-resolved data using current parameters and update the visualization.
     
     This function performs time-resolved analysis of peak data, including:
     - Peak detection with current parameters
     - Area calculations
     - Interval measurements
+    - Statistical analysis
     
     Parameters
     ----------
-    filtered_signal : numpy.ndarray
-        The filtered signal data.
-    t_value : numpy.ndarray
-        Time values corresponding to the signal.
-    width_p_str : str
-        String defining peak width range in ms (e.g., "0.1,50").
-    time_resolution : float
-        Time resolution (dwell time) in seconds.
-    height_lim : float
-        Minimum height (prominence) threshold for peaks.
-    distance : int
-        Minimum distance between peaks in samples.
-    rel_height : float
-        Relative height for width measurement (0-1).
-    prominence_ratio : float
-        Minimum prominence/height ratio for filtering subpeaks.
+    app : Application
+        The main application instance containing the data and parameters
         
     Returns
     -------
     tuple or None
         (peaks, areas, intervals) if analysis is successful, None otherwise
+        - peaks: array of peak indices
+        - areas: array of peak areas
+        - intervals: array of peak intervals
     """
     try:
-        if filtered_signal is None:
-            logger.warning("analyze_time_resolved called with no filtered signal.")
+        if app.filtered_signal is None:
             return None
             
-        # Get current parameters from arguments
-        width_values = width_p_str.strip().split(',')
-        time_res = time_resolution
+        # Get current parameters
+        width_values = app.width_p.get().strip().split(',')
+        time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
         if time_res <= 0:
-            logger.warning(f"Invalid time resolution ({time_res}), defaulting to 0.1ms.")
-            time_res = 0.0001
+            time_res = 0.0001  # Default to 0.1ms if invalid
         sampling_rate = 1 / time_res
         
         # Convert width from ms to samples
-        try:
-             width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
-        except (ValueError, IndexError) as e:
-             logger.error(f"Invalid width string '{width_p_str}': {e}")
-             return None # Cannot proceed without valid width
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
         
-        # Get the prominence ratio threshold from argument
-        prominence_ratio_thresh = prominence_ratio
+        # Get the prominence ratio threshold
+        prominence_ratio = app.prominence_ratio.get()
         
         # Find peaks with current parameters
         peaks, properties = find_peaks_with_window(
-            filtered_signal,
+            app.filtered_signal,
             width=width_p,
-            prominence=height_lim,
-            distance=distance,
-            rel_height=rel_height,
-            prominence_ratio=prominence_ratio_thresh
+            prominence=app.height_lim.get(),
+            distance=app.distance.get(),
+            rel_height=app.rel_height.get(),
+            prominence_ratio=prominence_ratio
         )
         
         if len(peaks) == 0:
-            logger.info("No peaks detected in analyze_time_resolved with current parameters.")
             return None
             
         # Calculate areas under peaks
         areas = []
-        if "left_ips" in properties and "right_ips" in properties:
-            for i, peak in enumerate(peaks):
-                left_idx = int(properties["left_ips"][i])
-                right_idx = int(properties["right_ips"][i])
-                if left_idx < right_idx and right_idx <= len(filtered_signal):
-                    area = np.trapz(filtered_signal[left_idx:right_idx])
-                    areas.append(area)
-                else:
-                    logger.warning(f"Invalid indices for peak {peak} area calculation: [{left_idx}:{right_idx}]")
-                    areas.append(0) # Append 0 or NaN? Let's use 0 for now.
-            areas = np.array(areas)
-        else:
-            logger.warning("Width properties (ips) missing, cannot calculate areas.")
-            areas = np.full_like(peaks, 0.0) # Return array of zeros
+        for i, peak in enumerate(peaks):
+            left_idx = int(properties["left_ips"][i])
+            right_idx = int(properties["right_ips"][i])
+            if left_idx < right_idx:
+                area = np.trapz(app.filtered_signal[left_idx:right_idx])
+                areas.append(area)
+            else:
+                areas.append(0)
+        areas = np.array(areas)
         
         # Calculate intervals between peaks
-        if t_value is None or len(t_value) != len(filtered_signal):
-             logger.warning("Invalid or missing t_value, cannot calculate intervals.")
-             intervals = []
-        else:
-             intervals = calculate_peak_intervals(t_value, peaks)
+        intervals = calculate_peak_intervals(app.t_value, peaks)
         
         return peaks, areas, intervals
         
@@ -254,58 +227,6 @@ def calculate_auto_threshold(signal, percentile=95, sigma_multiplier=None):
         logger.error(f"Error calculating auto threshold: {str(e)}\n{traceback.format_exc()}")
         return 20.0  # Return a default value
 
-@profile_function
-def calculate_auto_cutoff(signal_data, time_resolution):
-    """
-    Calculate an appropriate low-pass cutoff frequency based on signal characteristics.
-
-    This method finds the highest signal value and uses 70% of that value as a
-    threshold for detecting prominent peaks. The average width of these peaks
-    is then used to estimate a suitable cutoff frequency using the calculate_lowpass_cutoff utility.
-
-    Args:
-        signal_data (numpy.ndarray): The raw signal data (e.g., app.state.x_value).
-        time_resolution (float): The time interval between data points in seconds.
-
-    Returns:
-        float: The suggested cutoff frequency in Hz.
-               Returns a default value (e.g., 10.0 Hz) if calculation fails or no peaks are found.
-    """
-    try:
-        if signal_data is None or len(signal_data) == 0 or time_resolution <= 0:
-            logger.warning("Insufficient data for auto cutoff calculation.")
-            return 10.0 # Default cutoff
-
-        fs = 1.0 / time_resolution
-        logger.debug(f"Auto Cutoff: Sampling rate (fs): {fs:.2f} Hz")
-
-        # Find the highest signal value and calculate 70% threshold
-        signal_max = np.max(signal_data)
-        threshold = signal_max * 0.7
-        logger.debug(f"Auto Cutoff: Max signal value: {signal_max:.4f}, 70% threshold: {threshold:.4f}")
-
-        # Detect peaks above the 70% threshold to measure their widths
-        # We don't need complex filtering here, just basic height
-        peaks, _ = find_peaks(signal_data, height=threshold)
-
-        if len(peaks) == 0:
-            logger.warning("Auto Cutoff: No peaks found above 70% threshold, using default cutoff 10.0 Hz")
-            return 10.0  # Default cutoff if no significant peaks found
-
-        logger.debug(f"Auto Cutoff: Found {len(peaks)} peaks above 70% threshold.")
-
-        # Use calculate_lowpass_cutoff utility function
-        # It handles peak width calculation internally based on the threshold
-        suggested_cutoff = calculate_lowpass_cutoff(
-            signal_data, fs, threshold, 1.0, time_resolution=time_resolution
-        )
-
-        logger.info(f"Auto Cutoff: Calculated cutoff frequency: {suggested_cutoff:.2f} Hz")
-        return suggested_cutoff
-
-    except Exception as e:
-        logger.error(f"Error calculating auto cutoff frequency: {str(e)}\n{traceback.format_exc()}")
-        return 10.0 # Return default cutoff on error
 
 def with_error_handling(error_msg):
     def decorator(func):
