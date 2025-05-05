@@ -12,6 +12,7 @@ Functions:
     find_peaks_with_window: Detect peaks with specified window parameters
     estimate_peak_widths: Estimate widths of peaks in a signal
     adjust_lowpass_cutoff: Adjust cutoff frequency based on signal characteristics
+    calculate_peak_filter_stats: Calculates the number of peaks before and after prominence ratio filtering
 """
 
 import os
@@ -512,3 +513,77 @@ def calculate_lowpass_cutoff(signal, fs, prominence_threshold, normalization_fac
     print("==== DEBUG: Finished calculate_lowpass_cutoff ====\n")
     
     return cutoff
+
+@profile_function
+def calculate_peak_filter_stats(filtered_signal, time_resolution, width_p_str, height_lim, distance, rel_height, prominence_ratio):
+    """
+    Calculates the number of peaks before and after prominence ratio filtering.
+
+    This helps quantify how many peaks are removed by the prominence ratio filter.
+
+    Args:
+        filtered_signal (numpy.ndarray): The filtered signal data.
+        time_resolution (float): Time resolution (dwell time) in seconds.
+        width_p_str (str): String defining peak width range in ms (e.g., "0.1,50").
+        height_lim (float): Minimum height (prominence) threshold for peaks.
+        distance (int): Minimum distance between peaks in samples.
+        rel_height (float): Relative height for width measurement (0-1).
+        prominence_ratio (float): Minimum prominence/height ratio for filtering subpeaks.
+
+    Returns:
+        tuple: (total_peaks, filtered_out, filtered_kept)
+               Returns (0, 0, 0) if input is invalid or no peaks are found.
+    """
+    logger = logging.getLogger(__name__)
+    if filtered_signal is None or len(filtered_signal) == 0:
+        logger.warning("calculate_peak_filter_stats called with empty signal.")
+        return 0, 0, 0
+
+    try:
+        # --- Parameter processing --- 
+        if time_resolution <= 0:
+            logger.warning(f"Invalid time resolution ({time_resolution}), using 0.1ms.")
+            time_resolution = 0.0001
+        sampling_rate = 1.0 / time_resolution
+
+        width_p = None
+        try:
+            width_values = width_p_str.strip().split(',')
+            width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+            logger.debug(f"Filter Stats: Width range (ms): {width_values} -> Samples: {width_p}")
+        except (ValueError, IndexError, TypeError) as e:
+            logger.error(f"Invalid width string '{width_p_str}': {e}. Proceeding without width filter.")
+            width_p = None
+
+        # --- Peak Finding --- 
+        # 1. Find peaks *without* prominence ratio filter (to get total)
+        all_unfiltered_peaks, _ = find_peaks(
+            filtered_signal,
+            width=width_p,
+            prominence=height_lim,
+            distance=distance,
+            rel_height=rel_height
+        )
+        total_peaks = len(all_unfiltered_peaks)
+
+        # 2. Find peaks *with* prominence ratio filter (using the utility)
+        filtered_peaks, _ = find_peaks_with_window(
+            filtered_signal,
+            width=width_p,
+            prominence=height_lim,
+            distance=distance,
+            rel_height=rel_height,
+            prominence_ratio=prominence_ratio
+        )
+        filtered_kept = len(filtered_peaks)
+
+        # --- Calculate Stats --- 
+        filtered_out = total_peaks - filtered_kept
+
+        logger.info(f"Peak Filter Stats: Total={total_peaks}, Kept={filtered_kept}, Filtered_Out={filtered_out} (Ratio Threshold: {prominence_ratio:.2f})")
+
+        return total_peaks, filtered_out, filtered_kept
+
+    except Exception as e:
+        logger.error(f"Error in calculate_peak_filter_stats: {e}\n{traceback.format_exc()}")
+        return 0, 0, 0 # Return zeros on error
