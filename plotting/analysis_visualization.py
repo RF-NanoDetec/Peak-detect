@@ -23,7 +23,7 @@ def plot_data(app, profile_function=None):
             text="Filtered signal not available. Please start the analysis first.",
             foreground=app.theme_manager.get_color('error')
             )
-        return
+        return False
 
     try:
         print("Starting plot_data function...")
@@ -41,10 +41,7 @@ def plot_data(app, profile_function=None):
         t = np.asarray(app.t_value, dtype=np.float32)  # Time already in seconds
         filtered_signal = np.asarray(app.filtered_signal, dtype=np.float32)
 
-        # Find peaks with optimized parameters
-        width_values = app.width_p.get().strip().split(',')
-        
-        # Use time_resolution directly instead of calculating from time differences
+        # Get time resolution
         rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
         if rate <= 0:
             print(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
@@ -53,17 +50,22 @@ def plot_data(app, profile_function=None):
         sampling_rate = 1 / rate
         print(f"DEBUG - plot_data sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
         
-        # Convert width values from ms to samples using the actual sampling rate
-        # For example, 50ms at 10kHz sampling rate would be 500 samples
+        # Convert width from ms to samples
+        width_values = app.width_p.get().strip().split(',')
         width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
         
-        # Debug output for width parameters
-        print(f"\nDEBUG - Width parameter information:")
+        # Debug output
+        print(f"\nDEBUG - Width parameter information in plot_data:")
         print(f"Original width values: {app.width_p.get()} (ms)")
         print(f"Sampling rate: {sampling_rate:.1f} Hz")
         print(f"Converted width_p (in samples): {width_p}")
         
-        peaks, properties = find_peaks_with_window(
+        # Get the prominence ratio threshold
+        prominence_ratio = app.prominence_ratio.get()
+        
+        # First, find all peaks without applying the prominence ratio filter
+        from scipy.signal import find_peaks, peak_widths
+        unfiltered_peaks, unfiltered_properties = find_peaks(
             filtered_signal,
             width=width_p,
             prominence=app.height_lim.get(),
@@ -71,9 +73,28 @@ def plot_data(app, profile_function=None):
             rel_height=app.rel_height.get()
         )
         
+        # Calculate widths for unfiltered peaks
+        if len(unfiltered_peaks) > 0:
+            width_results = peak_widths(filtered_signal, unfiltered_peaks, rel_height=app.rel_height.get())
+            unfiltered_properties['widths'] = width_results[0]
+            unfiltered_properties['width_heights'] = width_results[1]
+            unfiltered_properties['left_ips'] = width_results[2]
+            unfiltered_properties['right_ips'] = width_results[3]
+        
+        # Now get the peaks with the prominence ratio filter applied
+        peaks, properties = find_peaks_with_window(
+            filtered_signal,
+            width=width_p,
+            prominence=app.height_lim.get(),
+            distance=app.distance.get(),
+            rel_height=app.rel_height.get(),
+            prominence_ratio=prominence_ratio
+        )
+        
         # Additional debug information after peak detection
         print(f"DEBUG - Peak detection results:")
-        print(f"Found {len(peaks)} peaks")
+        print(f"Found {len(peaks)} peaks (after prominence ratio filter)")
+        print(f"Found {len(unfiltered_peaks)} peaks (before prominence ratio filter)")
         if len(peaks) > 0:
             print(f"Peak properties keys: {list(properties.keys())}")
             print(f"First few peak positions: {peaks[:5]}")
@@ -82,82 +103,34 @@ def plot_data(app, profile_function=None):
                 print(f"Peak widths in seconds (min/mean/max): {np.min(properties['widths']*rate):.6f}/{np.mean(properties['widths']*rate):.6f}/{np.max(properties['widths']*rate):.6f}")
                 print(f"Peak widths in ms (min/mean/max): {np.min(properties['widths']*rate*1000):.2f}/{np.mean(properties['widths']*rate*1000):.2f}/{np.max(properties['widths']*rate*1000):.2f}")
         
-        # Also detect filtered peaks if the toggle is enabled
-        filtered_out_peaks = np.array([])
+        # Identify filtered peaks (those in unfiltered_peaks but not in peaks)
+        filtered_out_peaks = []
         filtered_out_properties = {}
         
         if hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get():
-            # Get the prominence ratio threshold
-            prominence_ratio = app.prominence_ratio.get() if hasattr(app, 'prominence_ratio') else 0.8
+            # Find indices of peaks that are in unfiltered_peaks but not in peaks
+            filtered_out_indices = []
             
-            # Find all peaks without the prominence ratio filter
-            all_peaks, all_properties = find_peaks_with_window(
-                filtered_signal,
-                width=width_p,
-                prominence=app.height_lim.get(),
-                distance=app.distance.get(),
-                rel_height=app.rel_height.get()
-            )
-            
-            # Identify which peaks would be filtered out
-            if len(all_peaks) > 0:
-                # Create mask for peaks that would be filtered out
-                filtered_mask = np.ones(len(all_peaks), dtype=bool)
+            # This requires a bit of set logic, but numpy arrays aren't hashable
+            # So we convert to lists or use np.isin
+            if len(unfiltered_peaks) > 0:
+                filtered_mask = np.ones(len(unfiltered_peaks), dtype=bool)
                 
-                # Check each peak against prominence ratio threshold
-                for i, peak_idx in enumerate(all_peaks):
-                    peak_height = filtered_signal[peak_idx]
-                    peak_prominence = all_properties['prominences'][i]
-                    
-                    # Calculate ratio of prominence to peak height
-                    if peak_height > 0:  # Avoid division by zero
-                        ratio = peak_prominence / peak_height
-                        
-                        # If the ratio meets the threshold, it would be kept (not filtered)
-                        if ratio >= prominence_ratio:
-                            filtered_mask[i] = False
+                for i, peak_idx in enumerate(unfiltered_peaks):
+                    # Check if this peak is present in the filtered peaks list
+                    if np.any(peaks == peak_idx):
+                        filtered_mask[i] = False
                 
-                # Extract the filtered-out peaks
-                filtered_out_peaks = all_peaks[filtered_mask]
+                # Get the filtered out peaks
+                filtered_out_peaks = unfiltered_peaks[filtered_mask]
                 
                 # Extract their properties
-                for key, values in all_properties.items():
-                    if isinstance(values, np.ndarray) and len(values) == len(all_peaks):
+                for key, values in unfiltered_properties.items():
+                    if isinstance(values, np.ndarray) and len(values) == len(unfiltered_peaks):
                         if key not in filtered_out_properties:
                             filtered_out_properties[key] = values[filtered_mask]
             
             print(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
-        else:
-            # When toggle is off, apply prominence ratio filter to peaks
-            prominence_ratio = app.prominence_ratio.get() if hasattr(app, 'prominence_ratio') else 0.8
-            
-            # Create mask for peaks that pass the prominence ratio filter
-            filtered_mask = np.ones(len(peaks), dtype=bool)
-            
-            # Check each peak against prominence ratio threshold
-            for i, peak_idx in enumerate(peaks):
-                peak_height = filtered_signal[peak_idx]
-                peak_prominence = properties['prominences'][i]
-                
-                # Calculate ratio of prominence to peak height
-                if peak_height > 0:  # Avoid division by zero
-                    ratio = peak_prominence / peak_height
-                    
-                    # If the ratio meets the threshold, it passes the filter
-                    if ratio >= prominence_ratio:
-                        filtered_mask[i] = True
-                    else:
-                        filtered_mask[i] = False
-            
-            # Keep only non-filtered peaks
-            peaks = peaks[filtered_mask]
-            
-            # Update properties to include only non-filtered peaks
-            for key, values in properties.items():
-                if isinstance(values, np.ndarray) and len(values) == len(filtered_mask):
-                    properties[key] = values[filtered_mask]
-            
-            print(f"DEBUG - Keeping {len(peaks)} peaks after prominence ratio filter")
         
         # Calculate peak properties
         widths = properties["widths"]  # Width in samples
@@ -168,7 +141,7 @@ def plot_data(app, profile_function=None):
         peak_times = t[peaks]
         
         # Also calculate properties for filtered-out peaks if available
-        if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0:
+        if len(filtered_out_peaks) > 0:
             filtered_widths = filtered_out_properties["widths"]
             filtered_widths_in_seconds = filtered_widths * rate
             filtered_widths_in_ms = filtered_widths_in_seconds * 1000
@@ -188,7 +161,7 @@ def plot_data(app, profile_function=None):
         
         # Also calculate areas for filtered peaks if available
         filtered_areas = []
-        if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0 and 'left_ips' in filtered_out_properties and 'right_ips' in filtered_out_properties:
+        if len(filtered_out_peaks) > 0 and 'left_ips' in filtered_out_properties and 'right_ips' in filtered_out_properties:
             for i, peak in enumerate(filtered_out_peaks):
                 left_idx = int(filtered_out_properties["left_ips"][i])
                 right_idx = int(filtered_out_properties["right_ips"][i])
@@ -207,7 +180,7 @@ def plot_data(app, profile_function=None):
         # Plot peak heights - CHANGED ORDER: First regular peaks, then filtered peaks on top
         axes[0].scatter(peak_times/60, prominences, s=1, alpha=0.5, color=scatter_color, label='Peak Heights')
         # Add filtered peaks if toggle is enabled (these will now appear on top)
-        if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0:
+        if len(filtered_out_peaks) > 0 and hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get():
             axes[0].scatter(filtered_peak_times/60, filtered_prominences, s=2, alpha=0.7, color=filtered_color, label='Filtered Peaks')
         axes[0].set_ylabel('Peak Heights')
         axes[0].grid(True) # alpha/color from rcParams
@@ -217,7 +190,7 @@ def plot_data(app, profile_function=None):
         # Plot peak widths - CHANGED ORDER: First regular peaks, then filtered peaks on top
         axes[1].scatter(peak_times/60, widths_in_ms, s=1, alpha=0.5, color=scatter_color, label='Peak Widths (ms)')
         # Add filtered peaks if toggle is enabled (these will now appear on top)
-        if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0:
+        if len(filtered_out_peaks) > 0 and hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get():
             axes[1].scatter(filtered_peak_times/60, filtered_widths_in_ms, s=2, alpha=0.7, color=filtered_color, label='Filtered Peaks')
         axes[1].set_ylabel('Peak Widths (ms)')
         axes[1].grid(True)
@@ -227,7 +200,7 @@ def plot_data(app, profile_function=None):
         # Plot peak areas - CHANGED ORDER: First regular peaks, then filtered peaks on top
         axes[2].scatter(peak_times/60, areas, s=1, alpha=0.5, color=scatter_color, label='Peak Areas')
         # Add filtered peaks if toggle is enabled (these will now appear on top)
-        if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0 and len(filtered_areas) > 0:
+        if len(filtered_out_peaks) > 0 and len(filtered_areas) > 0 and hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get():
             axes[2].scatter(filtered_peak_times/60, filtered_areas, s=2, alpha=0.7, color=filtered_color, label='Filtered Peaks')
         axes[2].set_ylabel('Peak Areas')
         axes[2].grid(True)
@@ -237,9 +210,9 @@ def plot_data(app, profile_function=None):
         # Calculate and plot throughput
         interval = app.throughput_interval.get() if hasattr(app, 'throughput_interval') else 10  # seconds
         # Include filtered peaks in throughput calculation if toggle is enabled
-        if hasattr(filtered_out_peaks, 'size') and filtered_out_peaks.size > 0 and app.show_filtered_peaks.get():
+        if len(filtered_out_peaks) > 0 and hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get():
             all_peak_times = np.concatenate([peak_times, filtered_peak_times])
-            bins = np.arange(0, np.max(all_peak_times), interval)
+            bins = np.arange(0, np.max(all_peak_times) + interval, interval)
             bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
             
             # Calculate throughput for both included and filtered peaks
@@ -259,36 +232,37 @@ def plot_data(app, profile_function=None):
             # Set up throughput for moving average calculation
             throughput = total_throughput if app.show_filtered_peaks.get() else included_throughput
         else:
-            bins = np.arange(0, np.max(t), interval)
+            bins = np.arange(0, np.max(t) + interval, interval)
             bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
             throughput, _ = np.histogram(peak_times, bins=bins)
             
             # Plot throughput bars using SEMANTIC color
-            axes[3].bar(bin_centers/60, throughput, width=(interval/60)*0.8,
-                      color=bar_color, alpha=0.6, label=f'Throughput ({interval:.0f}s bins)')
+            axes[3].bar(bin_centers/60, throughput, width=(interval/60)*0.8, color=bar_color, alpha=0.6, 
+                      label=f'Peak Throughput ({interval:.0f}s bins)')
 
         # Add moving average line using SEMANTIC color
         window = 5  # Number of points for moving average
-        moving_avg = np.convolve(throughput, np.ones(window)/window, mode='valid')
-        moving_avg_times = bin_centers[window-1:]/60
-        axes[3].plot(moving_avg_times, moving_avg,
-                    color=moving_avg_color,
-                    linewidth=1, label=f'{window}-point Moving Average')
+        if len(throughput) >= window:
+            moving_avg = np.convolve(throughput, np.ones(window)/window, mode='valid')
+            moving_avg_times = bin_centers[window-1:]/60
+            axes[3].plot(moving_avg_times, moving_avg,
+                        color=moving_avg_color,
+                        linewidth=1, label=f'{window}-point Moving Average')
 
-        axes[3].set_ylabel(f'Peaks per {interval}s')
-        axes[3].set_xlabel('Time (min)')
-        axes[3].grid(True)
-        axes[3].legend() # Removed fontsize
-
-        # Add statistics annotation to throughput plot (Removed bbox, fontsize=8)
+        # Add statistics annotation to throughput plot
         stats_text = (f'Total Peaks: {len(peaks):,}\n'
                      f'Avg Rate: {len(peaks)/(np.max(t)-np.min(t))*60:.1f} peaks/min\n'
-                     f'Max Rate: {np.max(throughput)/(interval/60):.1f} peaks/min\n'
+                     f'Max Rate: {np.max(throughput) if len(throughput) > 0 else 0:.1f} peaks/{interval}s\n'
                      f'Interval: {interval:.0f} s')
         axes[3].text(0.02, 0.98, stats_text,
                     transform=axes[3].transAxes,
                     verticalalignment='top',
-                    fontsize=8) # Keep annotation font small
+                    fontsize=8)
+
+        axes[3].set_ylabel(f'Peaks per {interval}s')
+        axes[3].set_xlabel('Time (min)')
+        axes[3].grid(True)
+        axes[3].legend()
 
         # Update title and layout
         app.data_figure.suptitle('Peak Analysis Over Time', y=0.95)
@@ -330,18 +304,35 @@ def plot_data(app, profile_function=None):
         # Store the figure associated with the tab
         app.tab_figures[tab_name] = app.data_figure
 
+        # Update statistics in UI
+        total_peaks = len(peaks)
+        filtered_out = len(filtered_out_peaks) if len(filtered_out_peaks) > 0 else 0
+        filtered_kept = total_peaks
+        
+        # Update summary in UI
+        preview_text = (
+            f"Peaks: {filtered_kept} kept, {filtered_out} filtered out\n"
+            f"Prominence ratio threshold: {prominence_ratio:.2f}\n"
+            f"Average peak area: {np.mean(areas) if len(areas) > 0 else 0:.2f} ± {np.std(areas) if len(areas) > 0 else 0:.2f}"
+        )
+        app.update_results_summary(events=filtered_kept, peak_areas=areas, preview_text=preview_text)
+
         app.preview_label.config(
             text="Peak analysis plot created successfully",
             foreground=app.theme_manager.get_color('success')
             )
+            
+        return True
 
     except Exception as e:
-        app.show_error("Error in plot_data", e)
+        import traceback
+        print("Error in plot_data:", str(e))
+        print(traceback.format_exc())
         app.preview_label.config(
-            text="Error creating peak analysis plot.",
+            text=f"Error creating peak analysis plot: {str(e)}",
             foreground=app.theme_manager.get_color('error')
             )
-        # Don't re-raise, just show error in UI
+        return False
 
 
 def plot_scatter(app, profile_function=None):
@@ -351,22 +342,25 @@ def plot_scatter(app, profile_function=None):
             text="Filtered signal not available. Please start the analysis first.",
             foreground=app.theme_manager.get_color('error')
             )
-        return
+        return False
 
     try:
-        # Get peaks and properties
-        width_values = app.width_p.get().strip().split(',')
-        
-        # Use time_resolution directly instead of calculating from time differences
+        # Create new figure
+        # Figure bg color handled by theme manager
+        new_figure = Figure(figsize=(12, 10))
+        gs = new_figure.add_gridspec(2, 2, hspace=0.3, wspace=0.3) # Increased spacing slightly
+        ax = [new_figure.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
+        # Axes bg color handled by theme manager
+
+        # Get time resolution for converting widths from samples to seconds
         rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
         if rate <= 0:
             print(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
             rate = 0.0001  # Default to 0.1ms sampling if invalid value
         
+        # Convert width parameter to samples
+        width_values = app.width_p.get().strip().split(',')
         sampling_rate = 1 / rate
-        print(f"DEBUG - plot_scatter sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
-        
-        # Convert width values from ms to samples using the actual sampling rate
         width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
         
         # Debug output
@@ -377,10 +371,11 @@ def plot_scatter(app, profile_function=None):
 
         # Check if we should show filtered peaks
         show_filtered_peaks = hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get()
-        prominence_ratio_threshold = app.prominence_ratio.get() if hasattr(app, 'prominence_ratio') else 0.8
+        prominence_ratio = app.prominence_ratio.get()
         
-        # Get all peaks first without the prominence ratio filter
-        all_peaks, all_properties = find_peaks_with_window(
+        # First, find all peaks without applying the prominence ratio filter
+        from scipy.signal import find_peaks, peak_widths
+        unfiltered_peaks, unfiltered_properties = find_peaks(
             app.filtered_signal,
             width=width_p,
             prominence=app.height_lim.get(),
@@ -388,315 +383,214 @@ def plot_scatter(app, profile_function=None):
             rel_height=app.rel_height.get()
         )
         
-        # Get peak heights for all detected peaks
-        peak_heights = app.filtered_signal[all_peaks]
+        # Calculate widths for unfiltered peaks
+        if len(unfiltered_peaks) > 0:
+            width_results = peak_widths(app.filtered_signal, unfiltered_peaks, rel_height=app.rel_height.get())
+            unfiltered_properties['widths'] = width_results[0]
+            unfiltered_properties['width_heights'] = width_results[1]
+            unfiltered_properties['left_ips'] = width_results[2]
+            unfiltered_properties['right_ips'] = width_results[3]
         
-        # Calculate prominence-to-height ratio for all peaks
-        prominence_ratios = all_properties['prominences'] / peak_heights
+        # Now get peaks with the prominence ratio filter applied
+        peaks, properties = find_peaks_with_window(
+            app.filtered_signal,
+            width=width_p,
+            prominence=app.height_lim.get(),
+            distance=app.distance.get(),
+            rel_height=app.rel_height.get(),
+            prominence_ratio=prominence_ratio
+        )
         
-        # Create mask for peaks that pass the filter (not filtered out)
-        keep_mask = prominence_ratios >= prominence_ratio_threshold
+        if len(peaks) == 0:
+            app.preview_label.config(
+                text="No peaks found with current parameters. Try adjusting threshold or width range.",
+                foreground=app.theme_manager.get_color('warning')
+            )
+            return False
         
-        # Get peaks that pass the filter
-        peaks_x_filter = all_peaks[keep_mask]
-        
-        # Extract properties for peaks that pass the filter
-        properties = {}
-        for prop_name, prop_values in all_properties.items():
-            if isinstance(prop_values, np.ndarray) and len(prop_values) == len(all_peaks):
-                properties[prop_name] = prop_values[keep_mask]
-        
-        # Get filtered-out peaks if showing them
-        filtered_peaks_x = None
-        filtered_properties = None
+        # Identify filtered peaks (those in unfiltered_peaks but not in peaks)
+        filtered_out_peaks = []
+        filtered_out_properties = {}
         
         if show_filtered_peaks:
-            # Create mask for filtered peaks (those that would be filtered out)
-            filtered_mask = ~keep_mask
+            # Find indices of peaks that are in unfiltered_peaks but not in peaks
+            if len(unfiltered_peaks) > 0:
+                filtered_mask = np.ones(len(unfiltered_peaks), dtype=bool)
+                
+                for i, peak_idx in enumerate(unfiltered_peaks):
+                    # Check if this peak is present in the filtered peaks list
+                    if np.any(peaks == peak_idx):
+                        filtered_mask[i] = False
+                
+                # Get the filtered out peaks
+                filtered_out_peaks = unfiltered_peaks[filtered_mask]
+                
+                # Extract their properties
+                for key, values in unfiltered_properties.items():
+                    if isinstance(values, np.ndarray) and len(values) == len(unfiltered_peaks):
+                        if key not in filtered_out_properties:
+                            filtered_out_properties[key] = values[filtered_mask]
             
-            # Extract filtered-out peaks
-            filtered_peaks_x = all_peaks[filtered_mask]
-            
-            # Extract properties for filtered-out peaks
-            filtered_properties = {}
-            for prop_name, prop_values in all_properties.items():
-                if isinstance(prop_values, np.ndarray) and len(prop_values) == len(all_peaks):
-                    filtered_properties[prop_name] = prop_values[filtered_mask]
-            
-            print(f"DEBUG - Filtered peaks in plot_scatter:")
-            print(f"Found {len(filtered_peaks_x)} peaks filtered out by prominence ratio threshold {prominence_ratio_threshold}")
-        
-        # Additional debug information after peak detection
-        print(f"DEBUG - Peak detection results in plot_scatter:")
-        print(f"Found {len(peaks_x_filter)} peaks that pass the filter")
+            print(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
         
         # Calculate peak properties
-        widths = properties["widths"]  # Width in samples
+        heights = app.filtered_signal[peaks]
+        prominences = properties['prominences']
+        widths = properties['widths']  # Width in samples
         widths_in_seconds = widths * rate  # Convert from samples to seconds
         widths_in_ms = widths_in_seconds * 1000  # Convert from seconds to milliseconds
         
-        prominences = properties["prominences"]
-        peak_times = app.t_value[peaks_x_filter]
+        # Calculate filtered peak properties if available
+        if len(filtered_out_peaks) > 0:
+            filtered_heights = app.filtered_signal[filtered_out_peaks]
+            filtered_prominences = filtered_out_properties['prominences']
+            filtered_widths = filtered_out_properties['widths']
+            filtered_widths_in_ms = filtered_widths * rate * 1000
         
-        # Calculate peak areas
-        window = np.round(widths, 0).astype(int) + 40
-        peak_areas = np.zeros(len(peaks_x_filter))
-
-        for i in range(len(peaks_x_filter)):
-            # Ensure indices are within valid range
-            start_idx = max(0, peaks_x_filter[i] - window[i])
-            end_idx = min(len(app.filtered_signal), peaks_x_filter[i] + window[i])
-            
-            yData = app.filtered_signal[start_idx:end_idx]
-            # Check if yData is empty before calculating minimum
-            background = np.min(yData) if len(yData) > 0 else 0
-            
-            st = max(0, int(properties["left_ips"][i]))
-            en = min(len(app.filtered_signal), int(properties["right_ips"][i]))
-            
-            # Only calculate area if we have valid indices
-            if st < en:
-                peak_areas[i] = np.sum(app.filtered_signal[st:en] - background)
+        # Calculate areas under peaks
+        areas = []
+        for i, peak in enumerate(peaks):
+            left_idx = int(properties["left_ips"][i])
+            right_idx = int(properties["right_ips"][i])
+            if left_idx < right_idx:
+                areas.append(np.trapz(app.filtered_signal[left_idx:right_idx]))
             else:
-                peak_areas[i] = 0
-                print(f"WARNING: Invalid peak area calculation for peak {i} (st={st}, en={en})")
+                areas.append(0)
+        areas = np.array(areas)
         
-        # Calculate properties for filtered peaks if they exist
-        filtered_widths_in_ms = None
-        filtered_prominences = None
-        filtered_peak_areas = None
-        
-        if show_filtered_peaks and filtered_peaks_x is not None and len(filtered_peaks_x) > 0:
-            # Calculate filtered peak properties
-            filtered_widths = filtered_properties["widths"]  # Width in samples
-            filtered_widths_in_seconds = filtered_widths * rate  # Convert from samples to seconds
-            filtered_widths_in_ms = filtered_widths_in_seconds * 1000  # Convert from seconds to milliseconds
-            
-            filtered_prominences = filtered_properties["prominences"]
-            
-            # Calculate areas for filtered peaks
-            filtered_window = np.round(filtered_widths, 0).astype(int) + 40
-            filtered_peak_areas = np.zeros(len(filtered_peaks_x))
-            
-            for i in range(len(filtered_peaks_x)):
-                # Ensure indices are within valid range
-                start_idx = max(0, filtered_peaks_x[i] - filtered_window[i])
-                end_idx = min(len(app.filtered_signal), filtered_peaks_x[i] + filtered_window[i])
-                
-                yData = app.filtered_signal[start_idx:end_idx]
-                # Check if yData is empty before calculating minimum
-                background = np.min(yData) if len(yData) > 0 else 0
-                
-                st = max(0, int(filtered_properties["left_ips"][i]))
-                en = min(len(app.filtered_signal), int(filtered_properties["right_ips"][i]))
-                
-                # Only calculate area if we have valid indices
-                if st < en:
-                    filtered_peak_areas[i] = np.sum(app.filtered_signal[st:en] - background)
+        # Calculate areas for filtered peaks if available
+        filtered_areas = []
+        if len(filtered_out_peaks) > 0 and 'left_ips' in filtered_out_properties and 'right_ips' in filtered_out_properties:
+            for i, peak in enumerate(filtered_out_peaks):
+                left_idx = int(filtered_out_properties["left_ips"][i])
+                right_idx = int(filtered_out_properties["right_ips"][i])
+                if left_idx < right_idx:
+                    filtered_areas.append(np.trapz(app.filtered_signal[left_idx:right_idx]))
                 else:
-                    filtered_peak_areas[i] = 0
-                    print(f"WARNING: Invalid filtered peak area calculation for peak {i} (st={st}, en={en})")
-
-        # Create DataFrame with all peak properties
-        df_all = pd.DataFrame({
-            "width": widths_in_ms,  # Use widths_in_ms directly
-            "amplitude": prominences,
-            "area": peak_areas
-        })
+                    filtered_areas.append(0)
+            filtered_areas = np.array(filtered_areas)
         
-        # Create DataFrame for filtered peaks if they exist
-        df_filtered = None
-        if show_filtered_peaks and filtered_widths_in_ms is not None:
-            df_filtered = pd.DataFrame({
-                "width": filtered_widths_in_ms,
-                "amplitude": filtered_prominences,
-                "area": filtered_peak_areas
-            })
-        
-        # Debug output for peak widths
-        if len(widths) > 0:
-            print(f"\nDEBUG - Peak width information in plot_scatter:")
-            print(f"Raw widths (samples): {np.min(widths):.1f}/{np.mean(widths):.1f}/{np.max(widths):.1f}")
-            print(f"Widths in seconds: {np.min(widths_in_seconds):.6f}/{np.mean(widths_in_seconds):.6f}/{np.max(widths_in_seconds):.6f}")
-            print(f"Widths in ms: {np.min(widths_in_ms):.2f}/{np.mean(widths_in_ms):.2f}/{np.max(widths_in_ms):.2f}")
-            print(f"Widths in DataFrame (ms): {df_all['width'].min():.2f}/{df_all['width'].mean():.2f}/{df_all['width'].max():.2f}")
-            
-            # Calculate sampling rate for verification
-            print(f"Median time difference between samples: {rate:.8f} seconds")
-            print(f"Sampling rate: {sampling_rate:.1f} Hz")
-            
-            # Calculate average width in sample points
-            print(f"Average width in sample points: {np.mean(widths):.2f}")
-
-        # Create new figure
-        # Figure bg color handled by theme manager
-        new_figure = Figure(figsize=(12, 10))
-        gs = new_figure.add_gridspec(2, 2, hspace=0.3, wspace=0.3) # Increased spacing slightly
-        ax = [new_figure.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
-        # Axes bg color handled by theme manager
-
-        # Get SEMANTIC theme colors
+        # Get SEMANTIC theme colors for plotting elements
+        scatter_color = app.theme_manager.get_plot_color('scatter_points')
+        filtered_color = "#FF8080"  # Light red for filtered peaks
         hist_color = app.theme_manager.get_plot_color('hist_bars')
-        hist_edge_color = app.theme_manager.get_plot_color('patch.edgecolor') # Use standard edge color
-        filtered_color = "#FF8080" # Light red for filtered peaks
-        scatter_color = app.theme_manager.get_plot_color('scatter_points') # Use same color as time-resolved
+        hist_edge_color = app.theme_manager.get_plot_color('patch.edgecolor')
 
-        # Parameters for scatter plots - use consistent values with time-resolved visualization
-        scatter_size = 2  # Base size for dots
-        scatter_alpha = 0.5  # Lower alpha for better visibility when overlapping
-        filtered_alpha = 0.7  # Higher alpha for filtered peaks
-        filtered_size = 3  # Slightly larger size for filtered peaks
-
-        # Plot 1: Width vs Amplitude (simple scatter, no density gradient)
-        # Scale dot size by area (normalized to a reasonable range)
-        area_scaled = (df_all['area'] / df_all['area'].max()) * 10 + 1  # Scale to 1-11 size range
-        ax[0].scatter(df_all['width'], df_all['amplitude'],
-                    color=scatter_color, s=area_scaled, alpha=scatter_alpha)
-                    
-        # Add filtered peaks if available
-        if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
-            filtered_area_scaled = (df_filtered['area'] / df_all['area'].max()) * 10 + 1  # Use same scale as main data
-            ax[0].scatter(df_filtered['width'], df_filtered['amplitude'], 
-                    color=filtered_color, s=filtered_area_scaled, alpha=filtered_alpha, 
-                    label=f'Filtered Peaks (n={len(df_filtered)})')
-            ax[0].legend(fontsize=8)
+        # Parameters for scatter plots
+        scatter_size = 5  # Base size for dots
+        scatter_alpha = 0.7  # Alpha for visibility
+        
+        # Plot 1: Height vs Prominence (with prominence ratio line)
+        ax[0].scatter(heights, prominences, s=scatter_size, alpha=scatter_alpha, color=scatter_color, label='Kept Peaks')
+        if show_filtered_peaks and len(filtered_out_peaks) > 0:
+            ax[0].scatter(filtered_heights, filtered_prominences, s=scatter_size, alpha=scatter_alpha, color=filtered_color, label='Filtered Peaks')
             
-        ax[0].set_xlabel('Width (ms)')
-        ax[0].set_ylabel('Amplitude (counts)')
-        ax[0].set_xscale('log')
-        ax[0].set_yscale('log')
-        ax[0].grid(True) # Use theme grid style
-        ax[0].set_title('Width vs Amplitude')
-        corr1 = df_all['width'].corr(df_all['amplitude'])
-        ax[0].text(0.05, 0.95, f'r = {corr1:.2f}', transform=ax[0].transAxes,
-                fontsize=9, verticalalignment='top') # Keep annotation font small
-
-        # Plot 2: Width vs Area (simple scatter, no density gradient)
-        # Scale dot size by amplitude
-        amplitude_scaled = (df_all['amplitude'] / df_all['amplitude'].max()) * 10 + 1  # Scale to 1-11 size range
-        ax[1].scatter(df_all['width'], df_all['area'],
-                    color=scatter_color, s=amplitude_scaled, alpha=scatter_alpha)
-                    
-        # Add filtered peaks if available
-        if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
-            filtered_amplitude_scaled = (df_filtered['amplitude'] / df_all['amplitude'].max()) * 10 + 1  # Use same scale
-            ax[1].scatter(df_filtered['width'], df_filtered['area'], 
-                    color=filtered_color, s=filtered_amplitude_scaled, alpha=filtered_alpha, 
-                    label=f'Filtered Peaks (n={len(df_filtered)})')
-            ax[1].legend(fontsize=8)
+            # Draw prominence ratio threshold line
+            max_height = max(np.max(heights), np.max(filtered_heights))
+            x_values = np.linspace(0, max_height, 100)
+            y_values = x_values * prominence_ratio  # prominence = height * ratio
+            ax[0].plot(x_values, y_values, 'r--', alpha=0.7, label=f'Ratio={prominence_ratio:.2f}')
+        else:
+            max_height = np.max(heights)
+            x_values = np.linspace(0, max_height, 100)
+            y_values = x_values * prominence_ratio  # prominence = height * ratio
+            ax[0].plot(x_values, y_values, 'r--', alpha=0.7, label=f'Ratio={prominence_ratio:.2f}')
             
-        ax[1].set_xlabel('Width (ms)')
-        ax[1].set_ylabel('Area (counts)')
-        ax[1].set_xscale('log')
-        ax[1].set_yscale('log')
+        ax[0].set_xlabel('Peak Height')
+        ax[0].set_ylabel('Peak Prominence')
+        ax[0].set_title('Height vs Prominence')
+        ax[0].grid(True)
+        ax[0].legend(fontsize=8)
+        
+        # Plot 2: Width vs Height
+        if len(areas) > 0:
+            # Scale dot size by area
+            area_scaled = (areas / np.max(areas)) * 20 + 1  # Scale to 1-21 size range
+            ax[1].scatter(heights, widths_in_ms, s=area_scaled, alpha=scatter_alpha, color=scatter_color)
+        else:
+            ax[1].scatter(heights, widths_in_ms, s=scatter_size, alpha=scatter_alpha, color=scatter_color)
+            
+        if show_filtered_peaks and len(filtered_out_peaks) > 0:
+            if len(filtered_areas) > 0:
+                # Scale dot size by area, using the same scale as the main data
+                max_area = np.max(areas) if len(areas) > 0 else np.max(filtered_areas)
+                filtered_area_scaled = (filtered_areas / max_area) * 20 + 1
+                ax[1].scatter(filtered_heights, filtered_widths_in_ms, s=filtered_area_scaled, alpha=scatter_alpha, 
+                            color=filtered_color, label=f'Filtered Peaks ({len(filtered_out_peaks)})')
+            else:
+                ax[1].scatter(filtered_heights, filtered_widths_in_ms, s=scatter_size, alpha=scatter_alpha, 
+                            color=filtered_color, label=f'Filtered Peaks ({len(filtered_out_peaks)})')
+                
+        ax[1].set_xlabel('Peak Height')
+        ax[1].set_ylabel('Width (ms)')
+        ax[1].set_title('Height vs Width')
         ax[1].grid(True)
-        ax[1].set_title('Width vs Area')
-        corr2 = df_all['width'].corr(df_all['area'])
-        ax[1].text(0.05, 0.95, f'r = {corr2:.2f}', transform=ax[1].transAxes,
-                fontsize=9, verticalalignment='top')
-
-        # Plot 3: Amplitude vs Area (simple scatter, no density gradient)
-        # Scale dot size by width
-        width_scaled = (df_all['width'] / df_all['width'].max()) * 10 + 1  # Scale to 1-11 size range
-        ax[2].scatter(df_all['amplitude'], df_all['area'],
-                    color=scatter_color, s=width_scaled, alpha=scatter_alpha)
-                    
-        # Add filtered peaks if available
-        if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
-            filtered_width_scaled = (df_filtered['width'] / df_all['width'].max()) * 10 + 1  # Use same scale
-            ax[2].scatter(df_filtered['amplitude'], df_filtered['area'], 
-                    color=filtered_color, s=filtered_width_scaled, alpha=filtered_alpha, 
-                    label=f'Filtered Peaks (n={len(df_filtered)})')
-            ax[2].legend(fontsize=8)
-            
-        ax[2].set_xlabel('Amplitude (counts)')
-        ax[2].set_ylabel('Area (counts)')
-        ax[2].set_xscale('log')
-        ax[2].set_yscale('log')
+        ax[1].legend(fontsize=8)
+        
+        # Plot 3: Area vs Width
+        ax[2].scatter(widths_in_ms, areas, s=scatter_size, alpha=scatter_alpha, color=scatter_color, label='Kept Peaks')
+        if show_filtered_peaks and len(filtered_out_peaks) > 0 and len(filtered_areas) > 0:
+            ax[2].scatter(filtered_widths_in_ms, filtered_areas, s=scatter_size, alpha=scatter_alpha, 
+                        color=filtered_color, label=f'Filtered Peaks ({len(filtered_out_peaks)})')
+        ax[2].set_xlabel('Width (ms)')
+        ax[2].set_ylabel('Area')
+        ax[2].set_title('Width vs Area')
         ax[2].grid(True)
-        ax[2].set_title('Amplitude vs Area')
-        corr3 = df_all['amplitude'].corr(df_all['area'])
-        ax[2].text(0.05, 0.95, f'r = {corr3:.2f}', transform=ax[2].transAxes,
-                fontsize=9, verticalalignment='top')
-
-        # Plot 4: Width distribution using SEMANTIC colors
+        ax[2].legend(fontsize=8)
+        
+        # Plot 4: Width distribution histogram
         import seaborn as sns
-        sns.histplot(data=df_all, x='width', bins=50, ax=ax[3],
-                     color=hist_color,
-                     edgecolor=hist_edge_color,
-                     alpha=0.7)
-                     
-        # Add filtered peaks histogram if available
-        if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
-            sns.histplot(data=df_filtered, x='width', bins=50, ax=ax[3],
-                      color=filtered_color,
-                      edgecolor=hist_edge_color,
-                      alpha=0.5,
-                      label=f'Filtered Peaks (n={len(df_filtered)})')
+        
+        # Create a pandas Series for the histogram
+        width_series = pd.Series(widths_in_ms, name='Width (ms)')
+        sns.histplot(width_series, bins=30, color=hist_color, edgecolor=hist_edge_color, alpha=0.7, ax=ax[3])
+        
+        if show_filtered_peaks and len(filtered_out_peaks) > 0:
+            filtered_width_series = pd.Series(filtered_widths_in_ms, name='Width (ms)')
+            sns.histplot(filtered_width_series, bins=30, color=filtered_color, edgecolor=hist_edge_color, 
+                        alpha=0.5, ax=ax[3], label=f'Filtered ({len(filtered_out_peaks)})')
             ax[3].legend(fontsize=8)
             
         ax[3].set_xlabel('Width (ms)')
         ax[3].set_ylabel('Count')
-        ax[3].grid(True)
         ax[3].set_title('Width Distribution')
+        ax[3].grid(True)
         
-        # Include filtered peaks in statistics if they're shown
-        total_peaks = len(df_all)
-        if show_filtered_peaks and df_filtered is not None:
-            filtered_count = len(df_filtered)
-            total_with_filtered = total_peaks + filtered_count
-            stats_text = (
-                f'Mean: {df_all["width"].mean():.1f} ms\n'
-                f'Median: {df_all["width"].median():.1f} ms\n'
-                f'Std: {df_all["width"].std():.1f} ms\n'
-                f'Min: {df_all["width"].min():.1f} ms\n'
-                f'Max: {df_all["width"].max():.1f} ms\n'
-                f'N: {total_peaks:,} peaks' +
-                (f'\nFiltered: {filtered_count:,} peaks' if filtered_count > 0 else '') +
-                (f'\nTotal: {total_with_filtered:,} peaks' if filtered_count > 0 else '')
-            )
-        else:
-            stats_text = (
-                f'Mean: {df_all["width"].mean():.1f} ms\n'
-                f'Median: {df_all["width"].median():.1f} ms\n'
-                f'Std: {df_all["width"].std():.1f} ms\n'
-                f'Min: {df_all["width"].min():.1f} ms\n'
-                f'Max: {df_all["width"].max():.1f} ms\n'
-                f'N: {total_peaks:,} peaks')
-                
+        # Add statistics to width distribution plot
+        stats_text = (
+            f'Mean: {np.mean(widths_in_ms):.1f} ms\n'
+            f'Median: {np.median(widths_in_ms):.1f} ms\n'
+            f'SD: {np.std(widths_in_ms):.1f} ms\n'
+            f'Min: {np.min(widths_in_ms):.1f} ms\n'
+            f'Max: {np.max(widths_in_ms):.1f} ms\n'
+            f'N: {len(peaks)}'
+        )
         ax[3].text(0.95, 0.95, stats_text, transform=ax[3].transAxes,
-                  fontsize=9, verticalalignment='top', horizontalalignment='right') # Keep font small
-
-        # Main title (text color from apply_plot_theme)
-        if show_filtered_peaks and df_filtered is not None and len(df_filtered) > 0:
-            summary_stats = (
-                f'Total Peaks: {total_peaks:,} | '
-                f'Filtered Peaks: {len(df_filtered):,} | '
-                f'Mean Area: {df_all["area"].mean():.1e} ± {df_all["area"].std():.1e} | '
-                f'Mean Amplitude: {df_all["amplitude"].mean():.1f} ± {df_all["amplitude"].std():.1f}'
-            )
-        else:
-            summary_stats = (
-                f'Total Peaks: {total_peaks:,} | '
-                f'Mean Area: {df_all["area"].mean():.1e} ± {df_all["area"].std():.1e} | '
-                f'Mean Amplitude: {df_all["amplitude"].mean():.1f} ± {df_all["amplitude"].std():.1f}'
-            )
-            
-        new_figure.suptitle('Peak Property Correlations\n' + summary_stats,
-                           y=0.96) # Adjusted y slightly
-
-        # Add legend explaining dot sizes
-        # Add a small legend to explain dot sizes
-        legend_text_1 = "Dot sizes in Width vs Amplitude plot represent peak area"
-        legend_text_2 = "Dot sizes in Width vs Area plot represent peak amplitude"
-        legend_text_3 = "Dot sizes in Amplitude vs Area plot represent peak width"
-        new_figure.text(0.02, 0.03, legend_text_1 + "\n" + legend_text_2 + "\n" + legend_text_3, 
-                        fontsize=8, color=app.theme_manager.get_plot_color('text'),
-                        horizontalalignment='left', verticalalignment='bottom')
-
+                  fontsize=8, verticalalignment='top', horizontalalignment='right')
+        
+        # Update all axes with correct scale
+        for axis in ax:
+            axis.set_xscale('log' if app.log_scale_enabled.get() else 'linear')
+            axis.set_yscale('log' if app.log_scale_enabled.get() else 'linear')
+        
+        # Add main title with summary statistics
+        total_peaks = len(peaks)
+        filtered_count = len(filtered_out_peaks) if len(filtered_out_peaks) > 0 else 0
+        
+        summary_text = (
+            f'Peak Property Analysis - Total: {total_peaks} peaks'
+            + (f', Filtered: {filtered_count} peaks' if filtered_count > 0 else '')
+            + f' - Prominence Ratio: {prominence_ratio:.2f}'
+        )
+        new_figure.suptitle(summary_text, fontsize=12, y=0.98)
+        
+        # Add legend for dot sizes in Height vs Width plot
+        new_figure.text(0.02, 0.02, "Note: In the Height vs Width plot, dot sizes represent peak areas.", 
+                      fontsize=8, transform=new_figure.transFigure)
+        
         # Apply theme standard styles (bg, grid, text)
         app.theme_manager.apply_plot_theme(new_figure, ax)
-
+        
         # --- Update or create tab ---
         tab_name = "Peak Properties"
         tab_exists = False
@@ -713,7 +607,6 @@ def plot_scatter(app, profile_function=None):
                 canvas = FigureCanvasTkAgg(new_figure, master=tab_frame)
                 canvas.draw()
                 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-                # app.scatter_canvas = canvas # Optional: store specific canvas
                 tab_exists = True
                 break
 
@@ -725,20 +618,23 @@ def plot_scatter(app, profile_function=None):
             canvas = FigureCanvasTkAgg(new_figure, master=new_tab)
             canvas.draw()
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            # app.scatter_canvas = canvas # Optional: store specific canvas
 
         # Store the figure associated with the tab
         app.tab_figures[tab_name] = new_figure
 
         app.preview_label.config(
-            text="Peak properties plotted successfully",
+            text="Peak properties plot created successfully",
             foreground=app.theme_manager.get_color('success')
             )
+            
+        return True
 
     except Exception as e:
+        import traceback
+        print(f"Error in plot_scatter: {str(e)}")
+        traceback.print_exc()
         app.preview_label.config(
-            text=f"Error creating scatter plot: {e}",
+            text=f"Error creating scatter plot: {str(e)}",
             foreground=app.theme_manager.get_color('error')
             )
-        print(f"Detailed error: {str(e)}")
-        traceback.print_exc() 
+        return False 

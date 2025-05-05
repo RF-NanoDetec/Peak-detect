@@ -54,8 +54,8 @@ def run_peak_detection(app, profile_function=None):
         rel_height = app.rel_height.get()
         width_values = app.width_p.get().strip().split(',')
         
-        # Get the prominence ratio threshold if available
-        prominence_ratio = app.prominence_ratio.get() if hasattr(app, 'prominence_ratio') else 0.8
+        # Get the prominence ratio threshold
+        prominence_ratio = app.prominence_ratio.get()
 
         # Update progress
         app.update_progress_bar(1)
@@ -72,10 +72,10 @@ def run_peak_detection(app, profile_function=None):
             app.t_value,
             height_lim_factor,
             distance,
+            prominence_ratio,  # Moved to match new parameter order
             rel_height,
             width_values,
-            time_resolution=time_res,
-            prominence_ratio=prominence_ratio  # Add prominence ratio parameter
+            time_resolution=time_res
         )
         
         # Calculate peak areas using the PeakDetector
@@ -174,8 +174,8 @@ def plot_filtered_peaks(app, profile_function=None):
         width_values = app.width_p.get().strip().split(',')
         width_p = [int(float(value.strip()) * 10) for value in width_values]
         
-        # Get the prominence ratio threshold if available
-        prominence_ratio = app.prominence_ratio.get() if hasattr(app, 'prominence_ratio') else 0.8
+        # Get the prominence ratio threshold
+        prominence_ratio = app.prominence_ratio.get()
 
         peaks_x_filter, amp_x_filter = find_peaks_with_window(
             app.filtered_signal,
@@ -183,7 +183,7 @@ def plot_filtered_peaks(app, profile_function=None):
             prominence=app.height_lim.get(),
             distance=app.distance.get(),
             rel_height=app.rel_height.get(),
-            prominence_ratio=prominence_ratio  # Add prominence ratio parameter
+            prominence_ratio=prominence_ratio
         )
 
         if len(peaks_x_filter) == 0:

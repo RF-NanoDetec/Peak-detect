@@ -71,7 +71,7 @@ class PeakDetector:
         self.logger.debug("Peak detector reset")
     
     @profile_function
-    def detect_peaks(self, signal, time_values, height_lim, distance, rel_height=0.5, width_range=None, time_resolution=1e-4, prominence_ratio=0.8):
+    def detect_peaks(self, signal, time_values, height_lim, distance, prominence_ratio, rel_height=0.5, width_range=None, time_resolution=1e-4):
         """
         Detect peaks in the provided signal data.
         
@@ -83,16 +83,16 @@ class PeakDetector:
             time_values (numpy.ndarray): Corresponding time values for the signal
             height_lim (float): Minimum height threshold for peaks
             distance (int): Minimum number of samples between peaks
+            prominence_ratio (float): Threshold for the ratio of prominence to peak height.
+                Peaks with ratio < threshold are filtered out as subpeaks.
+                Higher values (e.g., 0.9) are more strict, keeping only very prominent peaks.
+                Lower values (e.g., 0.5) are more permissive.
             rel_height (float, optional): Relative height at which peak width is measured.
                 Defaults to 0.5 (half height).
             width_range (tuple, optional): Tuple of (min_width, max_width) in milliseconds to filter peaks.
                 If None, no width filtering is applied.
             time_resolution (float, optional): Time resolution in seconds per unit.
                 Defaults to 1e-4 (0.1 milliseconds per unit).
-            prominence_ratio (float, optional): Threshold for the ratio of prominence to peak height.
-                Peaks with ratio < threshold are filtered out as subpeaks.
-                Higher values (e.g., 0.9) are more strict, keeping only very prominent peaks.
-                Lower values (e.g., 0.5) are more permissive. Defaults to 0.8 (80%).
                 
         Returns:
             tuple: (indices, properties) where:

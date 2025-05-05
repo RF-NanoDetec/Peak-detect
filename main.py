@@ -67,7 +67,7 @@ from core.data_utils import (
     find_nearest,
     timestamps_to_seconds  # For single timestamp conversion
 )
-from core.peak_analysis_utils import timestamps_array_to_seconds, adjust_lowpass_cutoff, calculate_lowpass_cutoff  # For array of timestamps
+from core.peak_analysis_utils import timestamps_array_to_seconds, adjust_lowpass_cutoff, calculate_lowpass_cutoff, find_peaks_with_window
 from core.file_export import (
     export_plot as export_plot_function,
     save_peak_information_to_csv as save_peak_information_to_csv_function,
@@ -545,6 +545,13 @@ class Application(tk.Tk):
         This is a UI wrapper around the peak detection pipeline function.
         """
         try:
+            # Debug: Print width values used for peak detection
+            width_values = self.width_p.get().strip().split(',')
+            time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
+            sampling_rate = 1 / time_res
+            width_samples = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+            print(f"[DEBUG][run_peak_detection] width_p (ms): {width_values}, width_p (samples): {width_samples}, sampling_rate: {sampling_rate}")
+
             # Run peak detection
             peaks, properties, peak_areas = run_peak_detection_function(self, profile_function=profile_function)
             
@@ -858,6 +865,7 @@ class Application(tk.Tk):
         rel_height = self.rel_height.get()
         width_values = self.width_p.get().strip().split(',')
         time_res = self.time_resolution.get()
+        prominence_ratio = self.prominence_ratio.get()
         
         # Use the core module function
         result = calculate_peak_areas_function(
@@ -868,7 +876,8 @@ class Application(tk.Tk):
             distance,
             rel_height,
             width_values,
-            time_resolution=time_res
+            time_resolution=time_res,
+            prominence_ratio=prominence_ratio  # Pass the prominence ratio parameter
         )
         
         if result:
@@ -1007,9 +1016,38 @@ class Application(tk.Tk):
     def update_results_summary(self, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
         """
         Update the results summary text widget with analysis results.
-        This method now uses the integrated UI function from ui.ui_utils.
         """
-        return update_results_summary_with_ui(self, events, max_amp, peak_areas, peak_intervals, preview_text)
+        try:
+            self.results_summary.config(state=tk.NORMAL)
+            self.results_summary.delete(1.0, tk.END)  # Clear existing content
+
+            summary_text = "=== PEAK DETECTION SUMMARY ===\n"
+
+            # Add the current prominence ratio value used
+            if hasattr(self, 'prominence_ratio'):
+                summary_text += f"Prominence Ratio Used: {self.prominence_ratio.get():.2f}\n"
+
+            # Most critical information first - peak counts and throughput
+            if events is not None:
+                summary_text += f"Number of Peaks Detected: {events}\n"
+            if max_amp is not None:
+                summary_text += f"Maximum Amplitude: {max_amp:.2f}\n"
+            if peak_areas is not None:
+                import numpy as np
+                if hasattr(peak_areas, '__len__') and len(peak_areas) > 0 and not isinstance(peak_areas, (float, int)):
+                    summary_text += f"Peak Areas (Mean ± SD): {np.mean(peak_areas):.2f} ± {np.std(peak_areas):.2f}\n"
+                    summary_text += f"First 5 Areas: {[round(a, 2) for a in peak_areas[:5]]}\n"
+                else:
+                    summary_text += f"Peak Areas: {peak_areas}\n"
+            if peak_intervals is not None:
+                summary_text += f"Total Peak Intervals: {peak_intervals:.2f}\n"
+            if preview_text is not None:
+                summary_text += preview_text + "\n"
+
+            self.results_summary.insert(tk.END, summary_text)
+            self.results_summary.config(state=tk.DISABLED)
+        except Exception as e:
+            self.show_error("Error updating results summary", str(e))
 
     # Add this validation method to your class
     def validate_float(self, value):
@@ -1820,6 +1858,87 @@ class Application(tk.Tk):
         popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
         
         return popup
+
+    def get_peak_filter_stats(self):
+        """
+        Returns (total_peaks, filtered_out, filtered_kept) using the current parameters and prominence ratio.
+        Uses the same logic as plot_data for consistency.
+        """
+        import numpy as np
+        from core.peak_analysis_utils import find_peaks_with_window
+        if self.filtered_signal is None:
+            return 0, 0, 0
+        width_values = self.width_p.get().strip().split(',')
+        rate = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
+        if rate <= 0:
+            rate = 0.0001
+        sampling_rate = 1 / rate
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+        print(f"[DEBUG][get_peak_filter_stats] width_p (ms): {width_values}, width_p (samples): {width_p}, sampling_rate: {sampling_rate}")
+        # Only use the current prominence ratio value, don't fall back to a default value
+        prominence_ratio = self.prominence_ratio.get()
+        all_peaks, all_properties = find_peaks_with_window(
+            self.filtered_signal,
+            width=width_p,
+            prominence=self.height_lim.get(),
+            distance=self.distance.get(),
+            rel_height=self.rel_height.get(),
+            prominence_ratio=prominence_ratio
+        )
+        # The peaks returned by find_peaks_with_window already have the filter applied
+        # But we need to calculate how many were filtered out, so we need to get all peaks first
+        # without the filter
+        from scipy.signal import find_peaks, peak_widths
+        # Find all peaks without prominence_ratio filtering
+        all_unfiltered_peaks, all_unfiltered_properties = find_peaks(
+            self.filtered_signal,
+            width=width_p,
+            prominence=self.height_lim.get(),
+            distance=self.distance.get(),
+            rel_height=self.rel_height.get()
+        )
+        
+        if len(all_unfiltered_peaks) > 0:
+            # Calculate widths and add to properties
+            width_results = peak_widths(self.filtered_signal, all_unfiltered_peaks, rel_height=self.rel_height.get())
+            all_unfiltered_properties['widths'] = width_results[0]
+            all_unfiltered_properties['width_heights'] = width_results[1]
+            all_unfiltered_properties['left_ips'] = width_results[2]
+            all_unfiltered_properties['right_ips'] = width_results[3]
+        
+        # Calculate how many peaks were filtered by prominence ratio
+        total_peaks = len(all_unfiltered_peaks)
+        filtered_kept = len(all_peaks)  # already filtered by find_peaks_with_window
+        filtered_out = total_peaks - filtered_kept
+        
+        return total_peaks, filtered_out, filtered_kept
+
+    def on_apply_prominence_ratio(self):
+        """
+        Handler for the 'Apply' button in the peak analysis tab.
+        Updates the plots, filtered peaks feedback, and results summary based on the current prominence ratio.
+        """
+        try:
+            # Update the main analysis plot
+            self.plot_data()
+
+            # Use unified logic for feedback and summary
+            total_peaks, filtered_out, filtered_kept = self.get_peak_filter_stats()
+            if total_peaks > 0:
+                filtered_percentage = (filtered_out / total_peaks) * 100
+                msg = f"Filtered out {filtered_out} of {total_peaks} peaks ({filtered_percentage:.1f}%)"
+                self.filtered_peaks_feedback.config(text=msg, foreground="blue")
+                
+                # Update peak_detector.all_peaks_count to ensure results summary uses the same total count
+                self.peak_detector.all_peaks_count = total_peaks
+            else:
+                self.filtered_peaks_feedback.config(text="No peaks detected.", foreground="red")
+
+            # Update the results summary (will include filtering info)
+            from ui.ui_utils import update_results_summary_with_ui
+            update_results_summary_with_ui(self, events=filtered_kept)
+        except Exception as e:
+            self.filtered_peaks_feedback.config(text=f"Error: {e}", foreground="red")
 
 
 # Your main program code goes here

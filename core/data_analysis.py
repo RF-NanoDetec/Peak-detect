@@ -19,7 +19,7 @@ from core.peak_detection import calculate_auto_threshold as peak_detection_auto_
 logger = logging.getLogger(__name__)
 
 @profile_function
-def calculate_peak_areas(detector, signal, time_values, height_lim, distance, rel_height, width_values, time_resolution=1e-4):
+def calculate_peak_areas(detector, signal, time_values, height_lim, distance, rel_height, width_values, time_resolution=1e-4, prominence_ratio=0.8):
     """
     Calculate areas under detected peaks.
     
@@ -33,6 +33,8 @@ def calculate_peak_areas(detector, signal, time_values, height_lim, distance, re
         width_values (list): List of min and max width values for filtering
         time_resolution (float, optional): Time resolution in seconds per unit.
             Defaults to 1e-4 (0.1 milliseconds per unit).
+        prominence_ratio (float, optional): Threshold for the ratio of prominence
+            to peak height. Defaults to 0.8 (80%).
         
     Returns:
         tuple: (peak_areas, start_indices, end_indices) if peaks are detected, None otherwise
@@ -45,6 +47,7 @@ def calculate_peak_areas(detector, signal, time_values, height_lim, distance, re
                 time_values,
                 height_lim,
                 distance,
+                prominence_ratio,
                 rel_height,
                 width_values,
                 time_resolution=time_resolution

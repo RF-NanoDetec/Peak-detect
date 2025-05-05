@@ -328,12 +328,16 @@ def save_peak_information_to_csv(app):
             # Get time resolution - handle both Tkinter variable and float value
             time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
             
+            # Get the prominence ratio
+            prominence_ratio = app.prominence_ratio.get()
+            
             # Detect peaks
             app.peak_detector.detect_peaks(
                 app.filtered_signal,
                 app.t_value,
                 height_lim_factor,
                 distance,
+                prominence_ratio,  # Add prominence_ratio parameter
                 rel_height,
                 width_values,
                 time_resolution=time_res

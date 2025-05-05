@@ -1514,55 +1514,19 @@ def create_peak_analysis_tab(app, tab_control):
     indicator_frame = ttk.Frame(peaks_display_frame)
     indicator_frame.pack(fill=tk.X, padx=5, pady=2)
     
-    filtered_color_indicator = tk.Label(
-        indicator_frame, 
-        text="", 
-        width=2, 
-        height=1, 
-        background="#FF8080",  # Light red color
-        relief=tk.RAISED
-    )
-    filtered_color_indicator.pack(side=tk.LEFT)
-    
-    ttk.Label(
-        indicator_frame, 
-        text="= Prominence ratio threshold"
-    ).pack(side=tk.LEFT, padx=2)
-    
     # Prominence ratio controls (right side of filter controls)
     prominence_frame = ttk.Frame(filter_controls_row) 
     prominence_frame.pack(side=tk.LEFT, fill=tk.Y, padx=20, pady=2)
     
-    ttk.Label(prominence_frame, text="Prominence Ratio:").pack(anchor="w", padx=5, pady=2)
+    # Row for label, info button, and controls
+    label_row = ttk.Frame(prominence_frame)
+    label_row.pack(fill=tk.X, padx=0, pady=0)
     
-    # Create variable if it doesn't exist, otherwise use the existing one
-    if not hasattr(app, 'prominence_ratio'):
-        app.prominence_ratio = tk.DoubleVar(value=0.8)  # Default 0.8 (80%)
-    
-    ratio_control_frame = ttk.Frame(prominence_frame)
-    ratio_control_frame.pack(fill=tk.X, padx=5, pady=2)
-    
-    prominence_ratio_slider = tk.Scale(
-        ratio_control_frame,
-        from_=0.0,
-        to=1.0,
-        resolution=0.05,
-        orient=tk.HORIZONTAL,
-        variable=app.prominence_ratio,
-        length=200,
-        bg=app.theme_manager.get_color('card_bg'),
-        fg=app.theme_manager.get_color('text'),
-        troughcolor=app.theme_manager.get_color('background')
-    )
-    prominence_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
-    
-    # Entry for precise value control
-    ratio_entry = ttk.Entry(ratio_control_frame, textvariable=app.prominence_ratio, width=4)
-    ratio_entry.pack(side=tk.LEFT, padx=5)
-    
-    # Info button for prominence ratio
+    # Prominence Ratio label
+    ttk.Label(label_row, text="Prominence Ratio:").pack(side=tk.LEFT, padx=(0,2), pady=0)
+    # Info button right next to label
     info_button = ttk.Button(
-        ratio_control_frame, 
+        label_row, 
         text="?", 
         width=2,
         command=lambda: app.show_tooltip_popup(
@@ -1575,7 +1539,44 @@ def create_peak_analysis_tab(app, tab_control):
             "Peaks with ratio < threshold are filtered out."
         )
     )
-    info_button.pack(side=tk.LEFT, padx=2)
+    info_button.pack(side=tk.LEFT, padx=(0,5), pady=0)
+    
+    # Controls row: slider and entry only
+    controls_row = ttk.Frame(prominence_frame)
+    controls_row.pack(fill=tk.X, padx=0, pady=0)
+    
+    prominence_ratio_slider = tk.Scale(
+        controls_row,
+        from_=0.0,
+        to=1.0,
+        resolution=0.05,
+        orient=tk.HORIZONTAL,
+        variable=app.prominence_ratio,
+        length=140,
+        bg=app.theme_manager.get_color('card_bg'),
+        fg=app.theme_manager.get_color('text'),
+        troughcolor=app.theme_manager.get_color('background')
+    )
+    prominence_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5), pady=0)
+    
+    ratio_entry = ttk.Entry(controls_row, textvariable=app.prominence_ratio, width=4)
+    ratio_entry.pack(side=tk.LEFT, padx=(0,5), pady=0)
+    
+    # New frame for Apply button and feedback, aligned bottom row
+    apply_feedback_row = ttk.Frame(prominence_frame)
+    apply_feedback_row.pack(fill=tk.X, padx=0, pady=(5,0), anchor="s")
+    
+    apply_button = ttk.Button(
+        apply_feedback_row,
+        text="Apply",
+        command=app.on_apply_prominence_ratio
+    )
+    apply_button.pack(side=tk.LEFT, padx=(5,0), pady=0)
+    app.add_tooltip(apply_button, "Apply the current prominence ratio threshold to update the analysis and feedback.")
+    
+    # Feedback label for filtered peaks, right of Apply (bottom right)
+    app.filtered_peaks_feedback = ttk.Label(apply_feedback_row, text="", foreground="blue")
+    app.filtered_peaks_feedback.pack(side=tk.RIGHT, padx=(0,10), pady=0)
     
     # Add tooltips
     app.add_tooltip(

@@ -72,7 +72,10 @@ def update_results_summary(app, events=None, max_amp=None, peak_areas=None,
                             for window in windows:
                                 bins = np.arange(app.t_value[0], app.t_value[-1], window)
                                 if len(bins) > 1:
-                                    counts, _ = np.histogram(app.t_value[peaks], bins=bins)
+                                    if hasattr(app, 'peaks') and app.peaks is not None:
+                                        counts, _ = np.histogram(app.t_value[app.peaks], bins=bins)
+                                    else:
+                                        counts, _ = np.histogram([], bins=bins)
                                     max_window_throughput = np.max(counts) * (60 / window)  # Convert to per minute
                                     summary_text += f"Max {window}s Window Throughput: {max_window_throughput:.2f} events/minute\n"
             

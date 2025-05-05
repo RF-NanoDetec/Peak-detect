@@ -206,7 +206,7 @@ def timestamps_array_to_seconds(timestamps, start_time):
 
 # Detect peaks with a sliding window and filter out invalid ones
 @profile_function
-def find_peaks_with_window(signal, width, prominence, distance, rel_height, prominence_ratio=0.8):
+def find_peaks_with_window(signal, width, prominence, distance, rel_height, prominence_ratio):
     """
     Detect peaks in a signal with specified window parameters.
     
@@ -219,9 +219,9 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, prom
         prominence (float): Minimum prominence of peaks
         distance (int): Minimum distance between peaks
         rel_height (float): Relative height at which width is measured
-        prominence_ratio (float, optional): Threshold for the ratio of prominence
+        prominence_ratio (float): Threshold for the ratio of prominence
             to peak height. Peaks with ratio < threshold are filtered out as subpeaks.
-            Higher values (e.g., 0.9) are more strict. Defaults to 0.8 (80%).
+            Higher values (e.g., 0.9) are more strict.
         
     Returns:
         tuple: (peaks, properties) where:
@@ -272,7 +272,7 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, prom
     
     return peaks, properties
 
-def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=0.8):
+def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold):
     """
     Filter out peaks that are likely subpeaks sitting on top of larger peaks.
     
@@ -284,10 +284,16 @@ def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=0.8):
         signal (numpy.ndarray): The signal to analyze
         peaks (numpy.ndarray): Array of peak indices
         properties (dict): Dictionary of peak properties from find_peaks
-        prominence_ratio_threshold (float, optional): Threshold for the ratio of prominence
+        prominence_ratio_threshold (float): Threshold for the ratio of prominence
             to peak height. Peaks with ratio < threshold are filtered out as subpeaks.
-            Higher values (e.g., 0.9) are more strict, keeping only very prominent peaks.
-            Lower values (e.g., 0.5) are more permissive. Defaults to 0.8 (80%).
+            
+            Higher threshold values (e.g., 0.8) will be more strict and filter out more peaks.
+            Lower threshold values (e.g., 0.2) will be more permissive and keep more peaks.
+            
+            Examples:
+            - With threshold=0.8: Only peaks with prominence ≥ 80% of their height are kept
+            - With threshold=0.5: Peaks with prominence ≥ 50% of their height are kept
+            - With threshold=0.1: Most peaks are kept, only those with prominence < 10% of height are filtered
     
     Returns:
         tuple: (filtered_peaks, filtered_properties) with subpeaks removed
@@ -308,8 +314,8 @@ def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=0.8):
         if peak_height > 0:  # Avoid division by zero
             ratio = prominence / peak_height
             
-            # If the prominence is significantly less than the peak height,
-            # it's likely a subpeak
+            # If the prominence ratio is below the threshold, it's considered a subpeak and filtered out
+            # Higher threshold = more peaks filtered; Lower threshold = fewer peaks filtered
             if ratio < prominence_ratio_threshold:
                 keep_mask[i] = False
     
@@ -324,8 +330,12 @@ def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=0.8):
         else:
             filtered_properties[key] = values
     
-    print(f"Filtered out {len(peaks) - len(filtered_peaks)} subpeaks out of {len(peaks)} total peaks")
+    # Print debugging information
+    total_peaks = len(peaks)
+    filtered_out_peaks = total_peaks - len(filtered_peaks)
+    print(f"Filtered out {filtered_out_peaks} subpeaks out of {total_peaks} total peaks")
     print(f"Using prominence-to-height ratio threshold of {prominence_ratio_threshold:.2f}")
+    print(f"Keeping {len(filtered_peaks)} peaks with prominence/height ratio >= {prominence_ratio_threshold:.2f}")
     
     return filtered_peaks, filtered_properties
 
