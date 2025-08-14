@@ -11,7 +11,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
 from tkinter import ttk
 from matplotlib.lines import Line2D
-from core.peak_analysis_utils import find_peaks_with_window
+from core.peak_analysis_utils import (
+    find_peaks_with_window,
+    compute_baseline_mask,
+    compute_noise_stats,
+    compute_snr_values,
+)
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -36,6 +41,9 @@ def plot_data(app, profile_function=None):
         axes = app.data_figure.subplots(nrows=4, ncols=1, sharex=True,
                                        gridspec_kw={'height_ratios': [1, 1, 1, 1.2],
                                                    'hspace': 0.3})
+        
+        # Apply theme immediately to prevent white background flash
+        app.theme_manager.apply_plot_theme(app.data_figure, axes)
 
         # Convert data to float32 for memory efficiency
         t = np.asarray(app.t_value, dtype=np.float32)  # Time already in seconds
@@ -139,6 +147,13 @@ def plot_data(app, profile_function=None):
         
         prominences = properties["prominences"]
         peak_times = t[peaks]
+
+        # Persist peak properties on app for downstream summaries/export
+        app.peaks = peaks
+        app.peak_heights = prominences
+        app.peak_widths = widths
+        app.peak_left_ips = properties["left_ips"] if "left_ips" in properties else None
+        app.peak_right_ips = properties["right_ips"] if "right_ips" in properties else None
         
         # Also calculate properties for filtered-out peaks if available
         if len(filtered_out_peaks) > 0:
@@ -268,7 +283,7 @@ def plot_data(app, profile_function=None):
         app.data_figure.suptitle('Peak Analysis Over Time', y=0.95)
         app.data_figure.tight_layout(rect=[0, 0, 1, 0.93]) # Adjust rect for suptitle
 
-        # Apply theme standard styles (bg, grid, text)
+        # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(app.data_figure, axes)
 
         # Create or update the tab in plot_tab_control
@@ -339,7 +354,7 @@ def plot_data(app, profile_function=None):
 
 
 def plot_scatter(app, profile_function=None):
-    """Enhanced scatter plot for peak property correlations"""
+    """Enhanced scatter plot for peak property correlations and SNR distribution"""
     if app.filtered_signal is None:
         app.preview_label.config(
             text="Filtered signal not available. Please start the analysis first.",
@@ -351,9 +366,11 @@ def plot_scatter(app, profile_function=None):
         # Create new figure
         # Figure bg color handled by theme manager
         new_figure = Figure(figsize=(12, 10))
-        gs = new_figure.add_gridspec(2, 2, hspace=0.3, wspace=0.3) # Increased spacing slightly
-        ax = [new_figure.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
-        # Axes bg color handled by theme manager
+        gs = new_figure.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
+        ax = [new_figure.add_subplot(gs[i, j]) for i in range(2) for j in range(3)]
+        
+        # Apply theme immediately to prevent white background flash
+        app.theme_manager.apply_plot_theme(new_figure, ax)
 
         # Get time resolution for converting widths from samples to seconds
         rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
@@ -377,6 +394,7 @@ def plot_scatter(app, profile_function=None):
         prominence_ratio = app.prominence_ratio.get()
         
         # First, find all peaks without applying the prominence ratio filter
+        t = np.asarray(app.t_value, dtype=np.float32)
         from scipy.signal import find_peaks, peak_widths
         unfiltered_peaks, unfiltered_properties = find_peaks(
             app.filtered_signal,
@@ -477,6 +495,25 @@ def plot_scatter(app, profile_function=None):
         hist_color = app.theme_manager.get_plot_color('hist_bars')
         hist_edge_color = app.theme_manager.get_plot_color('patch.edgecolor')
 
+        # Compute baseline-based noise and SNR values
+        baseline_mask = compute_baseline_mask(
+            signal_length=len(app.filtered_signal),
+            peak_indices=peaks,
+            widths_in_samples=properties['widths'] if 'widths' in properties else np.array([]),
+            multiplier=2.0,
+            left_indices=(properties['left_ips'] if 'left_ips' in properties else None),
+            right_indices=(properties['right_ips'] if 'right_ips' in properties else None),
+        )
+        baseline_signal = app.filtered_signal[baseline_mask]
+        noise_std, noise_mad_std, baseline_mean = compute_noise_stats(baseline_signal)
+        snr_values = compute_snr_values(prominences, noise_std)
+
+        # Persist for reuse
+        app.noise_std = noise_std
+        app.noise_mad_std = noise_mad_std
+        app.baseline_mean = baseline_mean
+        app.snr_values = snr_values
+
         # Parameters for scatter plots
         scatter_size = 4  # Base size for dots
         scatter_alpha = 0.2  # Alpha for visibility
@@ -532,6 +569,38 @@ def plot_scatter(app, profile_function=None):
         ax[3].set_ylabel('Count')
         ax[3].set_title('Width Distribution')
         ax[3].grid(True)
+
+        # Plot 5: SNR distribution histogram
+        if snr_values.size > 0:
+            sns.histplot(pd.Series(snr_values, name='SNR'), bins=30, color=hist_color, edgecolor=hist_edge_color,
+                        alpha=0.7, ax=ax[4])
+            ax[4].set_xlabel('SNR (Height / Noise Std)')
+            ax[4].set_ylabel('Count')
+            ax[4].set_title('SNR Distribution')
+            ax[4].grid(True)
+            # Annotate stats
+            snr_stats = (
+                f"Mean: {np.mean(snr_values):.2f}\n"
+                f"Median: {np.median(snr_values):.2f}\n"
+                f"SD: {np.std(snr_values):.2f}\n"
+                f"Min/Max: {np.min(snr_values):.2f}/{np.max(snr_values):.2f}\n"
+                f"N: {len(snr_values)}"
+            )
+            ax[4].text(0.95, 0.95, snr_stats, transform=ax[4].transAxes,
+                      fontsize=8, verticalalignment='top', horizontalalignment='right')
+        else:
+            ax[4].axis('off')
+
+        # Plot 6: SNR over time scatter
+        if snr_values.size > 0:
+            peak_times = t[peaks]
+            ax[5].scatter(peak_times/60, snr_values, s=scatter_size, alpha=scatter_alpha, color=scatter_color)
+            ax[5].set_xlabel('Time (min)')
+            ax[5].set_ylabel('SNR')
+            ax[5].set_title('SNR over Time')
+            ax[5].grid(True)
+        else:
+            ax[5].axis('off')
         
         # Add statistics to width distribution plot
         stats_text = (
@@ -547,10 +616,10 @@ def plot_scatter(app, profile_function=None):
         
         # Update all axes with correct scale
         for i, axis in enumerate(ax):
-            if i < 3:  # Only apply log scale to the first three plots, not the width distribution
+            if i < 3:  # Only apply log scale to the first three plots
                 axis.set_xscale('log' if app.log_scale_enabled.get() else 'linear')
                 axis.set_yscale('log' if app.log_scale_enabled.get() else 'linear')
-            else:  # For the width distribution plot, force linear scale
+            else:  # Histograms and time scatter in linear scale
                 axis.set_xscale('linear')
                 axis.set_yscale('linear')
         
@@ -562,10 +631,11 @@ def plot_scatter(app, profile_function=None):
             f'Peak Property Analysis - Total: {total_peaks} peaks'
             + (f', Filtered: {filtered_count} peaks' if filtered_count > 0 else '')
             + f' - Prominence Ratio: {prominence_ratio:.2f}'
+            + (f' - Noise Std: {noise_std:.3g}' if noise_std > 0 else '')
         )
         new_figure.suptitle(summary_text, fontsize=12, y=0.98)
         
-        # Apply theme standard styles (bg, grid, text)
+        # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(new_figure, ax)
         
         # --- Update or create tab ---

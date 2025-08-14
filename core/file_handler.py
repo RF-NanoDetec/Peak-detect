@@ -343,6 +343,10 @@ def browse_files_with_ui(app, time_resolution=1e-4):
         # Set data_loaded flag
         app.data_loaded = bool(data is not None)
         
+        # Update welcome screen analyze button if it exists
+        if hasattr(app, 'update_welcome_analyze_button'):
+            app.update_welcome_analyze_button()
+        
         # Consolidate memory (reduce memory usage after loading)
         if hasattr(app, 'consolidate_memory'):
             app.consolidate_memory()

@@ -31,6 +31,12 @@ from tkinter import filedialog, messagebox, ttk, Tcl
 from tkinter.scrolledtext import ScrolledText
 import sys
 from PIL import Image, ImageTk
+import datetime
+import platform
+import shutil
+import json
+import csv
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
 # Local imports
 from config.settings import Config
@@ -143,8 +149,13 @@ class Application(tk.Tk):
         self.title("Peak Analysis Tool")
         self.geometry("1920x1080")
         
-        # Initialize theme manager with light theme as default
-        self.theme_manager = ThemeManager(theme_name='light')
+        # Add keyboard shortcuts - bind to all widgets and use add=True
+        self.bind_all('<Control-o>', lambda e: self.browse_file(), add=True)  # Ctrl+O to open file
+        self.bind_all('<Control-e>', lambda e: self.export_plot(), add=True)  # Ctrl+E to export plot
+        self.bind_all('<Control-q>', lambda e: self.quit(), add=True)  # Ctrl+Q to quit
+        
+        # Initialize theme manager with dark theme as default
+        self.theme_manager = ThemeManager(theme_name='dark')
         self.style = self.theme_manager.apply_theme(self)
         
         # Store the StatusIndicator class for use in create_control_panel
@@ -398,8 +409,13 @@ class Application(tk.Tk):
             
             print(f"DEBUG: Calculated cutoff frequency: {suggested_cutoff} Hz")
             
-            # Update the cutoff value in GUI
-            self.cutoff_value.set(suggested_cutoff)
+            # Update the cutoff value in GUI - use the new variable
+            if hasattr(self, 'filter_cutoff_freq'):
+                self.filter_cutoff_freq.set(f"{suggested_cutoff:.2f}")
+            else:
+                # Fallback or log if the new variable doesn't exist for some reason
+                print("Warning: app.filter_cutoff_freq not found, falling back to app.cutoff_value")
+                self.cutoff_value.set(suggested_cutoff) 
             
             # Custom success message with the calculated value
             self.preview_label.config(
@@ -457,6 +473,9 @@ class Application(tk.Tk):
         self.results_summary = ScrolledText(results_label_frame, wrap=tk.WORD, height=30, width=30)
         self.results_summary.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.results_summary.config(state=tk.DISABLED)
+        
+        # Apply theme to the ScrolledText widget
+        self.theme_manager.apply_scrolledtext_theme(self.results_summary)
 
     @ui_action(
         processing_message="Loading documentation...",
@@ -680,11 +699,18 @@ class Application(tk.Tk):
                 selection_tab_name = "Double Peak Selection"
                 selection_tab_exists = False
                 
+                # Remove existing selection tab if it exists
+                tabs_to_remove = []
                 for tab in self.plot_tab_control.tabs():
                     if self.plot_tab_control.tab(tab, "text") == selection_tab_name:
-                        self.plot_tab_control.forget(tab)
+                        tabs_to_remove.append(tab)
                         selection_tab_exists = True
-                        break
+                
+                for tab in tabs_to_remove:
+                    self.plot_tab_control.forget(tab)
+                    # Also remove from tab_figures
+                    if selection_tab_name in self.tab_figures:
+                        del self.tab_figures[selection_tab_name]
                 
                 selection_tab = ttk.Frame(self.plot_tab_control)
                 self.plot_tab_control.add(selection_tab, text=selection_tab_name)
@@ -701,11 +727,18 @@ class Application(tk.Tk):
                 grid_tab_name = "Double Peak Grid"
                 grid_tab_exists = False
                 
+                # Remove existing grid tab if it exists
+                tabs_to_remove = []
                 for tab in self.plot_tab_control.tabs():
                     if self.plot_tab_control.tab(tab, "text") == grid_tab_name:
-                        self.plot_tab_control.forget(tab)
+                        tabs_to_remove.append(tab)
                         grid_tab_exists = True
-                        break
+                
+                for tab in tabs_to_remove:
+                    self.plot_tab_control.forget(tab)
+                    # Also remove from tab_figures
+                    if grid_tab_name in self.tab_figures:
+                        del self.tab_figures[grid_tab_name]
                 
                 grid_tab = ttk.Frame(self.plot_tab_control)
                 self.plot_tab_control.add(grid_tab, text=grid_tab_name)
@@ -1008,14 +1041,18 @@ class Application(tk.Tk):
             
             # Look for existing double peak tab
             found_tab = False
+            tabs_to_remove = []
             for tab in self.tab_control.tabs():
                 tab_text = self.tab_control.tab(tab, "text")
-                if tab_text == "Double Peak Analysis":
+                if tab_text in ["Double Peak Analysis", "Double Peak"]:
                     found_tab = True
                     if not double_peak_enabled:
-                        # Remove the tab if double peak mode is disabled
-                        self.tab_control.forget(tab)
-                    break
+                        # Mark tab for removal if double peak mode is disabled
+                        tabs_to_remove.append(tab)
+            
+            # Remove tabs after iteration to avoid modifying collection during iteration
+            for tab in tabs_to_remove:
+                self.tab_control.forget(tab)
             
             # Add the tab if it doesn't exist and double peak mode is enabled
             if double_peak_enabled and not found_tab:
@@ -1140,15 +1177,30 @@ class Application(tk.Tk):
 
         # 1. Apply theme to UI elements and set matplotlib rcParams
         self.style = self.theme_manager.apply_theme(self)
+        
+        # Call our new method to update all sliders with the new theme colors
+        self.theme_manager.update_sliders(self)
 
+        # 2. Update specific UI Elements (Existing Code - Keep this)
         # 2. Update specific UI Elements (Existing Code - Keep this)
         # Update ScrolledText colors if it exists
         if hasattr(self, 'results_summary') and self.results_summary:
             self.results_summary.config(
                 bg=self.theme_manager.get_color('card_bg'),
                 fg=self.theme_manager.get_color('text'),
-                insertbackground=self.theme_manager.get_color('text')
+                insertbackground=self.theme_manager.get_color('text'),
+                selectbackground=self.theme_manager.get_color('primary'),
+                selectforeground='white',
+                highlightcolor=self.theme_manager.get_color('border'),
+                highlightbackground=self.theme_manager.get_color('border')
             )
+            # Also update the scrollbar if it exists
+            if hasattr(self.results_summary, 'vbar'):
+                self.results_summary.vbar.configure(
+                    bg=self.theme_manager.get_color('panel_bg'),
+                    troughcolor=self.theme_manager.get_color('background'),
+                    activebackground=self.theme_manager.get_color('primary')
+                )
 
         # Update welcome label if it exists
         if hasattr(self, 'blank_tab'):
@@ -1158,6 +1210,68 @@ class Application(tk.Tk):
                         foreground=self.theme_manager.get_color('text'),
                         background=self.theme_manager.get_color('background')
                     )
+                elif isinstance(child, ttk.Frame):
+                    # This is likely our welcome_container frame
+                    # Use a recursive function to find all descendants since winfo_descendants() may not be available
+                    def update_widget_theme(parent):
+                        """Recursively update theme for all child widgets"""
+                        for widget in parent.winfo_children():
+                            # For labels, update text and background colors
+                            if isinstance(widget, ttk.Label):
+                                if 'text' in widget.configure():
+                                    # Check for special labels to give them appropriate colors
+                                    if 'Peak Analysis Tool' in widget.cget('text'):
+                                        # Title label - use primary color
+                                        widget.config(
+                                            foreground=self.theme_manager.get_color('primary'),
+                                            background=self.theme_manager.get_color('background')
+                                        )
+                                    elif widget.cget('text').startswith('v'):
+                                        # Version label - use secondary color
+                                        widget.config(
+                                            foreground=self.theme_manager.get_color('secondary'),
+                                            background=self.theme_manager.get_color('background')
+                                        )
+                                    elif widget.cget('text') == '💡':
+                                        # Tip icon - use card background
+                                        widget.config(
+                                            background=self.theme_manager.get_color('card_bg')
+                                        )
+                                    elif 'Tip:' in widget.cget('text'):
+                                        # Tip text - use card background
+                                        widget.config(
+                                            foreground=self.theme_manager.get_color('text'),
+                                            background=self.theme_manager.get_color('card_bg')
+                                        )
+                                    else:
+                                        # Regular labels - use text color and background
+                                        widget.config(
+                                            foreground=self.theme_manager.get_color('text'),
+                                            background=self.theme_manager.get_color('background')
+                                        )
+                            # Update any image labels that have background
+                            if isinstance(widget, ttk.Label) and 'image' in widget.configure():
+                                if 'example_photo' in str(widget.cget('image')):
+                                    # Example image - use card background
+                                    widget.config(
+                                        background=self.theme_manager.get_color('card_bg')
+                                    )
+                                elif 'icon_photo' in str(widget.cget('image')):
+                                    # Icon - use regular background
+                                    widget.config(
+                                        background=self.theme_manager.get_color('background')
+                                    )
+                                    
+                            # LabelFrames also need to be updated
+                            if isinstance(widget, ttk.LabelFrame):
+                                widget.config(style='TLabelframe')  # Apply theme style
+                                
+                            # Recursively update any child containers
+                            if hasattr(widget, 'winfo_children'):
+                                update_widget_theme(widget)
+                    
+                    # Call the recursive function on the welcome container
+                    update_widget_theme(child)
 
         # Update Data Loading Tab - Dwell Time section explicitly
         if hasattr(self, 'explanation_frame'):
@@ -1222,6 +1336,16 @@ class Application(tk.Tk):
                 fg=self.theme_manager.get_color('text'),
                 troughcolor=self.theme_manager.get_color('background')
             )
+            
+        # Update double peak tab sliders
+        for slider_name in ['min_slider', 'max_slider', 'min_amp_slider', 'max_amp_slider', 
+                           'min_width_slider', 'max_width_slider']:
+            if hasattr(self, slider_name):
+                getattr(self, slider_name).config(
+                    bg=self.theme_manager.get_color('card_bg'),
+                    fg=self.theme_manager.get_color('text'),
+                    troughcolor=self.theme_manager.get_color('background')
+                )
 
         # === Update Double Peak Analysis Tab Histograms ===
         if hasattr(self, 'amp_hist_canvas') and hasattr(self, 'amp_hist_ax'):
@@ -1230,6 +1354,11 @@ class Application(tk.Tk):
         if hasattr(self, 'width_hist_canvas') and hasattr(self, 'width_hist_ax'):
             self._update_histogram_theme(self.width_hist_canvas, self.width_hist_ax)
             self.width_hist_canvas.draw()
+            
+        # Update prominence diagram if it exists
+        if hasattr(self, 'prominence_diagram_canvas'):
+            self.prominence_diagram_canvas.config(bg=self.theme_manager.get_color('background'))
+            self._draw_prominence_diagram()
 
         # === Update Preprocessing Tab ===
         if hasattr(self, 'raw_color_indicator'):
@@ -1410,7 +1539,7 @@ class Application(tk.Tk):
         # Update canvases
         for widget in frame.winfo_children():
             if isinstance(widget, tk.Canvas):
-                widget.config(bg=self.theme_manager.get_color('card_bg'))
+                widget.config(bg=self.theme_manager.get_color('background'))
                 
                 # Try to find and update texts with primary color
                 for item_id in widget.find_all():
@@ -1431,9 +1560,9 @@ class Application(tk.Tk):
             # Update Scale widgets
             elif isinstance(widget, tk.Scale):
                 widget.config(
-                    bg=self.theme_manager.get_color('card_bg'),
+                    bg=self.theme_manager.get_color('background'),
                     fg=self.theme_manager.get_color('text'),
-                    troughcolor=self.theme_manager.get_color('background')
+                    troughcolor=self.theme_manager.get_color('panel_bg')
                 )
                 
             # Update color indicators
@@ -1704,7 +1833,7 @@ class Application(tk.Tk):
             return
 
         canvas = self.preprocessing_comparison_canvas
-        canvas_bg = self.theme_manager.get_color('card_bg') # Use card_bg for this canvas
+        canvas_bg = self.theme_manager.get_color('background') # Use background for this canvas
         text_color = self.theme_manager.get_color('text')
         is_dark = self.theme_manager.current_theme == 'dark'
         
@@ -1844,7 +1973,7 @@ class Application(tk.Tk):
         frame = ttk.Frame(popup)
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        text_widget = tk.Text(frame, wrap=tk.WORD, bg=self.theme_manager.get_color('card_bg'),
+        text_widget = tk.Text(frame, wrap=tk.WORD, bg=self.theme_manager.get_color('background'),
                              fg=self.theme_manager.get_color('text'), relief=tk.FLAT,
                              highlightthickness=0, padx=10, pady=10)
         text_widget.pack(fill=tk.BOTH, expand=True)
@@ -2047,6 +2176,94 @@ class Application(tk.Tk):
         except Exception as e:
             self.show_error("Export Error", str(e))
             return False
+
+    def _draw_prominence_diagram(self):
+        """Internal method to draw the prominence diagram with current theme colors"""
+        if not hasattr(self, 'prominence_diagram_canvas'):
+            return
+            
+        canvas = self.prominence_diagram_canvas
+        canvas.delete("all")
+        
+        # Colors - adapt to current theme
+        text_color = self.theme_manager.get_color('text')
+        signal_color = self.theme_manager.get_color('primary')
+        
+        # Choose colors based on theme
+        if self.theme_manager.current_theme == 'dark':
+            prominence_color = "#66BB6A"  # Brighter Green for dark theme
+            height_color = "#FFA726"      # Brighter Orange for dark theme
+            subpeak_color = "#EF5350"     # Brighter Red for dark theme
+        else:
+            prominence_color = "#4CAF50"  # Standard Green for light theme
+            height_color = "#FF9800"      # Standard Orange for light theme
+            subpeak_color = "#F44336"     # Standard Red for light theme
+        
+        # Draw axis
+        canvas.create_line(10, 90, 370, 90, fill=text_color, dash=(2,2))
+        canvas.create_text(15, 95, text="0", fill=text_color, anchor="nw")
+        
+        # Draw a main peak
+        peak_x = 180
+        peak_height = 60
+        peak_y = 90 - peak_height  # 90 is baseline
+        
+        # Draw main peak
+        points = []
+        for x in range(50, 320, 5):
+            y = 90 - peak_height * np.exp(-0.0015 * (x - peak_x) ** 2) 
+            points.append(x)
+            points.append(int(y))
+        
+        canvas.create_line(points, fill=signal_color, width=2, smooth=True)
+        
+        # Draw a subpeak
+        subpeak_x = 180
+        subpeak_height = 20
+        sub_points = []
+        for x in range(150, 210, 2):
+            y = peak_y - subpeak_height * np.exp(-0.005 * (x - subpeak_x) ** 2)
+            sub_points.append(x)
+            sub_points.append(int(y))
+        
+        canvas.create_line(sub_points, fill=subpeak_color, width=2, smooth=True)
+        canvas.create_text(150, 20, text="Subpeak (filtered out)", fill=subpeak_color)
+        
+        # Draw prominence and height measurements for subpeak
+        left_ref_x = 130
+        right_ref_x = 230
+        
+        # Main peak reference lines
+        peak_base_y = 90  # Baseline
+        
+        # Subpeak reference lines
+        subpeak_base_y = peak_y  # Subpeak's base is on the main peak
+        subpeak_top_y = peak_y - subpeak_height
+        
+        # Draw measurement arrows
+        arrow_x = 350
+        
+        # Peak height (from baseline to peak)
+        canvas.create_line([arrow_x, peak_base_y, arrow_x, peak_y], 
+                          fill=height_color, arrow="last", width=1.5)
+        canvas.create_text(arrow_x+5, (peak_base_y+peak_y)/2, 
+                          text="Peak\nHeight", fill=height_color, anchor="w")
+        
+        # Subpeak prominence (from subpeak base to top)
+        canvas.create_line([arrow_x-20, subpeak_base_y, arrow_x-20, subpeak_top_y], 
+                          fill=prominence_color, arrow="last", width=1.5)
+        canvas.create_text(arrow_x-15, (subpeak_base_y+subpeak_top_y)/2, 
+                          text="Prominence", fill=prominence_color, anchor="w")
+        
+        # Ratio explanation
+        canvas.create_text(
+            20, 
+            110, 
+            text="Ratio = Prominence / Peak Height  (Keep peaks with ratio ≥ threshold)", 
+            fill=text_color, 
+            anchor="nw",
+            font=("TkDefaultFont", 8)
+        )
 
 
 # Your main program code goes here

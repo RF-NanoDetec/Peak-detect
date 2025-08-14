@@ -136,10 +136,14 @@ def run_peak_detection(app, profile_function=None):
 
         # Apply theme standard styles (bg, grid, text)
         app.theme_manager.apply_plot_theme(app.figure, [ax])
-
-        # Update figure
+        
+        # Set figure background to match the app background
+        app.figure.patch.set_facecolor(app.theme_manager.get_color('background'))
+        # Set the axes background to match the app background
+        ax.set_facecolor(app.theme_manager.get_color('background'))
+        
         if hasattr(app, 'canvas'):
-             app.canvas.draw()
+            app.canvas.draw()
         else:
              print("Warning: app.canvas not found during peak detection update.")
 
@@ -222,12 +226,17 @@ def plot_filtered_peaks(app, profile_function=None):
         width_marker_color = app.theme_manager.get_plot_color('marker_width')
 
         # Create new figure for the grid
-        new_figure = Figure(figsize=(12, 8))
+        fig_color = app.theme_manager.get_color('background')
+        axes_color = app.theme_manager.get_color('background')
+        new_figure = Figure(figsize=(8, 6), facecolor=fig_color)
         axs_flat = []
         for i in range(2):
             for j in range(5):
                 ax = new_figure.add_subplot(2, 5, i*5 + j + 1)
                 axs_flat.append(ax)
+        
+        # Apply theme immediately to prevent white background flash
+        app.theme_manager.apply_plot_theme(new_figure, axs_flat)
 
         # Plot selected peaks
         for idx, peak_idx in enumerate(selected_peaks):
@@ -299,6 +308,9 @@ def plot_filtered_peaks(app, profile_function=None):
             ax.yaxis.set_major_locator(plt.MaxNLocator(3))
             ax.tick_params(axis='both', which='major', labelsize=8)
 
+            # Set subplot background color
+            ax.set_facecolor(axes_color)
+
         # Remove individual legends from subplots (with check)
         for ax in axs_flat:
             legend = ax.get_legend()
@@ -324,8 +336,11 @@ def plot_filtered_peaks(app, profile_function=None):
                            fontsize=14)
         new_figure.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-        # Apply theme standard styles (bg, grid, text)
+        # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(new_figure, axs_flat)
+        
+        # Additional figure-level background
+        new_figure.patch.set_facecolor(fig_color)
 
         # Update or create tab in plot_tab_control
         tab_name = "Filtered Peaks"

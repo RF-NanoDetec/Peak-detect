@@ -17,7 +17,13 @@ import matplotlib.pyplot as plt
 from functools import wraps
 from PIL import Image
 from config import resource_path, APP_VERSION
+from core.peak_analysis_utils import (
+    compute_baseline_mask,
+    compute_noise_stats,
+    compute_snr_values,
+)
 import numpy as np
+import webbrowser
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -663,6 +669,25 @@ def show_documentation_with_ui(app):
     Toplevel
         The documentation window object
     """
+    # --- Preferred: Open pre-rendered PDF documentation ---
+    pdf_path = resource_path('docs/user_manual.pdf')
+    if os.path.exists(pdf_path):
+        try:
+            webbrowser.open_new(pdf_path)  # Open with system's default PDF viewer
+            # Update status indicator & preview label for success
+            app.status_indicator.set_state('success')
+            app.status_indicator.set_text("Documentation opened (PDF)")
+            if hasattr(app, 'preview_label'):
+                app.preview_label.config(
+                    text="Opened documentation PDF",
+                    foreground=app.theme_manager.get_color('success')
+                )
+            return None  # Skip creating the Tk window entirely
+        except Exception as e:
+            # Fall back to internal viewer if PDF cannot be opened
+            logger.error(f"Failed to open PDF docs: {e}\n{traceback.format_exc()}")
+
+    # --- Fallback: internal markdown viewer as before ---
     # Create a new window
     doc_window = tk.Toplevel(app)
     doc_window.title("Peak Analysis Tool - Comprehensive Documentation")
@@ -684,18 +709,16 @@ def show_documentation_with_ui(app):
     header_frame.pack(fill=tk.X, pady=(0, 10))
     
     header_label = ttk.Label(
-        header_frame, 
+        header_frame,
         text="Peak Analysis Tool Documentation",
-        font=('Helvetica', 16, 'bold'),
-        foreground=app.theme_manager.get_color('primary')
+        style="Heading.TLabel"
     )
     header_label.pack(pady=5)
     
     version_label = ttk.Label(
         header_frame,
         text=f"Version {APP_VERSION}",
-        font=('Helvetica', 10),
-        foreground=app.theme_manager.get_color('text_secondary')
+        style="Small.TLabel"
     )
     version_label.pack()
     
@@ -756,7 +779,7 @@ def show_documentation_with_ui(app):
             font=('Helvetica', 11),
             padx=10,
             pady=10,
-            background=app.theme_manager.get_color('card_bg'),
+            background=app.theme_manager.get_color('background'),
             foreground=app.theme_manager.get_color('text'),
             highlightthickness=0,
             relief=tk.FLAT
@@ -850,11 +873,12 @@ def apply_markdown_formatting(text_widget):
     text_widget : tk.Text
         The text widget to format
     """
-    # Configure tags for different markdown elements
-    text_widget.tag_configure('h1', font=('Helvetica', 16, 'bold'))
-    text_widget.tag_configure('h2', font=('Helvetica', 14, 'bold'))
-    text_widget.tag_configure('h3', font=('Helvetica', 12, 'bold'))
-    text_widget.tag_configure('h4', font=('Helvetica', 11, 'bold'))
+    # Configure tags for different markdown elements (bigger font for h1/h2)
+    text_widget.tag_configure('h1', font=('Helvetica', 18, 'bold'))
+    text_widget.tag_configure('h2', font=('Helvetica', 16, 'bold'))
+    text_widget.tag_configure('h3', font=('Helvetica', 14, 'bold'))
+    text_widget.tag_configure('h4', font=('Helvetica', 12, 'bold'))
+    # Other styles
     text_widget.tag_configure('code', font=('Courier', 10), background='#f0f0f0')
     text_widget.tag_configure('bold', font=('Helvetica', 11, 'bold'))
     text_widget.tag_configure('italic', font=('Helvetica', 11, 'italic'))
@@ -865,69 +889,83 @@ def apply_markdown_formatting(text_widget):
     content = text_widget.get('1.0', tk.END)
     text_widget.delete('1.0', tk.END)
     
+    # Flags for multi-line code blocks
+    in_code_block = False
     for line in content.split('\n'):
-        # Handle headers
-        if line.startswith('### '):
+        # Check for code block delimiters
+        if line.strip().startswith('```'):
+            if in_code_block:
+                # Closing code block
+                in_code_block = False
+                text_widget.insert(tk.END, '\n')
+            else:
+                # Opening code block (language info ignored)
+                in_code_block = True
+            continue  # Skip the delimiter line itself
+
+        if in_code_block:
+            # Everything inside code block uses 'code' tag
+            text_widget.insert(tk.END, line + '\n', 'code')
+            continue
+
+        # ===== Headers =====
+        if line.startswith('# '):
+            text_widget.insert(tk.END, line[2:] + '\n', 'h1')
+            continue
+        elif line.startswith('## '):
+            text_widget.insert(tk.END, line[3:] + '\n', 'h2')
+            continue
+        elif line.startswith('### '):
             text_widget.insert(tk.END, line[4:] + '\n', 'h3')
+            continue
         elif line.startswith('#### '):
             text_widget.insert(tk.END, line[5:] + '\n', 'h4')
-        # Handle bullet points
-        elif line.strip().startswith('- '):
+            continue
+
+        # ===== Horizontal rule =====
+        if line.strip() in {'---', '***', '___'}:
+            text_widget.insert(tk.END, '\n')
+            continue
+
+        # ===== Bullet & numbered lists =====
+        stripped = line.lstrip()
+        if stripped.startswith('- '):
             text_widget.insert(tk.END, line + '\n', 'bullet')
-        # Handle numbered lists
-        elif line.strip() and line.strip()[0].isdigit() and line.strip()[1:].startswith('. '):
+            continue
+        if stripped[:1].isdigit() and stripped[1:].startswith('. '):
             text_widget.insert(tk.END, line + '\n', 'bullet')
-        # Handle code blocks
-        elif line.strip().startswith('```') and line.strip().endswith('```'):
-            code_content = line.strip()[3:-3]
-            text_widget.insert(tk.END, code_content + '\n', 'code')
-        else:
-            # Process inline formatting
-            processed_line = ""
-            i = 0
-            while i < len(line):
-                # Bold text
-                if i+1 < len(line) and line[i:i+2] == '**' and '**' in line[i+2:]:
-                    end = line.find('**', i+2)
-                    text_widget.insert(tk.END, processed_line)
-                    processed_line = ""
-                    text_widget.insert(tk.END, line[i+2:end], 'bold')
-                    i = end + 2
-                # Italic text
-                elif i < len(line) and line[i] == '*' and '*' in line[i+1:]:
-                    end = line.find('*', i+1)
-                    text_widget.insert(tk.END, processed_line)
-                    processed_line = ""
-                    text_widget.insert(tk.END, line[i+1:end], 'italic')
-                    i = end + 1
-                # Inline code
-                elif i < len(line) and line[i] == '`' and '`' in line[i+1:]:
-                    end = line.find('`', i+1)
-                    text_widget.insert(tk.END, processed_line)
-                    processed_line = ""
-                    text_widget.insert(tk.END, line[i+1:end], 'code')
-                    i = end + 1
-                else:
-                    processed_line += line[i]
-                    i += 1
-            
-            if processed_line:
-                text_widget.insert(tk.END, processed_line + '\n')
-    
-    # Handle table formatting
-    content = text_widget.get('1.0', tk.END)
-    lines = content.split('\n')
-    for i, line in enumerate(lines):
-        if '|' in line:
-            # Check if this is a table header separator
-            if line.strip().startswith('|') and all(c in '|-:' for c in line.strip()):
-                continue
-                
-            # Format table rows
-            text_widget.delete(f"{i+1}.0", f"{i+1}.end")
-            cells = [cell.strip() for cell in line.split('|')]
-            formatted_line = "  ".join(cells)
-            text_widget.insert(f"{i+1}.0", formatted_line)
+            continue
+
+        # ===== Process inline formatting =====
+        processed_line = ""
+        i = 0
+        while i < len(line):
+            # Bold text
+            if i+1 < len(line) and line[i:i+2] == '**' and '**' in line[i+2:]:
+                end = line.find('**', i+2)
+                text_widget.insert(tk.END, processed_line)
+                processed_line = ""
+                text_widget.insert(tk.END, line[i+2:end], 'bold')
+                i = end + 2
+            # Italic text
+            elif line[i] == '*' and '*' in line[i+1:]:
+                end = line.find('*', i+1)
+                text_widget.insert(tk.END, processed_line)
+                processed_line = ""
+                text_widget.insert(tk.END, line[i+1:end], 'italic')
+                i = end + 1
+            # Inline code
+            elif line[i] == '`' and '`' in line[i+1:]:
+                end = line.find('`', i+1)
+                text_widget.insert(tk.END, processed_line)
+                processed_line = ""
+                text_widget.insert(tk.END, line[i+1:end], 'code')
+                i = end + 1
+            else:
+                processed_line += line[i]
+                i += 1
+
+        text_widget.insert(tk.END, processed_line + '\n')
 
 def show_about_dialog_with_ui(app):
     """
@@ -1099,11 +1137,15 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
         # Update the core results_summary text widget if it exists
         if hasattr(app, 'results_summary'):
             summary_content = ""
+            show_all_sections = context == "all" # A way to show everything if needed
+
+            # Clear existing content
+            app.results_summary.config(state=tk.NORMAL)
+            app.results_summary.delete("1.0", tk.END)
 
             # === DATA LOADING ===
-            # Display if data handler exists and has file info
             if hasattr(app, 'data_handler') and hasattr(app.data_handler, 'file_path') and app.data_handler.file_path:
-                data_info = "=== DATA LOADING ===\n"
+                data_info = "=== LOAD DATA ===\n"
                 data_info += f"File: {os.path.basename(app.data_handler.file_path)}\n"
                 if hasattr(app.data_handler, 'raw_data') and app.data_handler.raw_data is not None:
                     data_info += f"Data Points: {len(app.data_handler.raw_data)}\n"
@@ -1111,42 +1153,70 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
                     duration_seconds = app.t_value[-1] - app.t_value[0]
                     data_info += f"Duration: {duration_seconds:.2f} s ({duration_seconds/60:.2f} min)\n"
                 summary_content += data_info + "\n"
+            elif show_all_sections :
+                summary_content += "=== LOAD DATA ===\nNo data loaded.\n\n"
 
-            # === PREPROCESSING ===
-            # Display if preprocessing parameters are set
+
+            # === PREPROCESSING & FILTER SETTINGS ===
             preprocessing_info = ""
             if hasattr(app, 'baseline_correction_method') and app.baseline_correction_method.get() != 'None':
                  if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n"
                  preprocessing_info += f"Baseline Correction: {app.baseline_correction_method.get()}\n"
-                 # Add specific baseline parameters if available (e.g., window size)
                  if app.baseline_correction_method.get() == 'Rolling Ball' and hasattr(app, 'baseline_window_size'):
                      preprocessing_info += f"  Window Size: {app.baseline_window_size.get()}\n"
                  elif app.baseline_correction_method.get() == 'ALS' and hasattr(app, 'als_lambda') and hasattr(app, 'als_p'):
                      preprocessing_info += f"  Lambda: {app.als_lambda.get()}, P: {app.als_p.get()}\n"
 
+            # --- Applied Filter Settings ---
+            # This section now reads from app.applied_filter_settings
+            if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n" # Start section if not already
+            
+            if hasattr(app, 'applied_filter_settings') and app.applied_filter_settings:
+                filter_params = app.applied_filter_settings
+                filter_type = filter_params.get('type', 'N/A')
+                
+                preprocessing_info += f"Signal Filtering: {filter_type.capitalize() if filter_type not in ['none', 'N/A'] else 'Disabled'}\n"
 
-            if hasattr(app, 'filter_enabled') and app.filter_enabled.get():
-                if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n"
-                filtering_mode = app.filter_mode.get() if hasattr(app, 'filter_mode') else "Unknown" # Assuming filter_mode exists
-                cutoff = app.cutoff_value.get() if hasattr(app, 'cutoff_value') else "N/A"
-                filter_order = app.filter_order.get() if hasattr(app, 'filter_order') else "N/A" # Assuming filter_order exists
-                preprocessing_info += f"Signal Filtering: Enabled ({filtering_mode})\n"
-                preprocessing_info += f"  Cutoff Frequency: {cutoff} Hz\n"
-                preprocessing_info += f"  Filter Order: {filter_order}\n"
-            elif hasattr(app, 'filter_enabled') and not app.filter_enabled.get():
-                 if not preprocessing_info: preprocessing_info = "=== PREPROCESSING ===\n"
-                 preprocessing_info += f"Signal Filtering: Disabled\n"
+                if filter_type == 'butterworth':
+                    cutoff = filter_params.get('cutoff_hz', 'N/A')
+                    order = filter_params.get('order', 'N/A')
+                    estimation = filter_params.get('estimation_method', 'N/A')
+                    preprocessing_info += f"  Type: Butterworth\n"
+                    preprocessing_info += f"  Cutoff: {cutoff:.2f} Hz (Order: {order})\n" if isinstance(cutoff, float) else f"  Cutoff: {cutoff} (Order: {order})\n"
+                    preprocessing_info += f"  Cutoff Estimation: {estimation}\n"
+                elif filter_type == 'savgol':
+                    window = filter_params.get('window_length', 'N/A')
+                    polyorder = filter_params.get('polyorder', 'N/A')
+                    preprocessing_info += f"  Type: Savitzky-Golay\n"
+                    preprocessing_info += f"  Window Length: {window}\n"
+                    preprocessing_info += f"  Polynomial Order: {polyorder}\n"
+                    if 'estimated_window_source' in filter_params:
+                        preprocessing_info += f"  Window Estimation: {filter_params['estimated_window_source']}\n"
+                elif filter_type == 'none':
+                    pass # Already handled by "Signal Filtering: Disabled"
+                elif 'error' in filter_params:
+                    preprocessing_info += f"  Error applying filter: {filter_params['error']}\n"
+                elif filter_type != 'N/A': # For unknown filter types if they somehow occur
+                    preprocessing_info += f"  Details: {filter_params}\n"
+            elif hasattr(app, 'filter_enabled') and not app.filter_enabled.get(): # Fallback if applied_filter_settings is missing
+                 preprocessing_info += f"Signal Filtering: Disabled (Legacy Check)\n"
+            else:
+                preprocessing_info += "Signal Filtering: Settings N/A (Analysis likely not run)\n"
 
-            if preprocessing_info:
-                summary_content += preprocessing_info + "\n"
+
+            if preprocessing_info or show_all_sections: # Ensure section header prints if forcing all
+                if "=== PREPROCESSING ===" not in preprocessing_info and show_all_sections:
+                     summary_content += "=== PREPROCESSING ===\nNo specific preprocessing steps recorded or N/A.\n\n"
+                else:
+                     summary_content += preprocessing_info + "\n"
 
 
             # === DETECTION PARAMETERS ===
-            # Display if detection parameters are available
-            if hasattr(app, 'height_lim') or hasattr(app, 'distance') or hasattr(app, 'rel_height') or hasattr(app, 'width_p'):
+            if hasattr(app, 'height_lim') or hasattr(app, 'distance') or hasattr(app, 'rel_height') or hasattr(app, 'width_p') or show_all_sections:
                 parameters_info = "=== DETECTION PARAMETERS ===\n"
                 if hasattr(app, 'height_lim'):
                     parameters_info += f"Height Threshold: {app.height_lim.get()}\n"
+                else: parameters_info += "Height Threshold: N/A\n"
                 if hasattr(app, 'distance'):
                     parameters_info += f"Minimum Distance: {app.distance.get()} samples\n"
                 if hasattr(app, 'rel_height'):
@@ -1155,197 +1225,212 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
                     width_range = app.width_p.get()
                     time_res_ms = app.time_resolution.get() * 1000 if hasattr(app, 'time_resolution') else None
                     try:
-                        # Convert samples (from entry) to ms if possible
                         width_samples = [int(w.strip()) for w in width_range.split(',')]
                         if time_res_ms:
                              parameters_info += f"Width Range: {width_samples[0] * time_res_ms:.2f} - {width_samples[1] * time_res_ms:.2f} ms ({width_samples[0]}-{width_samples[1]} samples)\n"
                         else:
                              parameters_info += f"Width Range: {width_samples[0]} - {width_samples[1]} samples\n"
                     except:
-                        parameters_info += f"Width Range: {width_range} (raw samples)\n" # Fallback
+                        parameters_info += f"Width Range: {width_range} (raw samples)\n" 
                 if hasattr(app, 'time_resolution'):
                     time_res_ms = app.time_resolution.get() * 1000
                     parameters_info += f"Time Resolution: {time_res_ms:.4f} ms/sample\n"
-
                 summary_content += parameters_info + "\n"
 
-            # === PEAK ANALYSIS (FILTERING) ===
-            # Display if prominence ratio or filter stats are available
-            filtering_analysis_info = ""
-            if hasattr(app, 'prominence_ratio'):
-                 if not filtering_analysis_info: filtering_analysis_info = "=== PEAK ANALYSIS (FILTERING) ===\n"
-                 prominence_ratio = app.prominence_ratio.get()
-                 filtering_analysis_info += f"Prominence Ratio Threshold: {prominence_ratio:.2f}\n"
 
-            # Use peak detector's total count and passed 'events' (kept count) for stats
+            # === PEAK ANALYSIS (SUB-PEAK FILTERING) ===
+            # Renamed for clarity
+            filtering_analysis_info = ""
+            if hasattr(app, 'prominence_ratio') or show_all_sections:
+                 if not filtering_analysis_info: filtering_analysis_info = "=== PEAK ANALYSIS (SUB-PEAK FILTERING) ===\n"
+                 if hasattr(app, 'prominence_ratio'):
+                     prominence_ratio = app.prominence_ratio.get()
+                     filtering_analysis_info += f"Sub-peak Prominence Ratio Threshold: {prominence_ratio:.2f}\n"
+                 else: filtering_analysis_info += "Sub-peak Prominence Ratio Threshold: N/A\n"
+
+
             if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') and app.peak_detector.all_peaks_count is not None:
                 total_peaks = app.peak_detector.all_peaks_count
-                if total_peaks >= 0: # Ensure we have a valid count
-                    if not filtering_analysis_info: filtering_analysis_info = "=== PEAK ANALYSIS (FILTERING) ===\n"
-                    filtered_kept = events if events is not None else total_peaks # Assume all kept if 'events' not passed
+                if total_peaks >= 0: 
+                    if not filtering_analysis_info: filtering_analysis_info = "=== PEAK ANALYSIS (SUB-PEAK FILTERING) ===\n"
+                    filtered_kept = events if events is not None else total_peaks 
                     filtered_out = total_peaks - filtered_kept
                     filtered_percentage = (filtered_out / total_peaks * 100) if total_peaks > 0 else 0
                     kept_percentage = 100 - filtered_percentage
 
-                    filtering_analysis_info += f"Total Peaks Detected (Pre-Filter): {total_peaks}\n"
-                    filtering_analysis_info += f"Peaks Filtered Out (Prominence): {filtered_out} ({filtered_percentage:.1f}%)\n"
-                    filtering_analysis_info += f"Peaks Retained (Post-Filter): {filtered_kept} ({kept_percentage:.1f}%)\n"
+                    filtering_analysis_info += f"Total Peaks Detected (Pre-SubFilter): {total_peaks}\n"
+                    filtering_analysis_info += f"Sub-Peaks Filtered Out (Prominence): {filtered_out} ({filtered_percentage:.1f}%)\n"
+                    filtering_analysis_info += f"Peaks Retained (Post-SubFilter): {filtered_kept} ({kept_percentage:.1f}%)\n"
+            elif show_all_sections and not filtering_analysis_info:
+                 filtering_analysis_info = "=== PEAK ANALYSIS (SUB-PEAK FILTERING) ===\nSub-peak filtering stats N/A.\n"
+
 
             if filtering_analysis_info:
                  summary_content += filtering_analysis_info + "\n"
-
+            
             # === DOUBLE PEAK ANALYSIS ===
-            # Display if double peak results are available
-            if hasattr(app, 'double_peak_results'): # Assuming results are stored here
+            if hasattr(app, 'double_peak_results') or show_all_sections: 
                  double_peak_info = "=== DOUBLE PEAK ANALYSIS ===\n"
-                 results = app.double_peak_results # e.g., a dict {'analyzed': X, 'double_peaks': Y, 'min_dist': A, 'max_dist': B}
-                 analyzed = results.get('analyzed', 'N/A')
-                 double_peaks = results.get('double_peaks', 'N/A')
-                 min_dist = results.get('min_dist_ms', 'N/A')
-                 max_dist = results.get('max_dist_ms', 'N/A')
-                 percentage = (double_peaks / analyzed * 100) if isinstance(analyzed, int) and isinstance(double_peaks, int) and analyzed > 0 else 0
+                 if hasattr(app, 'double_peak_results'):
+                     results = app.double_peak_results 
+                     analyzed = results.get('analyzed', 'N/A')
+                     double_peaks_found = results.get('double_peaks', 'N/A') # Renamed for clarity
+                     min_dist = results.get('min_dist_ms', 'N/A')
+                     max_dist = results.get('max_dist_ms', 'N/A')
+                     percentage = (double_peaks_found / analyzed * 100) if isinstance(analyzed, int) and isinstance(double_peaks_found, int) and analyzed > 0 else 0
 
-                 double_peak_info += f"Distance Range Analyzed: {min_dist} - {max_dist} ms\n"
-                 double_peak_info += f"Peak Pairs Analyzed: {analyzed}\n"
-                 double_peak_info += f"Double Peaks Found: {double_peaks} ({percentage:.1f}%)\n"
+                     double_peak_info += f"Distance Range Analyzed: {min_dist} - {max_dist} ms\n"
+                     double_peak_info += f"Peak Pairs Analyzed: {analyzed}\n"
+                     double_peak_info += f"Double Peaks Found: {double_peaks_found} ({percentage:.1f}%)\n"
+                 else: double_peak_info += "Double peak analysis not performed or results N/A.\n"
                  summary_content += double_peak_info + "\n"
 
 
-            # === SIGNAL INFORMATION ===
-            # Display if filtered signal is available
-            if hasattr(app, 'filtered_signal') and app.filtered_signal is not None:
-                signal_info = "=== SIGNAL INFORMATION ===\n"
-                # ... (keep existing signal info logic: mean, median, std, range, snr, length) ...
-                signal = app.filtered_signal
-                signal_mean = np.mean(signal)
-                signal_median = np.median(signal)
-                signal_std = np.std(signal)
-                signal_min = np.min(signal)
-                signal_max = np.max(signal)
+            # === SIGNAL INFORMATION (POST-PROCESSING) ===
+            # Clarified section title
+            if hasattr(app, 'filtered_signal') and app.filtered_signal is not None or show_all_sections:
+                signal_info = "=== SIGNAL INFORMATION (POST-PROCESSING) ===\n"
+                if hasattr(app, 'filtered_signal') and app.filtered_signal is not None:
+                    signal = app.filtered_signal
+                    signal_mean = np.mean(signal)
+                    signal_median = np.median(signal)
+                    signal_std = np.std(signal)
+                    signal_min = np.min(signal)
+                    signal_max = np.max(signal)
 
-                signal_info += f"Signal Mean: {signal_mean:.2f}\n"
-                signal_info += f"Signal Median: {signal_median:.2f}\n"
-                signal_info += f"Signal Standard Deviation: {signal_std:.2f}\n"
-                signal_info += f"Signal Range: {signal_min:.2f} - {signal_max:.2f}\n"
+                    signal_info += f"Signal Mean: {signal_mean:.2f}\n"
+                    signal_info += f"Signal Median: {signal_median:.2f}\n"
+                    signal_info += f"Signal Standard Deviation: {signal_std:.2f}\n"
+                    signal_info += f"Signal Range: {signal_min:.2f} - {signal_max:.2f}\n"
 
-                # Signal-to-noise estimate
-                if signal_std > 0:
-                    # Basic SNR: Ratio of max deviation from mean to std dev
-                    snr_est = (signal_max - signal_mean) / signal_std
-                    # Alternative: Ratio of mean signal to std dev (if signal is mostly positive)
-                    # snr_alt = signal_mean / signal_std if signal_mean > 0 else "N/A"
-                    signal_info += f"Estimated Signal-to-Noise Ratio: {snr_est:.2f}\n"
+                    if signal_std > 0:
+                        snr_est = (signal_max - signal_mean) / signal_std
+                        signal_info += f"Estimated Signal-to-Noise Ratio (heuristic): {snr_est:.2f}\n"
 
-                signal_info += f"Signal Length: {len(signal)} samples\n"
-
-                # Display duration from t_value if available (already calculated in Data Loading section if present)
-                if not ('Duration:' in summary_content) and hasattr(app, 't_value') and app.t_value is not None and len(app.t_value) > 1:
-                     duration_seconds = app.t_value[-1] - app.t_value[0]
-                     signal_info += f"Signal Duration: {duration_seconds:.2f} s ({duration_seconds/60:.2f} min)\n"
-
+                    signal_info += f"Signal Length: {len(signal)} samples\n"
+                    if not ('Duration:' in summary_content) and hasattr(app, 't_value') and app.t_value is not None and len(app.t_value) > 1:
+                         duration_seconds = app.t_value[-1] - app.t_value[0]
+                         signal_info += f"Signal Duration: {duration_seconds:.2f} s ({duration_seconds/60:.2f} min)\n"
+                else: signal_info += "Signal information N/A (data not processed or loaded).\n"
                 summary_content += signal_info + "\n"
 
 
-            # === PEAK STATISTICS (Post-Filter) ===
-            # Calculate and display stats for the *retained* peaks
+            # === PEAK STATISTICS (POST-SUBFILTER) ===
+            # Clarified section title
             peak_stats_info = ""
-            retained_peaks_count = events if events is not None else (app.peak_detector.all_peaks_count if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') else 0)
+            retained_peaks_count = events if events is not None else (app.peak_detector.all_peaks_count if hasattr(app, 'peak_detector') and hasattr(app.peak_detector, 'all_peaks_count') and app.peak_detector.all_peaks_count is not None else 0)
 
-            if retained_peaks_count > 0:
-                 peak_stats_info = f"=== PEAK STATISTICS (Retained: {retained_peaks_count}) ===\n"
+            if retained_peaks_count > 0 or show_all_sections:
+                 peak_stats_info = f"=== PEAK STATISTICS (Retained: {retained_peaks_count if retained_peaks_count > 0 else 'N/A'}) ===\n"
+                 if retained_peaks_count > 0:
+                     if hasattr(app, 'peak_heights') and app.peak_heights is not None and len(app.peak_heights) == retained_peaks_count:
+                         heights = app.peak_heights
+                         peak_stats_info += f"Peak Height (Mean ± SD): {np.mean(heights):.2f} ± {np.std(heights):.2f}\n"
+                         peak_stats_info += f"Peak Height (Median): {np.median(heights):.2f}\n"
+                         peak_stats_info += f"Peak Height (Min/Max): {np.min(heights):.2f} / {np.max(heights):.2f}\n"
+                     else: peak_stats_info += "Peak Height Stats: N/A (data mismatch or not available)\n"
 
-                 # Heights (Prominences) - assuming app.peak_heights corresponds to retained peaks
-                 if hasattr(app, 'peak_heights') and app.peak_heights is not None and len(app.peak_heights) == retained_peaks_count:
-                     heights = app.peak_heights
-                     peak_stats_info += f"Peak Height (Mean ± SD): {np.mean(heights):.2f} ± {np.std(heights):.2f}\n"
-                     peak_stats_info += f"Peak Height (Median): {np.median(heights):.2f}\n"
-                     peak_stats_info += f"Peak Height (Min/Max): {np.min(heights):.2f} / {np.max(heights):.2f}\n"
+                     if hasattr(app, 'peak_widths') and app.peak_widths is not None and len(app.peak_widths) == retained_peaks_count:
+                         widths_samples = app.peak_widths
+                         time_res = app.time_resolution.get() if hasattr(app, 'time_resolution') else None
+                         if time_res:
+                             widths_time = widths_samples * time_res
+                             peak_stats_info += f"Peak Width (Mean ± SD): {np.mean(widths_time)*1000:.2f} ± {np.std(widths_time)*1000:.2f} ms\n"
+                             peak_stats_info += f"Peak Width (Median): {np.median(widths_time)*1000:.2f} ms\n"
+                             peak_stats_info += f"Peak Width (Min/Max): {np.min(widths_time)*1000:.2f} / {np.max(widths_time)*1000:.2f} ms\n"
+                         else: # Fallback to samples if time_res not available
+                             peak_stats_info += f"Peak Width (Mean ± SD): {np.mean(widths_samples):.2f} ± {np.std(widths_samples):.2f} samples\n"
+                     else: peak_stats_info += "Peak Width Stats: N/A (data mismatch or not available)\n"
 
-                 # Widths - assuming app.peak_widths corresponds to retained peaks
-                 if hasattr(app, 'peak_widths') and app.peak_widths is not None and len(app.peak_widths) == retained_peaks_count:
-                     widths_samples = app.peak_widths
-                     time_res = app.time_resolution.get() if hasattr(app, 'time_resolution') else None
-                     if time_res:
-                         widths_ms = widths_samples * time_res * 1000
-                         peak_stats_info += f"Peak Width (Mean ± SD): {np.mean(widths_ms):.2f} ± {np.std(widths_ms):.2f} ms\n"
-                         peak_stats_info += f"Peak Width (Median): {np.median(widths_ms):.2f} ms\n"
-                         peak_stats_info += f"Peak Width (Min/Max): {np.min(widths_ms):.2f} / {np.max(widths_ms):.2f} ms\n"
-                     else: # Fallback to samples if no time resolution
-                         peak_stats_info += f"Peak Width (Mean ± SD): {np.mean(widths_samples):.1f} ± {np.std(widths_samples):.1f} samples\n"
-                         peak_stats_info += f"Peak Width (Median): {np.median(widths_samples):.1f} samples\n"
+                     if peak_areas is not None and len(peak_areas) == retained_peaks_count:
+                         peak_stats_info += f"Peak Area (Mean ± SD): {np.mean(peak_areas):.2f} ± {np.std(peak_areas):.2f}\n"
+                         peak_stats_info += f"Peak Area (Median): {np.median(peak_areas):.2f}\n"
+                         peak_stats_info += f"Peak Area (Min/Max): {np.min(peak_areas):.2f} / {np.max(peak_areas):.2f}\n"
+                     else: peak_stats_info += "Peak Area Stats: N/A (data mismatch or not available)\n"
 
-                 # Areas - use passed peak_areas if available and matches count
-                 if peak_areas is not None and hasattr(peak_areas, '__len__') and len(peak_areas) == retained_peaks_count:
-                     areas = peak_areas
-                     peak_stats_info += f"Peak Area (Mean ± SD): {np.mean(areas):.2f} ± {np.std(areas):.2f}\n"
-                     peak_stats_info += f"Peak Area (Median): {np.median(areas):.2f}\n"
-                 elif hasattr(app, 'peak_areas') and app.peak_areas is not None and len(app.peak_areas) == retained_peaks_count: # Check if app has areas for retained peaks
-                     areas = app.peak_areas
-                     peak_stats_info += f"Peak Area (Mean ± SD): {np.mean(areas):.2f} ± {np.std(areas):.2f}\n"
-                     peak_stats_info += f"Peak Area (Median): {np.median(areas):.2f}\n"
+                     if peak_intervals is not None and len(peak_intervals) > 0: # peak_intervals usually has one less element than peaks
+                        intervals_ms = peak_intervals * 1000
+                        peak_stats_info += f"Inter-Peak Interval (Mean ± SD): {np.mean(intervals_ms):.2f} ± {np.std(intervals_ms):.2f} ms\n"
+                        peak_stats_info += f"Inter-Peak Interval (Median): {np.median(intervals_ms):.2f} ms\n"
+                        peak_stats_info += f"Inter-Peak Interval (Min/Max): {np.min(intervals_ms):.2f} / {np.max(intervals_ms):.2f} ms\n"
+                        if np.mean(intervals_ms) > 0:
+                             throughput_epm = 60 * 1000 / np.mean(intervals_ms) # Events per minute
+                             peak_stats_info += f"Throughput (Mean): {throughput_epm:.2f} events/minute\n"
+                     else: peak_stats_info += "Inter-Peak Interval Stats: N/A (data mismatch or not available)\n"
+                 elif show_all_sections : peak_stats_info += "No retained peaks to analyze or stats N/A.\n"
 
 
-                 # Intervals - calculated from retained peak times
-                 if hasattr(app, 'peaks') and app.peaks is not None and len(app.peaks) == retained_peaks_count and hasattr(app, 't_value'):
-                     if len(app.peaks) > 1:
-                         retained_peak_times = app.t_value[app.peaks] # Assumes app.peaks stores indices of retained peaks
-                         intervals_sec = np.diff(retained_peak_times)
-                         peak_stats_info += f"Peak Interval (Mean ± SD): {np.mean(intervals_sec):.3f} ± {np.std(intervals_sec):.3f} s\n"
-                         peak_stats_info += f"Peak Interval (Median): {np.median(intervals_sec):.3f} s\n"
-                         # Calculate Throughput (Events per Second)
-                         if duration_seconds > 0:
-                            throughput_hz = retained_peaks_count / duration_seconds
-                            peak_stats_info += f"Throughput: {throughput_hz:.2f} peaks/s\n"
+            # === SIGNAL-TO-NOISE (BASELINE METHOD) ===
+            snr_section = ""
+            try:
+                if (
+                    hasattr(app, 'filtered_signal') and app.filtered_signal is not None and
+                    hasattr(app, 'peaks') and app.peaks is not None and len(app.peaks) > 0 and
+                    hasattr(app, 'peak_widths') and app.peak_widths is not None and len(app.peak_widths) == len(app.peaks)
+                ):
+                    baseline_mask = compute_baseline_mask(
+                        signal_length=len(app.filtered_signal),
+                        peak_indices=app.peaks,
+                        widths_in_samples=app.peak_widths,
+                        multiplier=2.0,
+                        left_indices=(app.peak_left_ips if hasattr(app, 'peak_left_ips') else None),
+                        right_indices=(app.peak_right_ips if hasattr(app, 'peak_right_ips') else None),
+                    )
+                    baseline_signal = app.filtered_signal[baseline_mask]
+                    noise_std, noise_mad_std, baseline_mean = compute_noise_stats(baseline_signal)
 
-            if peak_stats_info:
+                    # Persist for reuse in plotting/export
+                    app.baseline_points = int(np.sum(baseline_mask))
+                    app.noise_std = noise_std
+                    app.noise_mad_std = noise_mad_std
+                    app.baseline_mean = baseline_mean
+
+                    # Compute per-peak SNR using peak heights (prominences)
+                    if hasattr(app, 'peak_heights') and app.peak_heights is not None and len(app.peak_heights) == len(app.peaks):
+                        snr_values = compute_snr_values(app.peak_heights, noise_std)
+                        app.snr_values = snr_values
+                    else:
+                        snr_values = np.array([])
+
+                    snr_section = "=== SIGNAL-TO-NOISE (BASELINE METHOD) ===\n"
+                    total_points = len(app.filtered_signal)
+                    baseline_pct = (app.baseline_points / total_points * 100.0) if total_points > 0 else 0.0
+                    snr_section += f"Baseline Points: {app.baseline_points} / {total_points} ({baseline_pct:.1f}%)\n"
+                    snr_section += f"Noise Std (baseline): {noise_std:.4g}\n"
+                    snr_section += f"Noise Robust (MAD*1.4826): {noise_mad_std:.4g}\n"
+
+                    if snr_values.size > 0:
+                        snr_section += f"SNR (Heights/Noise Std) Mean ± SD: {np.mean(snr_values):.2f} ± {np.std(snr_values):.2f}\n"
+                        snr_section += f"SNR Median: {np.median(snr_values):.2f}\n"
+                        snr_section += f"SNR Min/Max: {np.min(snr_values):.2f} / {np.max(snr_values):.2f}\n"
+                    else:
+                        if noise_std <= 0:
+                            snr_section += "SNR: Undefined (noise std is zero).\n"
+                        else:
+                            snr_section += "SNR: N/A (peak heights unavailable).\n"
+                    snr_section += "Exclusion rule: ±2×peak width around each peak excluded from baseline.\n\n"
+            except Exception as _e:
+                # Keep summary robust; omit SNR section on error
+                snr_section = ""
+
+            if snr_section:
+                summary_content += snr_section
+
+
+            if peak_stats_info: # Only add if there's content
                 summary_content += peak_stats_info + "\n"
 
-            # === METADATA ===
-            if hasattr(app, 'protocol_info') and app.protocol_info:
-                metadata_info = "=== METADATA ===\n"
-                # ... (keep existing metadata logic) ...
-                important_fields = [
-                    'sample_number', 'particle', 'concentration',
-                    'buffer', 'buffer_concentration', 'measurement_date',
-                    'start_time', 'setup', 'laser_power', 'stamp', 'notes'
-                ]
-                # First add important fields in order
-                for field in important_fields:
-                    if field in app.protocol_info and app.protocol_info[field]:
-                        field_name = field.replace('_', ' ').title()
-                        metadata_info += f"{field_name}: {app.protocol_info[field]}\n"
-                # Then add any remaining fields
-                for key, value in app.protocol_info.items():
-                    if (key not in important_fields and
-                        key not in ['file_path', 'raw_data'] and # Skip large/internal items
-                        value):
-                        field_name = key.replace('_', ' ').title()
-                        metadata_info += f"{field_name}: {value}\n"
-
-                summary_content += metadata_info # No extra newline needed if it's the last section
-
-            # Update the actual Tkinter Text widget
-            app.results_summary.config(state=tk.NORMAL)
-            app.results_summary.delete(1.0, tk.END)
             app.results_summary.insert(tk.END, summary_content)
             app.results_summary.config(state=tk.DISABLED)
+            
+            # Scroll to top
+            app.results_summary.yview_moveto(0)
 
-        return True
     except Exception as e:
-        # Add import for traceback if not already present
-        import traceback
-        error_details = traceback.format_exc()
-        app.show_error("Error updating results summary", f"{str(e)}\n\nDetails:\n{error_details}")
-        # Attempt to update summary with error message
-        if hasattr(app, 'results_summary'):
-            try:
-                app.results_summary.config(state=tk.NORMAL)
-                app.results_summary.delete(1.0, tk.END)
-                app.results_summary.insert(tk.END, f"Error updating summary:\n{str(e)}")
-                app.results_summary.config(state=tk.DISABLED)
-            except Exception as E:
-                print(f"Further error setting error message in results summary: {E}") # Log fallback
-        return False
+        # Use show_error_with_ui for consistent error display
+        show_error_with_ui(app, "Error updating results summary", e)
+        if hasattr(app, 'results_summary'): # Ensure it exists before trying to config
+            app.results_summary.config(state=tk.DISABLED)
 
 def validate_float_with_ui(app, value):
     """

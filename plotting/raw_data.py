@@ -63,6 +63,9 @@ def plot_raw_data(app, profiler=None):
         app.figure.clear()
         ax = app.figure.add_subplot(111)
         
+        # Apply theme immediately to prevent white background flash
+        app.theme_manager.apply_plot_theme(app.figure, [ax])
+        
         # Update progress
         app.update_progress_bar(1)
         
@@ -90,6 +93,10 @@ def plot_raw_data(app, profiler=None):
                             label=f'Raw Data ({len(t_plot):,} points)')
         ax.legend(handles=[legend_line])
         
+        # Set tight axis limits to eliminate extra space
+        ax.set_xlim(t_plot.min(), t_plot.max())
+        ax.set_ylim(x_plot.min(), x_plot.max())
+        
         # Customize plot (fonts, etc., handled by apply_plot_theme)
         ax.set_xlabel('Time (min)')
         ax.set_ylabel('Amplitude (counts)')
@@ -107,7 +114,7 @@ def plot_raw_data(app, profiler=None):
         # Adjust layout
         app.figure.tight_layout()
         
-        # Apply theme standard styles (bg, grid, text)
+        # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(app.figure, [ax])
         
         # Update or create tab

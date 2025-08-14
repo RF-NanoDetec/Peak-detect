@@ -30,6 +30,13 @@ class Config:
         PROGRESS_RESET_DELAY (int): Delay in milliseconds before resetting progress bars.
         DEFAULT_WINDOW_SIZE (tuple): Default application window size in pixels (width, height).
         
+        # Default filter settings
+        DEFAULT_FILTER_TYPE (str): Default filter type
+        DEFAULT_BUTTER_FILTER_ORDER (str): Default butterworth filter order
+        DEFAULT_FILTER_CUTOFF_FREQ (str): Default filter cutoff frequency
+        DEFAULT_SAVGOL_WINDOW_LENGTH (str): Default savgol window length
+        DEFAULT_SAVGOL_POLYORDER (str): Default savgol polynomial order
+        
     Example:
         >>> from config.settings import Config
         >>> num_workers = min(data_size // 1000, Config.MAX_WORKERS)
@@ -40,6 +47,13 @@ class Config:
     MAX_PLOT_POINTS = 10000
     PROGRESS_RESET_DELAY = 500  # milliseconds
     DEFAULT_WINDOW_SIZE = (1920, 1080)
+    
+    # Default filter settings
+    DEFAULT_FILTER_TYPE = 'butterworth'
+    DEFAULT_BUTTER_FILTER_ORDER = '2' # String, as it's for an Entry widget
+    DEFAULT_FILTER_CUTOFF_FREQ = '0'  # String '0' for auto-calculation
+    DEFAULT_SAVGOL_WINDOW_LENGTH = '11' # Standard value: window length 11
+    DEFAULT_SAVGOL_POLYORDER = '2'    # Standard value: polynomial order 2
     
     class Colors:
         """

@@ -277,6 +277,10 @@ def reset_application_state_with_ui(app):
         # Call the core function to reset the application state
         reset_application_state(app)
         
+        # Update welcome screen analyze button state if it exists
+        if hasattr(app, 'update_welcome_analyze_button'):
+            app.update_welcome_analyze_button()
+        
         # UI post-processing: Update status with success
         app.status_indicator.set_state('success')
         app.status_indicator.set_text("Application reset successfully")

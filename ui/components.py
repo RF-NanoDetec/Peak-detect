@@ -5,6 +5,7 @@ This module contains functions to create the main UI components used in the appl
 """
 
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from tkinter.scrolledtext import ScrolledText
@@ -47,13 +48,13 @@ def create_menu_bar(app):
     # File Menu
     file_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label="File", menu=file_menu)
-    file_menu.add_command(label="Open File", command=app.browse_file)
+    file_menu.add_command(label="Open File", command=app.browse_file, accelerator="Ctrl+O")
     file_menu.add_command(label="Export Results", command=app.save_peak_information_to_csv)
     file_menu.add_separator()
-    file_menu.add_command(label="Export Current Plot", command=app.export_plot)
+    file_menu.add_command(label="Export Current Plot", command=app.export_plot, accelerator="Ctrl+E")
     file_menu.add_command(label="Take Screenshot", command=app.take_screenshot)
     file_menu.add_separator()
-    file_menu.add_command(label="Exit", command=app.quit)
+    file_menu.add_command(label="Exit", command=app.quit, accelerator="Ctrl+Q")
     
     # Edit Menu
     edit_menu = tk.Menu(menu_bar, tearoff=0)
@@ -145,7 +146,6 @@ def create_preview_frame(app, main_frame):
     preview_frame.rowconfigure(1, weight=0)
     
     # Configure main_frame to give more weight to the preview column
-    main_frame.columnconfigure(0, weight=0)  # Control panel doesn't need to expand
     main_frame.columnconfigure(1, weight=1)  # Preview frame gets all extra space
     
     # Tab Control for Multiple Plots on the right
@@ -156,15 +156,8 @@ def create_preview_frame(app, main_frame):
     app.blank_tab = ttk.Frame(app.plot_tab_control, width=800, height=600)
     app.plot_tab_control.add(app.blank_tab, text="Welcome")
     
-    # Add a welcome label with theme-appropriate styling
-    welcome_label = ttk.Label(
-        app.blank_tab, 
-        text="Welcome to Peak Analysis Tool\n\nPlease load a file to begin", 
-        font=("Arial", 14),
-        foreground=app.theme_manager.get_color('text'),
-        background=app.theme_manager.get_color('background')
-    )
-    welcome_label.place(relx=0.5, rely=0.5, anchor="center")
+    # Create enhanced welcome screen with modern layout
+    create_welcome_screen(app, app.blank_tab)
     
     # Prevent the blank tab from shrinking
     app.blank_tab.pack_propagate(False)
@@ -194,10 +187,210 @@ def create_preview_frame(app, main_frame):
     
     return preview_frame
 
+def create_welcome_screen(app, parent):
+    """
+    Create an enhanced welcome screen with modern design elements.
+    
+    Features:
+    - App logo and banner
+    - Welcome message with app version
+    - Quick start buttons
+    - Visual peak detection illustration
+    """
+    from PIL import Image, ImageTk
+    import os
+    
+    # Main container for welcome screen with theme-aware background
+    welcome_container = ttk.Frame(parent)
+    welcome_container.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9, relheight=0.9)
+    
+    # Configure grid for welcome container
+    welcome_container.columnconfigure(0, weight=1)
+    welcome_container.rowconfigure(0, weight=0)  # Header
+    welcome_container.rowconfigure(1, weight=0)  # Title
+    welcome_container.rowconfigure(2, weight=1)  # Content
+    welcome_container.rowconfigure(3, weight=0)  # Footer
+    
+    # ===== Header with Logo =====
+    header_frame = ttk.Frame(welcome_container)
+    header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+    
+    # Try to load the app icon
+    try:
+        # Determine the correct path
+        icon_path = os.path.join("resources", "images", "icon.ico")
+        # For PyInstaller bundle support
+        if not os.path.exists(icon_path) and hasattr(sys, '_MEIPASS'):
+            icon_path = os.path.join(sys._MEIPASS, "resources", "images", "icon.ico")
+            
+        if os.path.exists(icon_path):
+            icon_img = Image.open(icon_path)
+            icon_img = icon_img.resize((64, 64), Image.Resampling.LANCZOS)
+            icon_photo = ImageTk.PhotoImage(icon_img)
+            
+            # Store reference to prevent garbage collection
+            app.welcome_icon = icon_photo
+            
+            # Display the icon
+            icon_label = ttk.Label(header_frame, image=icon_photo, background=app.theme_manager.get_color('background'))
+            icon_label.pack(side=tk.LEFT, padx=10)
+    except Exception as e:
+        print(f"Could not load icon image: {e}")
+    
+    # App name and version
+    from config import APP_VERSION
+    title_label = ttk.Label(
+        header_frame,
+        text="Peak Analysis Tool",
+        style="Display.TLabel"
+    )
+    title_label.pack(side=tk.LEFT, padx=10)
+    
+    version_label = ttk.Label(
+        header_frame,
+        text=f"v{APP_VERSION}",
+        style="Small.TLabel"
+    )
+    version_label.pack(side=tk.LEFT)
+    
+    # ===== Welcome Message =====
+    welcome_text = ttk.Label(
+        welcome_container,
+        text="Welcome to your scientific peak analysis workbench",
+        style="Heading.TLabel",
+        anchor="center"
+    )
+    welcome_text.grid(row=1, column=0, sticky="ew", pady=(0, 20))
+    
+    # ===== Main Content Area =====
+    content_frame = ttk.Frame(welcome_container)
+    content_frame.grid(row=2, column=0, sticky="nsew")
+    content_frame.columnconfigure(0, weight=1)
+    content_frame.columnconfigure(1, weight=1)
+    
+    # Left side: Quick start buttons
+    quick_start_frame = ttk.LabelFrame(content_frame, text="Quick Start")
+    quick_start_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+    
+    # Add quick start buttons with icons (if available)
+    load_button = ttk.Button(
+        quick_start_frame,
+        text="   Load Data File",
+        command=app.browse_file
+    )
+    load_button.pack(fill=tk.X, padx=20, pady=10)
+    
+    analyze_button = ttk.Button(
+        quick_start_frame,
+        text="   Start Analysis",
+        command=app.start_analysis,
+        state="disabled"  # Initially disabled until data is loaded
+    )
+    analyze_button.pack(fill=tk.X, padx=20, pady=10)
+    
+    docs_button = ttk.Button(
+        quick_start_frame,
+        text="   View Documentation",
+        command=app.show_documentation
+    )
+    docs_button.pack(fill=tk.X, padx=20, pady=10)
+    
+    # Right side: Features overview with image
+    features_frame = ttk.LabelFrame(content_frame, text="Key Features")
+    features_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+    
+    # Create a container frame to hold both image and text
+    features_content = ttk.Frame(features_frame)
+    features_content.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    
+    # Try to load the example image
+    image_loaded = False
+    try:
+        # Determine the correct path for an example image
+        img_path = os.path.join("resources", "images", "startim.png")
+        # For PyInstaller bundle support
+        if not os.path.exists(img_path) and hasattr(sys, '_MEIPASS'):
+            img_path = os.path.join(sys._MEIPASS, "resources", "images", "startim.png")
+            
+        if os.path.exists(img_path):
+            # Load and resize image to fit the frame
+            example_img = Image.open(img_path)
+            # Resize to fit the frame (adjust dimensions as needed)
+            max_width = 400
+            max_height = 250
+            img_ratio = min(max_width/example_img.width, max_height/example_img.height)
+            new_size = (int(example_img.width * img_ratio), int(example_img.height * img_ratio))
+            example_img = example_img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            example_photo = ImageTk.PhotoImage(example_img)
+            
+            # Store reference to prevent garbage collection
+            app.welcome_example = example_photo
+            
+            # Display the image
+            img_label = ttk.Label(
+                features_content, 
+                image=example_photo,
+                background=app.theme_manager.get_color('background')
+            )
+            img_label.pack(padx=10, pady=10)
+            image_loaded = True
+    except Exception as e:
+        print(f"Could not load example image: {e}")
+    
+    # Always display features text, either with or without image
+    features_text = """
+• Precise Peak Detection with advanced filtering algorithms
+• Time-resolved analysis & peak pattern identification
+• Multi-file batch processing with automatic sequencing
+• Customizable detection parameters for different signal types
+• Statistical analysis (distribution, correlation, properties)
+• Double peak detection for complex signal patterns
+• Interactive visualization with dark/light theme support
+• CSV export with complete peak metadata
+    """
+    
+    features_label = ttk.Label(
+        features_content,
+        text=features_text,
+        style="Body.TLabel",
+        justify=tk.LEFT
+    )
+    features_label.pack(padx=20, pady=10, anchor="w")
+    
+    # ===== Footer with Tip =====
+    tip_frame = ttk.Frame(welcome_container, style="Card.TFrame")
+    tip_frame.grid(row=3, column=0, sticky="ew", pady=(20, 0))
+    
+    tip_icon_label = ttk.Label(
+        tip_frame,
+        text="💡",
+        style="Heading.TLabel"
+    )
+    tip_icon_label.pack(side=tk.LEFT, padx=(10, 5), pady=10)
+    
+    tip_text = ttk.Label(
+        tip_frame,
+        text="Tip: Use the control panel on the left to configure parameters for each analysis step.",
+        style="Body.TLabel",
+        wraplength=600
+    )
+    tip_text.pack(side=tk.LEFT, padx=5, pady=10)
+    
+    # Create function to update analyze button state
+    def update_analyze_button_state(*args):
+        if hasattr(app, 'data') and app.data is not None:
+            analyze_button.config(state="normal")
+        else:
+            analyze_button.config(state="disabled")
+    
+    # Store the function for later use
+    app.update_welcome_analyze_button = update_analyze_button_state
+
 def create_data_loading_tab(app, tab_control):
     """Create the data loading tab"""
     data_loading_tab = ttk.Frame(tab_control)
-    tab_control.add(data_loading_tab, text="Data Loading")
+    tab_control.add(data_loading_tab, text="Load Data")
 
     # File mode selection frame
     file_mode_frame = ttk.LabelFrame(data_loading_tab, text="File Mode")
@@ -302,7 +495,7 @@ def create_data_loading_tab(app, tab_control):
     app.highlight_frame = ttk.Frame(entry_frame, style="Accent.TFrame")
     app.highlight_frame.pack(fill=tk.X, padx=2, pady=2)
     
-    time_res_label = ttk.Label(app.highlight_frame, text="Dwell Time (ms):", font=("TkDefaultFont", 10, "bold"))
+    time_res_label = ttk.Label(app.highlight_frame, text="Dwell Time (ms):", style="Heading.TLabel")
     time_res_label.pack(side=tk.LEFT, padx=10, pady=5)
     
     # Create a StringVar for displaying in milliseconds
@@ -344,7 +537,7 @@ def create_data_loading_tab(app, tab_control):
     )
     app.time_res_entry.pack(side=tk.LEFT, padx=5, pady=5)
     
-    units_label = ttk.Label(app.highlight_frame, text="milliseconds", font=("TkDefaultFont", 10))
+    units_label = ttk.Label(app.highlight_frame, text="milliseconds", style="Body.TLabel")
     units_label.pack(side=tk.LEFT, padx=5, pady=5)
     
     # Create a "Reset to Default" button
@@ -461,8 +654,14 @@ def create_preprocessing_tab(app, tab_control):
     preprocessing_tab = ttk.Frame(tab_control)
     tab_control.add(preprocessing_tab, text="Preprocessing")
 
-    # Create a more compact and modern processing mode selector
-    mode_frame = ttk.LabelFrame(preprocessing_tab, text="Signal Processing Mode")
+    # Add some padding to the main tab content area
+    content_frame = ttk.Frame(preprocessing_tab, padding="10 10 10 10")
+    content_frame.pack(expand=True, fill=tk.BOTH)
+    
+    # Make content_frame expand with window
+    content_frame.columnconfigure(0, weight=1) 
+
+    mode_frame = ttk.LabelFrame(content_frame, text="Signal Processing Mode")
     mode_frame.pack(fill=tk.X, padx=5, pady=5)
     
     # Add description text
@@ -479,12 +678,8 @@ def create_preprocessing_tab(app, tab_control):
     )
     description_label.pack(fill=tk.X, padx=5, pady=5)
     
-    # Create a more compact toggle switch
-    toggle_frame = ttk.Frame(mode_frame)
-    toggle_frame.pack(fill=tk.X, padx=5, pady=5)
-    
-    # Create horizontal layout for mode selection
-    mode_selector = ttk.Frame(toggle_frame)
+    # Create a more compact and modern processing mode selector
+    mode_selector = ttk.Frame(mode_frame)
     mode_selector.pack(pady=5, anchor=tk.W)
     
     # Radio buttons with icons/colors for better visual representation
@@ -502,7 +697,7 @@ def create_preprocessing_tab(app, tab_control):
     app.filter_color_indicator = ttk.Label(
         mode_selector,
         text="   ",
-        background="#0078D7",  # Initial color (will be updated by theme)
+        background=app.theme_manager.get_color('primary'),
         relief=tk.RAISED,
         borderwidth=2
     )
@@ -522,7 +717,7 @@ def create_preprocessing_tab(app, tab_control):
     app.raw_color_indicator = ttk.Label(
         mode_selector,
         text="   ",
-        background="#333333",  # Initial color (will be updated by theme)
+        background=app.theme_manager.get_color('text'),
         relief=tk.RAISED,
         borderwidth=2
     )
@@ -540,7 +735,7 @@ def create_preprocessing_tab(app, tab_control):
         comparison_frame, 
         height=canvas_height, 
         width=canvas_width,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         highlightthickness=0
     )
     app.preprocessing_comparison_canvas.pack(pady=5, anchor=tk.W)
@@ -579,19 +774,45 @@ def create_preprocessing_tab(app, tab_control):
     
     # Function to update UI based on filter state
     def update_filter_state(is_filtered):
-        app.filter_enabled.set(is_filtered)
+        app.filter_enabled.set(is_filtered) # Ensure the underlying variable is set
         
-        # Update button text
-        if is_filtered:
-            process_btn.configure(text="Apply Filtering")
-        else:
-            process_btn.configure(text="Process Raw Data")
-            
-        # Update filtering section visibility
+        if hasattr(app, 'process_btn') and app.process_btn:
+            if is_filtered:
+                app.process_btn.configure(text="Apply Filtering")
+            else:
+                app.process_btn.configure(text="Process Raw Data")
+
+        interactive_widgets_to_manage = [
+            app.filter_type_dropdown,
+            app.cutoff_freq_entry, 
+            # auto_cutoff_button is not stored on app, handle via parent frame iteration
+            app.filter_order_entry,
+            app.savgol_window_entry,
+            app.savgol_polyorder_entry
+        ]
+        # Also find auto_cutoff_button if it exists in butterworth_controls_frame
+        # This assumes auto_cutoff_button was defined and is a child of butterworth_controls_frame
+
         if is_filtered:
             filtering_frame.pack(fill=tk.X, padx=5, pady=5)
+            app.filter_type_dropdown.config(state="readonly") # Combobox always readonly when active
+            toggle_filter_controls() # This will show/hide Butterworth or SavGol frames and set states of their children
+            
+            # toggle_filter_controls now handles state of children in active frame.
+            # We just need to ensure that if filtering_frame itself is shown,
+            # the initially selected filter type's controls are correctly enabled.
+            # This is already handled by toggle_filter_controls being called.
+
         else:
-            filtering_frame.pack_forget()
+            filtering_frame.pack_forget() # Hide the main filtering frame
+            app.filter_type_dropdown.config(state=tk.DISABLED)
+            # Disable all specific filter controls since the main filtering is off
+            for widget in butterworth_controls_frame.winfo_children():
+                if isinstance(widget, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    widget.config(state=tk.DISABLED)
+            for widget in savgol_controls_frame.winfo_children():
+                if isinstance(widget, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    widget.config(state=tk.DISABLED)
     
     # Add tooltips for radio buttons
     app.add_tooltip(
@@ -609,111 +830,210 @@ def create_preprocessing_tab(app, tab_control):
     ttk.Separator(preprocessing_tab, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
     
     # Filtering parameters section in its own frame
-    filtering_frame = ttk.LabelFrame(preprocessing_tab, text="Filtering Parameters")
+    filtering_frame = ttk.LabelFrame(content_frame, text="Filtering Parameters")
+    filtering_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+    filtering_frame.columnconfigure(1, weight=1) # Allow entry fields to expand
+
+    # Initialize filter type variable
+    if not hasattr(app, 'filter_type_var'):
+        app.filter_type_var = tk.StringVar(value=Config.DEFAULT_FILTER_TYPE)
     
-    # Add explanation text for filtering
-    filter_description = (
-        "Signal filtering uses a Butterworth low-pass filter to remove high-frequency noise while\n"
-        "preserving important signal features. The cutoff frequency determines which frequencies are removed."
-    )
-    ttk.Label(
+    # Initialize Savitzky-Golay specific variables
+    if not hasattr(app, 'savgol_window_var'):
+        app.savgol_window_var = tk.StringVar(value=str(Config.DEFAULT_SAVGOL_WINDOW_LENGTH)) 
+    if not hasattr(app, 'savgol_polyorder_var'):
+        app.savgol_polyorder_var = tk.StringVar(value=str(Config.DEFAULT_SAVGOL_POLYORDER)) 
+    if not hasattr(app, 'butter_order_var'):
+        app.butter_order_var = tk.StringVar(value=str(Config.DEFAULT_BUTTER_FILTER_ORDER))
+
+
+    # --- Filter Type Selection ---
+    filter_type_label = ttk.Label(filtering_frame, text="Filter Type:")
+    filter_type_label.grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+    
+    filter_options = ["butterworth", "savgol"]
+    app.filter_type_dropdown = ttk.Combobox(
         filtering_frame, 
-        text=filter_description,
-        wraplength=380, 
-        justify=tk.LEFT,
-        padding=(5, 5)
-    ).pack(fill=tk.X, padx=5, pady=5)
+        textvariable=app.filter_type_var, 
+        values=filter_options, 
+        state="readonly",
+        width=18 # Adjusted width
+    )
+    app.filter_type_dropdown.grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+    app.add_tooltip(app.filter_type_dropdown, "Select the type of filter to apply.\nButterworth: Good general-purpose low-pass filter.\nSavitzky-Golay: Good for smoothing while preserving peak shapes.")
 
-    # Cutoff Frequency section with better layout
-    cutoff_frame = ttk.Frame(filtering_frame)
-    cutoff_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Frame for Butterworth specific controls
+    butterworth_controls_frame = ttk.Frame(filtering_frame)
+    butterworth_controls_frame.grid(row=1, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=(0,5))
+    butterworth_controls_frame.columnconfigure(1, weight=1)
 
-    ttk.Label(
-        cutoff_frame, 
-        text="Cutoff Frequency (Hz):",
-        font=("TkDefaultFont", 10, "bold")
-    ).pack(side=tk.LEFT, padx=(5, 10))
+    # Frame for Savitzky-Golay specific controls
+    savgol_controls_frame = ttk.Frame(filtering_frame)
+    savgol_controls_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=(0,5))
+    savgol_controls_frame.columnconfigure(1, weight=1)
+
+
+    # --- Butterworth Specific Controls ---
+    # Ensure app.filter_cutoff_freq exists (should be initialized in main.py or similar)
+    if not hasattr(app, 'filter_cutoff_freq'):
+        app.filter_cutoff_freq = tk.StringVar(value=str(Config.DEFAULT_FILTER_CUTOFF_FREQ))
     
-    cutoff_entry = ttk.Entry(
-        cutoff_frame, 
-        textvariable=app.cutoff_value, 
-        width=8,
-        font=("TkDefaultFont", 10)
-    )
-    cutoff_entry.pack(side=tk.LEFT)
+    cutoff_label = ttk.Label(butterworth_controls_frame, text="Cutoff Freq. (Hz):")
+    cutoff_label.grid(row=0, column=0, padx=0, pady=5, sticky=tk.W)
+    app.cutoff_freq_entry = ttk.Entry(butterworth_controls_frame, textvariable=app.filter_cutoff_freq, width=20)
+    app.cutoff_freq_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+    app.add_tooltip(app.cutoff_freq_entry, "Cutoff frequency for the Butterworth low-pass filter in Hz.\nLeave empty or set to 0 for auto-calculation based on peak widths.")
+
+    # Auto-calculate cutoff button (Butterworth)
+    # Ensure app.calculate_auto_cutoff_frequency is defined in main app class
+    auto_cutoff_button = ttk.Button(butterworth_controls_frame, text="Auto", command=app.calculate_auto_cutoff_frequency if hasattr(app, 'calculate_auto_cutoff_frequency') else lambda: print("Auto-cutoff function not set"), width=5)
+    auto_cutoff_button.grid(row=0, column=2, padx=5, pady=5, sticky=tk.E)
+    app.add_tooltip(auto_cutoff_button, "Automatically estimate a suitable cutoff frequency based on average peak width.")
+
+    order_label = ttk.Label(butterworth_controls_frame, text="Filter Order:")
+    order_label.grid(row=1, column=0, padx=0, pady=5, sticky=tk.W)
+    app.filter_order_entry = ttk.Entry(butterworth_controls_frame, textvariable=app.butter_order_var, width=20)
+    app.filter_order_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+    app.add_tooltip(app.filter_order_entry, "Order of the Butterworth filter (e.g., 2, 3, 4). Higher orders have a steeper rolloff.")
     
-    ttk.Label(
-        cutoff_frame, 
-        text="Hz",
-        font=("TkDefaultFont", 10)
-    ).pack(side=tk.LEFT, padx=(2, 10))
 
-    auto_cutoff_button = ttk.Button(
-        cutoff_frame, 
-        text="Auto Calculate",
-        style="Accent.TButton", 
-        command=app.calculate_auto_cutoff_frequency
+    # --- Savitzky-Golay Specific Controls ---
+    savgol_window_label = ttk.Label(savgol_controls_frame, text="Window Length:")
+    savgol_window_label.grid(row=0, column=0, padx=0, pady=5, sticky=tk.W)
+    app.savgol_window_entry = ttk.Entry(savgol_controls_frame, textvariable=app.savgol_window_var, width=20)
+    app.savgol_window_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+    app.add_tooltip(app.savgol_window_entry, "Window length for Savitzky-Golay filter (odd integer, e.g., 5, 11, 21).\nLeave empty for auto-estimation based on peak widths.")
+
+    savgol_polyorder_label = ttk.Label(savgol_controls_frame, text="Polynomial Order:")
+    savgol_polyorder_label.grid(row=1, column=0, padx=0, pady=5, sticky=tk.W)
+    app.savgol_polyorder_entry = ttk.Entry(savgol_controls_frame, textvariable=app.savgol_polyorder_var, width=20)
+    app.savgol_polyorder_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+    app.add_tooltip(app.savgol_polyorder_entry, "Polynomial order for Savitzky-Golay filter (integer, less than window length).\nLeave empty for default (e.g., 2 or 3).")
+
+    # Function to toggle filter controls visibility
+    def toggle_filter_controls(*args): # Already defined by previous edit, ensure it's robust
+        selected_filter = app.filter_type_var.get()
+        
+        # Determine which controls to show/enable vs hide/disable
+        if selected_filter == 'butterworth':
+            butterworth_controls_frame.grid()
+            for child in butterworth_controls_frame.winfo_children():
+                if isinstance(child, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    child.config(state=tk.NORMAL)
+            savgol_controls_frame.grid_remove()
+            for child in savgol_controls_frame.winfo_children():
+                if isinstance(child, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    child.config(state=tk.DISABLED)
+
+        elif selected_filter == 'savgol':
+            butterworth_controls_frame.grid_remove()
+            for child in butterworth_controls_frame.winfo_children():
+                if isinstance(child, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    child.config(state=tk.DISABLED)
+            savgol_controls_frame.grid()
+            for child in savgol_controls_frame.winfo_children():
+                if isinstance(child, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    child.config(state=tk.NORMAL)
+        else: 
+            butterworth_controls_frame.grid_remove()
+            for child in butterworth_controls_frame.winfo_children():
+                if isinstance(child, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    child.config(state=tk.DISABLED)
+            savgol_controls_frame.grid_remove()
+            for child in savgol_controls_frame.winfo_children():
+                if isinstance(child, (ttk.Entry, ttk.Button, ttk.Combobox, tk.Scale)):
+                    child.config(state=tk.DISABLED)
+
+    app.filter_type_var.trace_add("write", toggle_filter_controls)
+
+    # Help text for filtering (already added and gridded by previous commit)
+    # filtering_help_text = (...)
+    # filtering_help_label = ttk.Label(filtering_frame, text=filtering_help_text, style="Tooltip.TLabel")
+    # filtering_help_label.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(10,5))
+
+    # Initial state update is handled by the radio button's command calling update_filter_state.
+    # When the tab is created, app.filter_enabled (BooleanVar) should have its default value (e.g., True).
+    # So, update_filter_state(app.filter_enabled.get()) should be called once after all related widgets are defined.
+    # Or, even better, the radio buttons default state will trigger its command.
+    # Let's ensure the initial call happens correctly.
+    # The `variable=app.filter_enabled` in Radiobutton and its default value in main app
+    # should trigger an initial call to update_filter_state if its value changes from None to True/False.
+    # To be certain, an explicit call after everything is defined is safest:
+    update_filter_state(app.filter_enabled.get()) 
+
+    # Separator and Preview
+    ttk.Separator(content_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
+
+    signal_processing_frame = ttk.LabelFrame(content_frame, text="Signal Processing")
+    signal_processing_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+    # Main help text for signal processing
+    signal_main_help_text = (
+        "Signal processing filters help remove noise and enhance signal quality for better peak detection. "
+        "Choose the appropriate filter type based on your data characteristics and analysis requirements."
     )
-    auto_cutoff_button.pack(side=tk.LEFT, padx=5)
+    signal_main_help_label = ttk.Label(signal_processing_frame, text=signal_main_help_text, style="Tooltip.TLabel", wraplength=380, justify=tk.LEFT)
+    signal_main_help_label.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(5,5))
+
+    # --- Collapsible detailed descriptions ---
+    # Frame to hold the details and the toggle button
+    details_frame = ttk.Frame(signal_processing_frame)
+    details_frame.grid(row=1, column=0, columnspan=3, sticky=tk.EW, pady=(0,5))
+    details_frame.columnconfigure(0, weight=1)
+
+    # Button to toggle details
+    app.signal_details_visible = tk.BooleanVar(value=False)
     
-    # Help text for cutoff frequency with improved explanation of automatic calculation
-    cutoff_help = ttk.Label(
-        filtering_frame,
-        text="Set to 0 for automatic calculation. Auto-calculation finds the highest signal value and uses 70% of this as a threshold to determine appropriate peak frequency.",
-        wraplength=380,
-        foreground=app.theme_manager.get_color('secondary'),
-        font=("TkDefaultFont", 8),
-        justify=tk.LEFT
-    )
-    cutoff_help.pack(fill=tk.X, padx=15, pady=(0, 5))
+    def toggle_signal_details():
+        visible = app.signal_details_visible.get()
+        if visible:
+            butterworth_details_label.grid()
+            savgol_details_label.grid()
+            toggle_button.configure(text="Hide Details")
+        else:
+            butterworth_details_label.grid_remove()
+            savgol_details_label.grid_remove()
+            toggle_button.configure(text="Show Details")
 
-    # Add auto-calculation explanation frame with more details
-    auto_calc_explanation = ttk.LabelFrame(filtering_frame, text="Auto-Calculation Method")
-    auto_calc_explanation.pack(fill=tk.X, padx=5, pady=5)
+    toggle_button = ttk.Button(details_frame, text="Show Details", command=lambda: [app.signal_details_visible.set(not app.signal_details_visible.get()), toggle_signal_details()])
+    toggle_button.grid(row=0, column=0, sticky=tk.W, pady=(5,2))
+
+    # Detailed text for Butterworth Filter
+    butterworth_details_text = (
+        "• Butterworth Filter:\n"
+        "  A low-pass filter with maximally flat frequency response in the passband. It effectively removes "
+        "high-frequency noise while preserving the shape of your peaks.\n"
+        "  ✓ Pros: Excellent frequency response, no ripple in passband, good for general noise reduction\n"
+        "  ✗ Cons: Can introduce phase distortion, may smooth sharp features slightly\n"
+        "  Best for: General-purpose noise removal, signals with consistent peak shapes\n"
+        "  Key Parameters: Cutoff Frequency (Hz) - frequencies above this are attenuated, Filter Order - higher orders provide steeper rolloff"
+    )
+    butterworth_details_label = ttk.Label(details_frame, text=butterworth_details_text, style="Tooltip.TLabel", wraplength=370, justify=tk.LEFT)
+    butterworth_details_label.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=5)
+    butterworth_details_label.grid_remove()
+
+    # Detailed text for Savitzky-Golay Filter
+    savgol_details_text = (
+        "• Savitzky-Golay Filter:\n"
+        "  A polynomial smoothing filter that preserves peak shapes and heights better than moving averages. "
+        "It fits polynomials to local data windows and uses the fitted values as filtered output.\n"
+        "  ✓ Pros: Preserves peak shapes excellently, maintains peak heights, good for derivative calculations\n"
+        "  ✗ Cons: Can be sensitive to outliers, requires careful parameter selection\n"
+        "  Best for: Peak-rich signals where maintaining peak characteristics is crucial\n"
+        "  Standard Values: Window Length=11, Polynomial Order=2 (good starting point for most data)\n"
+        "  Key Parameters: Window Length (odd number) - larger windows = more smoothing, Polynomial Order - higher orders fit more complex local patterns"
+    )
+    savgol_details_label = ttk.Label(details_frame, text=savgol_details_text, style="Tooltip.TLabel", wraplength=370, justify=tk.LEFT)
+    savgol_details_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5)
+    savgol_details_label.grid_remove()
     
-    auto_calc_text = (
-        "The automatic cutoff frequency is calculated by:\n\n"
-        "1. Finding the highest signal value in the data\n"
-        "2. Using 70% of this value as a threshold (30% below maximum)\n"
-        "3. Detecting peaks above this threshold\n"
-        "4. Measuring the average width of these peaks\n"
-        "5. Setting the cutoff frequency based on this width\n\n"
-        "This approach ensures that the filter preserves actual signal peaks while removing noise."
-    )
-    
-    ttk.Label(
-        auto_calc_explanation,
-        text=auto_calc_text,
-        wraplength=380,
-        justify=tk.LEFT,
-        padding=(5, 5)
-    ).pack(fill=tk.X, padx=5, pady=5)
+    # Ensure initial state of button text is correct
+    toggle_signal_details()
 
-    # Add enhanced tooltips
-    app.add_tooltip(
-        cutoff_entry,
-        "Cutoff frequency for the low-pass filter in Hertz.\n\n"
-        "• Lower values (1-5 Hz): More aggressive filtering, smoother signals\n"
-        "• Medium values (10-50 Hz): Balanced filtering for most data\n"
-        "• Higher values (>100 Hz): Light filtering, preserves most signal details\n\n"
-        "Set to 0 for automatic calculation based on signal characteristics."
-    )
-
-    app.add_tooltip(
-        auto_cutoff_button,
-        "Automatically calculate the optimal cutoff frequency based on signal characteristics.\n"
-        "The calculation finds the highest peaks in the signal and determines the ideal cutoff frequency."
-    )
-
-    # Show/hide filtering frame based on current mode
-    if app.filter_enabled.get():
-        filtering_frame.pack(fill=tk.X, padx=5, pady=5)
-    else:
-        filtering_frame.pack_forget()
 
     # Action Buttons with improved layout
-    action_frame = ttk.LabelFrame(preprocessing_tab, text="Processing Actions")
-    action_frame.pack(fill=tk.X, padx=5, pady=(10, 5))
+    action_frame = ttk.LabelFrame(content_frame, text="Processing Actions")
+    action_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
 
     # Button container for better spacing
     button_container = ttk.Frame(action_frame)
@@ -747,11 +1067,12 @@ def create_preprocessing_tab(app, tab_control):
         "• Filtered: Applies Butterworth filter with specified cutoff\n"
         "• Raw: Processes data without filtering"
     )
+    app.process_btn = process_btn # Assign to app for access in update_filter_state
 
 def create_peak_detection_tab(app, tab_control):
     """Create the peak detection tab"""
     peak_detection_tab = ttk.Frame(tab_control)
-    tab_control.add(peak_detection_tab, text="Peak Detection")
+    tab_control.add(peak_detection_tab, text="Detection")  # Changed from "Peak Detection"
 
     # Create a main container with scrollbar
     main_container = ttk.Frame(peak_detection_tab)
@@ -806,13 +1127,13 @@ def create_peak_detection_tab(app, tab_control):
         diagram_frame, 
         height=canvas_height, 
         width=canvas_width,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         highlightthickness=0
     )
     app.threshold_diagram_canvas.pack()
     
     # Draw a sine-like signal to represent data
-    signal_color = "#0078D7"  # Use blue directly instead of theme's primary color
+    signal_color = app.theme_manager.get_color('primary')  # Use blue directly instead of theme's primary color
     baseline_y = canvas_height // 2 + 15  # Move baseline down to show peaks better
     
     # Create a single data line with baseline noise and peaks
@@ -930,7 +1251,7 @@ def create_peak_detection_tab(app, tab_control):
     ttk.Label(
         sigma_container, 
         text="Sensitivity (σ):",
-        font=("TkDefaultFont", 10, "bold")
+        style="Heading.TLabel"
     ).pack(side=tk.LEFT, padx=5)
     
     # Current value display with higher visibility
@@ -956,7 +1277,7 @@ def create_peak_detection_tab(app, tab_control):
         orient=tk.HORIZONTAL,
         variable=app.sigma_multiplier,
         length=250,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         fg=app.theme_manager.get_color('text'),
         highlightthickness=0,
         troughcolor=app.theme_manager.get_color('background'),
@@ -1077,13 +1398,13 @@ def create_peak_detection_tab(app, tab_control):
         visualization_frame,
         height=120,
         width=380,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         highlightthickness=0
     )
     app.manual_diagram_canvas.pack(fill=tk.X, padx=5, pady=5)
     
     # Draw a realistic signal with two clear peaks
-    signal_color = "#0078D7"  # Use blue directly instead of theme's primary color
+    signal_color = app.theme_manager.get_color('primary')  # Use blue directly instead of theme's primary color
     baseline_y = 60  # Center the signal vertically
     
     # Create a more realistic signal with two clear peaks
@@ -1203,10 +1524,10 @@ def create_peak_detection_tab(app, tab_control):
         orient=tk.HORIZONTAL,
         variable=app.distance,
         length=250,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         fg=app.theme_manager.get_color('text'),
         highlightthickness=0,
-        troughcolor=app.theme_manager.get_color('background')
+        troughcolor=app.theme_manager.get_color('panel_bg')
     )
     app.distance_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
@@ -1227,10 +1548,10 @@ def create_peak_detection_tab(app, tab_control):
         orient=tk.HORIZONTAL,
         variable=app.rel_height,
         length=250,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         fg=app.theme_manager.get_color('text'),
         highlightthickness=0,
-        troughcolor=app.theme_manager.get_color('background')
+        troughcolor=app.theme_manager.get_color('panel_bg')
     )
     app.rel_height_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
@@ -1278,9 +1599,10 @@ def create_peak_detection_tab(app, tab_control):
         resolution=0.05,
         orient=tk.HORIZONTAL,
         variable=app.prominence_ratio,
-        bg=app.theme_manager.get_color('card_bg'),
+        length=140,
+        bg=app.theme_manager.get_color('background'),
         fg=app.theme_manager.get_color('text'),
-        troughcolor=app.theme_manager.get_color('background')
+        troughcolor=app.theme_manager.get_color('panel_bg')
     )
     prominence_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
@@ -1294,83 +1616,12 @@ def create_peak_detection_tab(app, tab_control):
     )
     prominence_diagram_canvas.pack(pady=5)
     
-    # Drawing will be done when the canvas is visible
+    # Store canvas as app attribute so it can be updated when theme changes
+    app.prominence_diagram_canvas = prominence_diagram_canvas
+    
+    # Define the draw function as an app method so it can be called when theme changes
     def draw_prominence_diagram():
-        canvas = prominence_diagram_canvas
-        canvas.delete("all")
-        
-        # Colors
-        text_color = app.theme_manager.get_color('text')
-        signal_color = app.theme_manager.get_color('primary')
-        prominence_color = "#4CAF50"  # Green
-        height_color = "#FF9800"      # Orange
-        subpeak_color = "#F44336"     # Red
-        
-        # Draw axis
-        canvas.create_line(10, 90, 370, 90, fill=text_color, dash=(2,2))
-        canvas.create_text(15, 95, text="0", fill=text_color, anchor="nw")
-        
-        # Draw a main peak
-        peak_x = 180
-        peak_height = 60
-        peak_y = 90 - peak_height  # 90 is baseline
-        
-        # Draw main peak
-        points = []
-        for x in range(50, 320, 5):
-            y = 90 - peak_height * np.exp(-0.0015 * (x - peak_x) ** 2) 
-            points.append(x)
-            points.append(int(y))
-        
-        canvas.create_line(points, fill=signal_color, width=2, smooth=True)
-        
-        # Draw a subpeak
-        subpeak_x = 180
-        subpeak_height = 20
-        sub_points = []
-        for x in range(150, 210, 2):
-            y = peak_y - subpeak_height * np.exp(-0.005 * (x - subpeak_x) ** 2)
-            sub_points.append(x)
-            sub_points.append(int(y))
-        
-        canvas.create_line(sub_points, fill=subpeak_color, width=2, smooth=True)
-        canvas.create_text(150, 20, text="Subpeak (filtered out)", fill=subpeak_color)
-        
-        # Draw prominence and height measurements for subpeak
-        left_ref_x = 130
-        right_ref_x = 230
-        
-        # Main peak reference lines
-        peak_base_y = 90  # Baseline
-        
-        # Subpeak reference lines
-        subpeak_base_y = peak_y  # Subpeak's base is on the main peak
-        subpeak_top_y = peak_y - subpeak_height
-        
-        # Draw measurement arrows
-        arrow_x = 350
-        
-        # Peak height (from baseline to peak)
-        canvas.create_line([arrow_x, peak_base_y, arrow_x, peak_y], 
-                          fill=height_color, arrow="last", width=1.5)
-        canvas.create_text(arrow_x+5, (peak_base_y+peak_y)/2, 
-                          text="Peak\nHeight", fill=height_color, anchor="w")
-        
-        # Subpeak prominence (from subpeak base to top)
-        canvas.create_line([arrow_x-20, subpeak_base_y, arrow_x-20, subpeak_top_y], 
-                          fill=prominence_color, arrow="last", width=1.5)
-        canvas.create_text(arrow_x-15, (subpeak_base_y+subpeak_top_y)/2, 
-                          text="Prominence", fill=prominence_color, anchor="w")
-        
-        # Ratio explanation
-        canvas.create_text(
-            20, 
-            110, 
-            text="Ratio = Prominence / Peak Height  (Keep peaks with ratio ≥ threshold)", 
-            fill=text_color, 
-            anchor="nw",
-            font=("TkDefaultFont", 8)
-        )
+        app._draw_prominence_diagram()
     
     # Schedule drawing when the canvas becomes visible
     prominence_diagram_canvas.after(100, draw_prominence_diagram)
@@ -1446,7 +1697,7 @@ def create_peak_detection_tab(app, tab_control):
 def create_peak_analysis_tab(app, tab_control):
     """Create the peak analysis tab"""
     peak_analysis_tab = ttk.Frame(tab_control)
-    tab_control.add(peak_analysis_tab, text="Peak Analysis")
+    tab_control.add(peak_analysis_tab, text="Analysis")  # Changed from "Peak Analysis"
 
     # Create a main container for all controls
     main_container = ttk.Frame(peak_analysis_tab)
@@ -1553,9 +1804,9 @@ def create_peak_analysis_tab(app, tab_control):
         orient=tk.HORIZONTAL,
         variable=app.prominence_ratio,
         length=140,
-        bg=app.theme_manager.get_color('card_bg'),
+        bg=app.theme_manager.get_color('background'),
         fg=app.theme_manager.get_color('text'),
-        troughcolor=app.theme_manager.get_color('background')
+        troughcolor=app.theme_manager.get_color('panel_bg')
     )
     prominence_ratio_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5), pady=0)
     
@@ -1575,7 +1826,7 @@ def create_peak_analysis_tab(app, tab_control):
     app.add_tooltip(apply_button, "Apply the current prominence ratio threshold to update the analysis and feedback.")
     
     # Feedback label for filtered peaks, right of Apply (bottom right)
-    app.filtered_peaks_feedback = ttk.Label(apply_feedback_row, text="", foreground="blue")
+    app.filtered_peaks_feedback = ttk.Label(apply_feedback_row, text="", foreground=app.theme_manager.get_color('primary'))
     app.filtered_peaks_feedback.pack(side=tk.RIGHT, padx=(0,10), pady=0)
     
     # Add tooltips
@@ -1606,9 +1857,8 @@ def create_peak_analysis_tab(app, tab_control):
     )
 
     # --- Throughput Interval Control ---
-    interval_frame = ttk.Frame(analysis_options_frame)
-    interval_frame.pack(fill=tk.X, padx=5, pady=2, anchor="w")
-    ttk.Label(interval_frame, text="Throughput Interval (s):").pack(side=tk.LEFT, padx=(0,5))
+    interval_frame = ttk.LabelFrame(main_container, text="Throughput Interval (s)")
+    interval_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
     
     # Entry for precise value
     interval_entry = ttk.Entry(interval_frame, textvariable=app.throughput_interval, width=6)
@@ -1623,7 +1873,10 @@ def create_peak_analysis_tab(app, tab_control):
         resolution=1,
         variable=app.throughput_interval,
         length=180,
-        showvalue=False
+        showvalue=False,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        troughcolor=app.theme_manager.get_color('panel_bg')
     )
     interval_slider.pack(side=tk.LEFT, padx=(0,5))
     
@@ -1655,7 +1908,7 @@ def create_peak_analysis_tab(app, tab_control):
 def create_double_peak_analysis_tab(app, tab_control):
     """Create the double peak analysis tab"""
     double_peak_tab = ttk.Frame(tab_control)
-    tab_control.add(double_peak_tab, text="Double Peak Analysis")
+    tab_control.add(double_peak_tab, text="Double Peak")  # Changed from "Double Peak Analysis"
     
     # Parameter frame for double peak detection
     param_frame = ttk.LabelFrame(double_peak_tab, text="Double Peak Detection Parameters")
@@ -1680,7 +1933,7 @@ def create_double_peak_analysis_tab(app, tab_control):
         try:
             value = float(min_entry.get())
             if value >= 0.1 and value <= max_distance_ms.get():
-                min_slider.set(value)
+                app.min_slider.set(value)
                 min_distance_ms.set(value)
                 # Only update the values, don't trigger analysis
                 app.double_peak_min_distance.set(value / 1000)
@@ -1697,7 +1950,7 @@ def create_double_peak_analysis_tab(app, tab_control):
         try:
             value = float(max_entry.get())
             if value >= min_distance_ms.get() and value <= 50.0:
-                max_slider.set(value)
+                app.max_slider.set(value)
                 max_distance_ms.set(value)
                 # Only update the values, don't trigger analysis
                 app.double_peak_max_distance.set(value / 1000)
@@ -1732,15 +1985,21 @@ def create_double_peak_analysis_tab(app, tab_control):
     min_slider_frame.pack(fill=tk.X, padx=5, pady=2)
     
     ttk.Label(min_slider_frame, text="Min:").pack(side=tk.LEFT, padx=5)
-    min_slider = ttk.Scale(
+    app.min_slider = tk.Scale(
         min_slider_frame, 
         from_=0.1, 
         to=25.0,
         variable=min_distance_ms, 
         orient=tk.HORIZONTAL,
-        command=update_min_entry
+        command=update_min_entry,
+        length=250,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False  # Hide the default value display
     )
-    min_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    app.min_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
     # Text entry for precise min distance
     min_entry = ttk.Entry(min_slider_frame, width=6)
@@ -1756,15 +2015,21 @@ def create_double_peak_analysis_tab(app, tab_control):
     max_slider_frame.pack(fill=tk.X, padx=5, pady=2)
     
     ttk.Label(max_slider_frame, text="Max:").pack(side=tk.LEFT, padx=5)
-    max_slider = ttk.Scale(
+    app.max_slider = tk.Scale(
         max_slider_frame, 
         from_=1.0, 
         to=50.0,
         variable=max_distance_ms, 
         orient=tk.HORIZONTAL,
-        command=update_max_entry
+        command=update_max_entry,
+        length=250,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False  # Hide the default value display
     )
-    max_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    app.max_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     
     # Text entry for precise max distance
     max_entry = ttk.Entry(max_slider_frame, width=6)
@@ -1779,17 +2044,112 @@ def create_double_peak_analysis_tab(app, tab_control):
     amp_frame = ttk.LabelFrame(param_frame, text="Amplitude Ratio")
     amp_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    # Grid layout for amplitude ratio controls
-    ttk.Label(amp_frame, text="Range:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-    min_amp_entry = ttk.Entry(amp_frame, textvariable=app.double_peak_min_amp_ratio, width=8)
-    min_amp_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-    ttk.Label(amp_frame, text="to").grid(row=0, column=2, sticky="ew", padx=2, pady=2)
-    max_amp_entry = ttk.Entry(amp_frame, textvariable=app.double_peak_max_amp_ratio, width=8)
-    max_amp_entry.grid(row=0, column=3, sticky="ew", padx=5, pady=2)
+    # Create variables to store the slider values
+    min_amp_ratio = tk.DoubleVar(value=app.double_peak_min_amp_ratio.get())
+    max_amp_ratio = tk.DoubleVar(value=app.double_peak_max_amp_ratio.get())
     
-    # Histogram frame using grid
+    # Functions to update app variables and sync entries
+    def update_min_amp_entry(val):
+        val = float(val)
+        min_amp_entry.delete(0, tk.END)
+        min_amp_entry.insert(0, f"{val:.2f}")
+        min_amp_ratio.set(val)
+        app.double_peak_min_amp_ratio.set(val)
+    
+    def update_max_amp_entry(val):
+        val = float(val)
+        max_amp_entry.delete(0, tk.END)
+        max_amp_entry.insert(0, f"{val:.2f}")
+        max_amp_ratio.set(val)
+        app.double_peak_max_amp_ratio.set(val)
+    
+    def sync_min_amp_slider_to_entry(*args):
+        try:
+            value = float(min_amp_entry.get())
+            if value >= 0.0 and value <= max_amp_ratio.get():
+                app.min_amp_slider.set(value)
+                min_amp_ratio.set(value)
+                app.double_peak_min_amp_ratio.set(value)
+            else:
+                min_amp_entry.delete(0, tk.END)
+                min_amp_entry.insert(0, f"{min_amp_ratio.get():.2f}")
+        except ValueError:
+            min_amp_entry.delete(0, tk.END)
+            min_amp_entry.insert(0, f"{min_amp_ratio.get():.2f}")
+    
+    def sync_max_amp_slider_to_entry(*args):
+        try:
+            value = float(max_amp_entry.get())
+            if value >= min_amp_ratio.get() and value <= 5.0:
+                app.max_amp_slider.set(value)
+                max_amp_ratio.set(value)
+                app.double_peak_max_amp_ratio.set(value)
+            else:
+                max_amp_entry.delete(0, tk.END)
+                max_amp_entry.insert(0, f"{max_amp_ratio.get():.2f}")
+        except ValueError:
+            max_amp_entry.delete(0, tk.END)
+            max_amp_entry.insert(0, f"{max_amp_ratio.get():.2f}")
+    
+    # Min amplitude ratio slider and entry
+    min_amp_slider_frame = ttk.Frame(amp_frame)
+    min_amp_slider_frame.pack(fill=tk.X, padx=5, pady=2)
+    
+    ttk.Label(min_amp_slider_frame, text="Min:").pack(side=tk.LEFT, padx=5)
+    app.min_amp_slider = tk.Scale(
+        min_amp_slider_frame, 
+        from_=0.0, 
+        to=2.0,
+        variable=min_amp_ratio, 
+        orient=tk.HORIZONTAL,
+        command=update_min_amp_entry,
+        length=250,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False,  # Hide the default value display
+        resolution=0.01
+    )
+    app.min_amp_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    min_amp_entry = ttk.Entry(min_amp_slider_frame, width=6)
+    min_amp_entry.pack(side=tk.LEFT, padx=5)
+    min_amp_entry.insert(0, f"{min_amp_ratio.get():.2f}")
+    min_amp_entry.bind("<Return>", sync_min_amp_slider_to_entry)
+    min_amp_entry.bind("<FocusOut>", sync_min_amp_slider_to_entry)
+    
+    # Max amplitude ratio slider and entry
+    max_amp_slider_frame = ttk.Frame(amp_frame)
+    max_amp_slider_frame.pack(fill=tk.X, padx=5, pady=2)
+    
+    ttk.Label(max_amp_slider_frame, text="Max:").pack(side=tk.LEFT, padx=5)
+    app.max_amp_slider = tk.Scale(
+        max_amp_slider_frame, 
+        from_=0.1, 
+        to=5.0,
+        variable=max_amp_ratio, 
+        orient=tk.HORIZONTAL,
+        command=update_max_amp_entry,
+        length=250,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False,  # Hide the default value display
+        resolution=0.01
+    )
+    app.max_amp_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    max_amp_entry = ttk.Entry(max_amp_slider_frame, width=6)
+    max_amp_entry.pack(side=tk.LEFT, padx=5)
+    max_amp_entry.insert(0, f"{max_amp_ratio.get():.2f}")
+    max_amp_entry.bind("<Return>", sync_max_amp_slider_to_entry)
+    max_amp_entry.bind("<FocusOut>", sync_max_amp_slider_to_entry)
+    
+    # Histogram frame
     amp_hist_frame = ttk.Frame(amp_frame)
-    amp_hist_frame.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=(2, 5))
+    amp_hist_frame.pack(fill=tk.X, padx=5, pady=5)
     
     # Create small figure for amplitude ratio histogram with adjusted size and tight layout
     amp_hist_fig = Figure(figsize=(2.5, 1.0), dpi=100)
@@ -1814,26 +2174,116 @@ def create_double_peak_analysis_tab(app, tab_control):
     # Store the canvas for later updates
     app.amp_hist_canvas = amp_hist_canvas
     
-    # Configure grid columns for amplitude ratio frame
-    amp_frame.columnconfigure(1, weight=1)
-    amp_frame.columnconfigure(3, weight=1)
-    amp_frame.rowconfigure(1, weight=1)
-    
     # Width ratio parameters
     width_frame = ttk.LabelFrame(param_frame, text="Width Ratio")
     width_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    # Grid layout for width ratio controls
-    ttk.Label(width_frame, text="Range:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-    min_width_entry = ttk.Entry(width_frame, textvariable=app.double_peak_min_width_ratio, width=8)
-    min_width_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-    ttk.Label(width_frame, text="to").grid(row=0, column=2, sticky="ew", padx=2, pady=2)
-    max_width_entry = ttk.Entry(width_frame, textvariable=app.double_peak_max_width_ratio, width=8)
-    max_width_entry.grid(row=0, column=3, sticky="ew", padx=5, pady=2)
+    # Create variables to store the slider values
+    min_width_ratio = tk.DoubleVar(value=app.double_peak_min_width_ratio.get())
+    max_width_ratio = tk.DoubleVar(value=app.double_peak_max_width_ratio.get())
     
-    # Width ratio histogram frame
+    # Functions to update app variables and sync entries
+    def update_min_width_entry(val):
+        val = float(val)
+        min_width_entry.delete(0, tk.END)
+        min_width_entry.insert(0, f"{val:.2f}")
+        min_width_ratio.set(val)
+        app.double_peak_min_width_ratio.set(val)
+    
+    def update_max_width_entry(val):
+        val = float(val)
+        max_width_entry.delete(0, tk.END)
+        max_width_entry.insert(0, f"{val:.2f}")
+        max_width_ratio.set(val)
+        app.double_peak_max_width_ratio.set(val)
+    
+    def sync_min_width_slider_to_entry(*args):
+        try:
+            value = float(min_width_entry.get())
+            if value >= 0.0 and value <= max_width_ratio.get():
+                app.min_width_slider.set(value)
+                min_width_ratio.set(value)
+                app.double_peak_min_width_ratio.set(value)
+            else:
+                min_width_entry.delete(0, tk.END)
+                min_width_entry.insert(0, f"{min_width_ratio.get():.2f}")
+        except ValueError:
+            min_width_entry.delete(0, tk.END)
+            min_width_entry.insert(0, f"{min_width_ratio.get():.2f}")
+    
+    def sync_max_width_slider_to_entry(*args):
+        try:
+            value = float(max_width_entry.get())
+            if value >= min_width_ratio.get() and value <= 5.0:
+                app.max_width_slider.set(value)
+                max_width_ratio.set(value)
+                app.double_peak_max_width_ratio.set(value)
+            else:
+                max_width_entry.delete(0, tk.END)
+                max_width_entry.insert(0, f"{max_width_ratio.get():.2f}")
+        except ValueError:
+            max_width_entry.delete(0, tk.END)
+            max_width_entry.insert(0, f"{max_width_ratio.get():.2f}")
+    
+    # Min width ratio slider and entry
+    min_width_slider_frame = ttk.Frame(width_frame)
+    min_width_slider_frame.pack(fill=tk.X, padx=5, pady=2)
+    
+    ttk.Label(min_width_slider_frame, text="Min:").pack(side=tk.LEFT, padx=5)
+    app.min_width_slider = tk.Scale(
+        min_width_slider_frame, 
+        from_=0.0, 
+        to=2.0,
+        variable=min_width_ratio, 
+        orient=tk.HORIZONTAL,
+        command=update_min_width_entry,
+        length=250,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False,  # Hide the default value display
+        resolution=0.01
+    )
+    app.min_width_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    min_width_entry = ttk.Entry(min_width_slider_frame, width=6)
+    min_width_entry.pack(side=tk.LEFT, padx=5)
+    min_width_entry.insert(0, f"{min_width_ratio.get():.2f}")
+    min_width_entry.bind("<Return>", sync_min_width_slider_to_entry)
+    min_width_entry.bind("<FocusOut>", sync_min_width_slider_to_entry)
+    
+    # Max width ratio slider and entry
+    max_width_slider_frame = ttk.Frame(width_frame)
+    max_width_slider_frame.pack(fill=tk.X, padx=5, pady=2)
+    
+    ttk.Label(max_width_slider_frame, text="Max:").pack(side=tk.LEFT, padx=5)
+    app.max_width_slider = tk.Scale(
+        max_width_slider_frame, 
+        from_=0.1, 
+        to=5.0,
+        variable=max_width_ratio, 
+        orient=tk.HORIZONTAL,
+        command=update_max_width_entry,
+        length=250,
+        bg=app.theme_manager.get_color('background'),
+        fg=app.theme_manager.get_color('text'),
+        highlightthickness=0,
+        troughcolor=app.theme_manager.get_color('background'),
+        showvalue=False,  # Hide the default value display
+        resolution=0.01
+    )
+    app.max_width_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    
+    max_width_entry = ttk.Entry(max_width_slider_frame, width=6)
+    max_width_entry.pack(side=tk.LEFT, padx=5)
+    max_width_entry.insert(0, f"{max_width_ratio.get():.2f}")
+    max_width_entry.bind("<Return>", sync_max_width_slider_to_entry)
+    max_width_entry.bind("<FocusOut>", sync_max_width_slider_to_entry)
+    
+    # Histogram frame
     width_hist_frame = ttk.Frame(width_frame)
-    width_hist_frame.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=(2, 5))
+    width_hist_frame.pack(fill=tk.X, padx=5, pady=5)
     
     # Create small figure for width ratio histogram with adjusted size and tight layout
     width_hist_fig = Figure(figsize=(2.5, 1.0), dpi=100)

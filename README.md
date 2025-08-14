@@ -196,7 +196,7 @@ Please include tests for any new functionality and ensure documentation is updat
 
 ## 📜 License
 
-© 2024 Lucjan & Silas. All rights reserved.
+© 2025 Dr. Lucjan Grzegorzewski All rights reserved.
 
 This software is proprietary and confidential. Unauthorized copying, transfer, or use in any medium is strictly prohibited without prior written consent.
 

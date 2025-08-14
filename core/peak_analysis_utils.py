@@ -25,7 +25,7 @@ import pandas as pd
 import seaborn as sns
 import psutil
 from numba import njit
-from scipy.signal import find_peaks, butter, filtfilt, peak_widths
+from scipy.signal import find_peaks, butter, filtfilt, peak_widths, savgol_filter
 
 # Import profiling utilities from the performance module
 from core.performance import profile_function, get_memory_usage
@@ -406,66 +406,211 @@ def estimate_peak_widths(signal, fs, prominence_threshold, time_resolution=1e-4)
     return avg_width
 
 # Adjust the low-pass filter cutoff frequency
-def adjust_lowpass_cutoff(signal, fs, prominence_threshold, normalization_factor=1.0, time_resolution=1e-4):
+def adjust_lowpass_cutoff(
+    signal, fs, 
+    filter_type='butterworth', 
+    # --- Butterworth specific ---
+    manual_cutoff_hz=0.0, # New parameter to accept a pre-calculated cutoff
+    prominence_threshold_butter_cutoff_calc=0.1, 
+    normalization_factor_butter=1.0,
+    butter_order=2,
+    # --- Savitzky-Golay specific ---
+    savgol_window_length=None, 
+    savgol_polyorder=None,   
+    prominence_threshold_savgol_window_est=0.1, 
+    # --- Common ---
+    time_resolution=1e-4
+):
     """
-    Adjust lowpass filter cutoff frequency based on signal characteristics.
-    
-    This function analyzes the signal spectrum and determines an appropriate
-    cutoff frequency for lowpass filtering to preserve important features
-    while reducing noise.
+    Adjusts/determines filter parameters and applies the chosen filter (Butterworth or Savitzky-Golay).
+
+    For Butterworth, it calculates an adaptive lowpass cutoff.
+    For Savitzky-Golay, it uses provided parameters or estimates window_length.
     
     Parameters:
-        signal (numpy.ndarray): The signal to analyze
-        fs (float): Sampling frequency of the signal
-        prominence_threshold (float): Threshold for peak prominence or height
-        normalization_factor (float, optional): Factor to normalize the cutoff.
+        signal (numpy.ndarray): The signal to analyze.
+        fs (float): Sampling frequency of the signal.
+        filter_type (str): 'butterworth' or 'savgol'. Defaults to 'butterworth'.
+        
+        manual_cutoff_hz (float): Pre-calculated cutoff frequency for Butterworth.
+            If >0, use it directly. Else, use existing auto-calc logic.
+        prominence_threshold_butter_cutoff_calc (float): Prominence threshold used in 
+            `estimate_peak_widths` for Butterworth cutoff calculation. Defaults to 0.1.
+        normalization_factor_butter (float): Factor to normalize the Butterworth cutoff.
             Defaults to 1.0.
-        time_resolution (float, optional): Time resolution in seconds per unit.
-            Defaults to 1e-4 (0.1 milliseconds per unit).
+        butter_order (int): Order of the Butterworth filter. Defaults to 2.
+
+        savgol_window_length (int, optional): Window length for Savitzky-Golay filter. 
+            Must be odd. If None, it's estimated based on signal characteristics.
+        savgol_polyorder (int, optional): Polynomial order for Savitzky-Golay filter.
+            Must be less than savgol_window_length. If None, a default (e.g., 2 or 3) is used.
+        prominence_threshold_savgol_window_est (float): Prominence threshold for peak 
+            detection when estimating `savgol_window_length`. Defaults to 0.1.
+            
+        time_resolution (float, optional): Time resolution in seconds per unit, used by 
+            `estimate_peak_widths` for Butterworth. Defaults to 1e-4.
             
     Returns:
-        tuple: (filtered_signal, cutoff_frequency)
-            - filtered_signal is the filtered data
-            - cutoff_frequency is the calculated cutoff frequency in Hz
+        tuple: (filtered_signal, applied_filter_params_dict)
+            - filtered_signal is the filtered data.
+            - applied_filter_params_dict is a dictionary containing the type of filter applied 
+              and its parameters (e.g., {'type': 'butterworth', 'cutoff_hz': 10.0, 'order': 2} or
+              {'type': 'savgol', 'window_length': 51, 'polyorder': 3}).
             
     Note:
-        This function uses the same core algorithm as calculate_lowpass_cutoff
-        but also returns the filtered signal.
+        The return signature has changed from (filtered_signal, cutoff_frequency).
+        The second element is now a dictionary of parameters.
     """
-    print("\n==== DEBUG: Starting adjust_lowpass_cutoff ====")
+    print(f"\\n==== DEBUG: Starting adjust_lowpass_cutoff (Filter Type: {filter_type}) ====")
     print(f"DEBUG: Input parameters:")
     print(f"- fs: {fs}")
-    print(f"- prominence_threshold: {prominence_threshold}")
-    print(f"- normalization_factor: {normalization_factor}")
+    if filter_type == 'butterworth':
+        print(f"- manual_cutoff_hz (input): {manual_cutoff_hz}")
+        print(f"- prominence_threshold_butter_cutoff_calc (for auto): {prominence_threshold_butter_cutoff_calc}")
+        print(f"- normalization_factor_butter (for auto): {normalization_factor_butter}")
+        print(f"- butter_order: {butter_order}")
+    elif filter_type == 'savgol':
+        print(f"- savgol_window_length (input): {savgol_window_length}")
+        print(f"- savgol_polyorder (input): {savgol_polyorder}")
+        print(f"- prominence_threshold_savgol_window_est: {prominence_threshold_savgol_window_est}")
     print(f"- time_resolution: {time_resolution}")
-    
-    avg_width = estimate_peak_widths(signal, fs, prominence_threshold, time_resolution)
-    print(f'\nDEBUG: Average width of peaks: {avg_width} seconds')
-    print(f'DEBUG: 1/avg_width: {1/avg_width:.2f}')
-    
-    # Calculate base cutoff frequency from average width (in Hz)
-    base_cutoff = 1 / avg_width   # Frequency from width in seconds
-    print(f'DEBUG: Base cutoff frequency (1/avg_width): {base_cutoff:.2f} Hz')
-    
-    # Apply normalization factor to adjust the cutoff
-    cutoff = base_cutoff * float(normalization_factor)
-    print(f'DEBUG: After normalization:')
-    print(f'- Base cutoff: {base_cutoff:.2f} Hz')
-    print(f'- Normalization factor: {normalization_factor}')
-    print(f'- Final cutoff: {cutoff:.2f} Hz')
 
-    # Limit cutoff to Nyquist frequency
-    nyquist = fs / 2.0
-    cutoff = min(cutoff, nyquist * 0.95)  # Stay below 95% of Nyquist frequency
-    print(f'DEBUG: Nyquist frequency: {nyquist:.2f} Hz')
-    print(f'DEBUG: Final cutoff (limited by Nyquist): {cutoff:.2f} Hz')
+    applied_filter_params = {'type': filter_type}
+    filtered_signal = signal # Default to original if filtering fails or not applicable
 
-    # Apply the filter
-    filtered_signal = apply_butterworth_filter(2, cutoff, 'lowpass', fs, signal)
-    print(f'DEBUG: Filter applied with cutoff frequency: {cutoff:.2f} Hz')
-    print("==== DEBUG: Finished adjust_lowpass_cutoff ====\n")
+    if filter_type == 'butterworth':
+        print(f"DEBUG: Butterworth mode selected.")
+        final_cutoff_hz = 0.0
 
-    return filtered_signal, cutoff
+        if manual_cutoff_hz > 0:
+            print(f"DEBUG: Using provided manual_cutoff_hz: {manual_cutoff_hz} Hz")
+            final_cutoff_hz = manual_cutoff_hz
+            # Store this in applied_params for clarity, even if no auto-estimation done
+            applied_filter_params['estimation_method'] = 'manual_override'
+        else:
+            print(f"DEBUG: manual_cutoff_hz is 0 or not provided. Auto-calculating Butterworth cutoff.")
+            avg_width_sec = estimate_peak_widths(signal, fs, prominence_threshold_butter_cutoff_calc, time_resolution)
+            print(f'\nDEBUG: Average width of peaks (for Butterworth cutoff): {avg_width_sec} seconds')
+            
+            if avg_width_sec <= 1e-9: 
+                print(f"Warning: avg_width_sec ({avg_width_sec:.2e}) is very small or zero. ")
+                base_cutoff_hz = fs / 4.0
+                print(f"Using a fallback base_cutoff_hz: {base_cutoff_hz:.2f} Hz due to small avg_width_sec.")
+            else:
+                base_cutoff_hz = 1.0 / avg_width_sec
+            print(f'DEBUG: Base cutoff frequency (1/avg_width_sec): {base_cutoff_hz:.2f} Hz')
+            
+            normalized_cutoff = base_cutoff_hz * float(normalization_factor_butter)
+            print(f'DEBUG: Normalized cutoff (base * norm_factor): {normalized_cutoff:.2f} Hz')
+            final_cutoff_hz = normalized_cutoff
+            applied_filter_params['estimated_avg_width_sec'] = avg_width_sec
+            applied_filter_params['prominence_for_cutoff_calc'] = prominence_threshold_butter_cutoff_calc
+            applied_filter_params['estimation_method'] = 'auto_peak_width'
+
+        nyquist_hz = fs / 2.0
+        final_cutoff_hz = min(final_cutoff_hz, nyquist_hz * 0.95)
+        final_cutoff_hz = max(final_cutoff_hz, 0.01) 
+        print(f'DEBUG: Final Butterworth cutoff to be applied: {final_cutoff_hz:.2f} Hz')
+
+        filtered_signal = apply_butterworth_filter(butter_order, final_cutoff_hz, 'lowpass', fs, signal)
+        print(f'DEBUG: Butterworth filter applied with order={butter_order}, cutoff_hz={final_cutoff_hz:.2f} Hz')
+        
+        applied_filter_params['cutoff_hz'] = final_cutoff_hz
+        applied_filter_params['order'] = butter_order
+        # Remove params specific to auto-estimation if manual was used, or ensure they are correctly set.
+        # The logic above already sets 'estimated_avg_width_sec' etc. only in the auto path.
+
+    elif filter_type == 'savgol':
+        print(f"DEBUG: Savitzky-Golay mode selected.")
+        current_savgol_window_length = savgol_window_length
+        current_savgol_polyorder = savgol_polyorder
+
+        if len(signal) < 3: # SavGol not applicable for very short signals
+            print(f"ERROR: Signal length ({len(signal)}) is too short for Savitzky-Golay filter. Returning unfiltered signal.")
+            filtered_signal = signal.copy() # Return original signal
+            applied_filter_params['error'] = "Signal too short for Sav-Gol filter (min length 3)."
+            applied_filter_params['window_length'] = None
+            applied_filter_params['polyorder'] = None
+        else:
+            # Estimate window length if not provided
+            if current_savgol_window_length is None:
+                print(f"DEBUG: Sav-Gol window_length not provided. Estimating using prominence: {prominence_threshold_savgol_window_est}")
+                s_peaks, _ = find_peaks(signal, prominence=prominence_threshold_savgol_window_est)
+                if len(s_peaks) > 0:
+                    s_width_results = peak_widths(signal, s_peaks, rel_height=0.5)
+                    avg_s_width_samples = np.mean(s_width_results[0]) # Widths in samples
+                    print(f"DEBUG: Estimated avg peak width for Sav-Gol: {avg_s_width_samples:.2f} samples")
+                    
+                    estimated_wl = int(np.ceil(avg_s_width_samples * 1.5)) # Heuristic: 1.5x avg peak width
+                    current_savgol_window_length = estimated_wl
+                    applied_filter_params['estimated_window_source'] = 'peak_width_heuristic'
+                    applied_filter_params['estimated_avg_samples_width'] = avg_s_width_samples
+                else: 
+                    print(f"DEBUG: No peaks found for Sav-Gol window estimation (prominence {prominence_threshold_savgol_window_est}). Using fallback.")
+                    fallback_wl = min(max(5, int(len(signal) * 0.05)), 101) # Fallback: 5% of signal, min 5, max 101
+                    current_savgol_window_length = fallback_wl
+                    applied_filter_params['estimated_window_source'] = 'fallback_no_peaks'
+                print(f"DEBUG: Auto-determined Sav-Gol window_length: {current_savgol_window_length}")
+
+            # Ensure window length is odd and positive
+            if current_savgol_window_length < 3: current_savgol_window_length = 3
+            if current_savgol_window_length % 2 == 0:
+                current_savgol_window_length += 1
+                print(f"Adjusted Sav-Gol window_length to be odd: {current_savgol_window_length}")
+
+            # Determine polyorder if not provided
+            if current_savgol_polyorder is None:
+                # Default polyorder, ensure it's less than window_length. Common default is 2 or 3.
+                current_savgol_polyorder = min(3, current_savgol_window_length - 1)
+                current_savgol_polyorder = max(1, current_savgol_polyorder) # Must be at least 1
+                print(f"DEBUG: Using default Sav-Gol polyorder: {current_savgol_polyorder}")
+                applied_filter_params['polyorder_source'] = 'default'
+            else: # User provided polyorder
+                current_savgol_polyorder = max(1, int(savgol_polyorder))
+
+
+            # Final validation of Sav-Gol parameters against signal length
+            if current_savgol_window_length > len(signal):
+                print(f"Warning: Sav-Gol window_length {current_savgol_window_length} > signal length {len(signal)}. Adjusting to signal length or slightly less.")
+                current_savgol_window_length = len(signal) if len(signal) % 2 != 0 else len(signal) -1
+                if current_savgol_window_length < 3 : current_savgol_window_length = 3 # if signal itself is very short
+            
+            if current_savgol_polyorder >= current_savgol_window_length:
+                print(f"Warning: Sav-Gol polyorder {current_savgol_polyorder} >= window_length {current_savgol_window_length}. Adjusting polyorder.")
+                current_savgol_polyorder = current_savgol_window_length - 1
+            current_savgol_polyorder = max(1, current_savgol_polyorder) # Ensure polyorder is at least 1
+
+            print(f"DEBUG: Final Sav-Gol params before filtering: window_length={current_savgol_window_length}, polyorder={current_savgol_polyorder}")
+            
+            if current_savgol_window_length > len(signal) or current_savgol_window_length <= current_savgol_polyorder or current_savgol_window_length < 1:
+                 print(f"ERROR: Invalid Savitzky-Golay parameters for signal of length {len(signal)}: "
+                       f"window_length={current_savgol_window_length}, polyorder={current_savgol_polyorder}. "
+                       "Returning unfiltered signal.")
+                 filtered_signal = signal.copy() # Return original signal
+                 applied_filter_params['error'] = "Invalid Sav-Gol parameters (e.g., window too large, polyorder too large/small)."
+                 applied_filter_params['window_length'] = current_savgol_window_length
+                 applied_filter_params['polyorder'] = current_savgol_polyorder
+            else:
+                try:
+                    filtered_signal = savgol_filter(signal, current_savgol_window_length, current_savgol_polyorder)
+                    print(f'DEBUG: Savitzky-Golay filter applied.')
+                except ValueError as e:
+                    print(f"ERROR applying Savitzky-Golay filter: {e}. Returning unfiltered signal.")
+                    filtered_signal = signal.copy() # Return original on error
+                    applied_filter_params['error'] = str(e)
+
+            applied_filter_params['window_length'] = current_savgol_window_length
+            applied_filter_params['polyorder'] = current_savgol_polyorder
+    
+    else:
+        print(f"ERROR: Unsupported filter_type: {filter_type}. Choose 'butterworth' or 'savgol'. Returning unfiltered signal.")
+        filtered_signal = signal.copy() # Return original signal
+        applied_filter_params['error'] = f"Unsupported filter_type: {filter_type}"
+
+    print(f'DEBUG: Filter "{filter_type}" processing complete. Final effective params: {applied_filter_params}')
+    print("==== DEBUG: Finished adjust_lowpass_cutoff ====\\n")
+
+    return filtered_signal, applied_filter_params
 
 def calculate_lowpass_cutoff(signal, fs, prominence_threshold, normalization_factor=1.0, time_resolution=1e-4):
     """
@@ -512,3 +657,119 @@ def calculate_lowpass_cutoff(signal, fs, prominence_threshold, normalization_fac
     print("==== DEBUG: Finished calculate_lowpass_cutoff ====\n")
     
     return cutoff
+
+# =============================
+# Baseline noise and SNR helpers
+# =============================
+
+def compute_baseline_mask(signal_length, peak_indices, widths_in_samples, multiplier=2.0, left_indices=None, right_indices=None):
+    """
+    Build a boolean mask marking baseline (non-peak) points by excluding windows around each peak.
+
+    The excluded window for a peak is ±(multiplier × width) around the peak center, or
+    an extension of (multiplier × width) beyond left/right indices if provided.
+
+    Args:
+        signal_length (int): Length of the signal array.
+        peak_indices (np.ndarray): Indices of detected peaks.
+        widths_in_samples (np.ndarray): Peak widths in samples (same length as peak_indices).
+        multiplier (float, optional): Multiplier applied to width to define exclusion window. Defaults to 2.0.
+        left_indices (np.ndarray, optional): Left interpolated positions for peaks.
+        right_indices (np.ndarray, optional): Right interpolated positions for peaks.
+
+    Returns:
+        np.ndarray: Boolean mask of shape (signal_length,) where True indicates baseline points.
+    """
+    signal_length = int(signal_length)
+    mask = np.ones(signal_length, dtype=bool)
+
+    if peak_indices is None or widths_in_samples is None or len(peak_indices) == 0:
+        return mask
+
+    # Collect exclusion intervals [start, end) and merge overlaps
+    intervals = []
+    num_peaks = min(len(peak_indices), len(widths_in_samples))
+
+    for i in range(num_peaks):
+        center = int(peak_indices[i])
+        width_samples = int(np.ceil(widths_in_samples[i]))
+        if width_samples <= 0:
+            width_samples = 1
+
+        if left_indices is not None and right_indices is not None and i < len(left_indices) and i < len(right_indices):
+            left_ip = int(np.floor(left_indices[i]))
+            right_ip = int(np.ceil(right_indices[i]))
+            span = max(1, right_ip - left_ip)
+            extension = int(np.ceil(multiplier * span))
+            start = max(0, left_ip - extension)
+            end = min(signal_length, right_ip + extension)
+        else:
+            half_window = int(np.ceil(multiplier * width_samples))
+            start = max(0, center - half_window)
+            end = min(signal_length, center + half_window + 1)
+
+        if start < end:
+            intervals.append((start, end))
+
+    if not intervals:
+        return mask
+
+    # Merge overlapping intervals
+    intervals.sort(key=lambda x: x[0])
+    merged = [intervals[0]]
+    for s, e in intervals[1:]:
+        last_s, last_e = merged[-1]
+        if s <= last_e:  # overlap
+            merged[-1] = (last_s, max(last_e, e))
+        else:
+            merged.append((s, e))
+
+    # Apply exclusions
+    for s, e in merged:
+        mask[s:e] = False
+
+    return mask
+
+def compute_noise_stats(baseline_signal):
+    """
+    Compute baseline noise statistics from a baseline-only signal segment.
+
+    Returns standard deviation, robust MAD-based std, and baseline mean.
+
+    Args:
+        baseline_signal (np.ndarray): Signal values considered as baseline.
+
+    Returns:
+        tuple: (noise_std, noise_mad_std, baseline_mean)
+    """
+    if baseline_signal is None or len(baseline_signal) == 0:
+        return 0.0, 0.0, 0.0
+
+    baseline_signal = np.asarray(baseline_signal)
+    baseline_mean = float(np.mean(baseline_signal))
+    noise_std = float(np.std(baseline_signal))
+
+    # Robust MAD-based estimator of sigma under normal assumption
+    median_val = float(np.median(baseline_signal))
+    mad = float(np.median(np.abs(baseline_signal - median_val)))
+    noise_mad_std = 1.4826 * mad
+
+    return noise_std, noise_mad_std, baseline_mean
+
+def compute_snr_values(peak_heights, noise_value):
+    """
+    Compute per-peak SNR given peak heights and a scalar noise level.
+
+    Args:
+        peak_heights (np.ndarray): Vector of peak amplitudes (e.g., prominences).
+        noise_value (float): Noise level (e.g., baseline std). Must be > 0.
+
+    Returns:
+        np.ndarray: Vector of SNR values (same shape as peak_heights). Empty if noise_value <= 0.
+    """
+    if peak_heights is None:
+        return np.array([])
+    if noise_value is None or noise_value <= 0:
+        return np.array([])
+    peak_heights = np.asarray(peak_heights)
+    return peak_heights / float(noise_value)

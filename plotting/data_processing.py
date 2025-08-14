@@ -24,7 +24,7 @@ def start_analysis(app, profile_function=None):
         app.update_progress_bar(0, total_steps)
 
         # Get parameters and prepare data
-        current_cutoff = app.cutoff_value.get()
+        current_cutoff = app.cutoff_value.get() # Old cutoff, will be replaced by new specific ones
 
         # Time values are already in seconds, no need for scaling
         t = app.data['Time - Plot 0'].values  # No 1e-4 scaling needed
@@ -43,52 +43,101 @@ def start_analysis(app, profile_function=None):
 
         # Apply filtering only if enabled
         if app.filter_enabled.get():
-            # Apply filtering
-            if current_cutoff > 0:
-                print(f"\n--> Using manual cutoff frequency: {current_cutoff} Hz")
-                app.filtered_signal = apply_butterworth_filter(2, current_cutoff, 'lowpass', app.fs, x)
-                calculated_cutoff = current_cutoff
-                app.filter_bandwidth.set(calculated_cutoff)  # Store manual cutoff
-            else:
-                print(f"\n--> Auto-calculating cutoff frequency")
-                
-                # Find the highest signal value and calculate 70% threshold
-                signal_max = np.max(x)
-                threshold = signal_max * 0.7  # 70% of max value (30% below max)
-                print(f"DEBUG: Maximum signal value: {signal_max}")
-                print(f"DEBUG: Using 70% threshold: {threshold}")
-                
-                # Detect peaks above the 70% threshold to measure their widths
-                peaks, _ = find_peaks(x, height=threshold)
-                
-                if len(peaks) == 0:
-                    print("DEBUG: No peaks found above 70% threshold, using default cutoff")
-                    calculated_cutoff = 10.0  # Default cutoff if no peaks found
-                    app.filtered_signal = apply_butterworth_filter(2, calculated_cutoff, 'lowpass', app.fs, x)
-                    app.filter_bandwidth.set(calculated_cutoff)  # Store default cutoff
-                else:
-                    print(f"DEBUG: Found {len(peaks)} peaks above 70% threshold")
-                    
-                    # Use the core functions with our calculated threshold
-                    time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
-                    print(f"--> Time resolution: {time_res} seconds per unit")
-                    
-                    app.filtered_signal, calculated_cutoff = adjust_lowpass_cutoff(
-                        x, app.fs, threshold, 1.0, time_resolution=time_res
-                    )
-                    print(f"--> Auto-calculated cutoff frequency: {calculated_cutoff:.2f} Hz")
-                    app.filter_bandwidth.set(calculated_cutoff)  # Store auto-calculated cutoff
-                
-                app.cutoff_value.set(calculated_cutoff)
-        else:
-            # Use raw signal without filtering
-            print("\n--> Using raw signal (no filtering)")
-            app.filtered_signal = x
-            calculated_cutoff = 0
-            app.cutoff_value.set(calculated_cutoff)
+            # Get the chosen filter type
+            filter_type = app.filter_type_var.get()
+            calculated_cutoff_display = "N/A" # For status message
+            app.applied_filter_settings = {} # To store what was actually applied
 
-        # Update progress
-        app.update_progress_bar(2)
+            if filter_type == 'butterworth':
+                print(f"\n--> Applying Butterworth filter")
+                try:
+                    # Use new variable app.filter_cutoff_freq for cutoff
+                    manual_cutoff_str = app.filter_cutoff_freq.get()
+                    manual_cutoff = float(manual_cutoff_str) if manual_cutoff_str else 0.0
+                except ValueError:
+                    manual_cutoff = 0.0 # Default to auto if invalid
+                    print(f"Warning: Invalid Butterworth cutoff frequency '{manual_cutoff_str}'. Defaulting to auto-calculation.")
+                
+                try:
+                    butter_order = int(app.butter_order_var.get())
+                except ValueError:
+                    butter_order = 2 # Default order if invalid
+                    print(f"Warning: Invalid Butterworth order '{app.butter_order_var.get()}'. Defaulting to order {butter_order}.")
+
+                # If manual_cutoff is 0, adjust_lowpass_cutoff will auto-calculate it.
+                # The prominence_threshold_butter_cutoff_calc inside adjust_lowpass_cutoff will be used.
+                # We can pass a specific one if needed, e.g., from a new UI element or derived here.
+                # For now, using the default in adjust_lowpass_cutoff.
+                
+                app.filtered_signal, app.applied_filter_settings = adjust_lowpass_cutoff(
+                    signal=x, 
+                    fs=app.fs, 
+                    filter_type='butterworth',
+                    manual_cutoff_hz=manual_cutoff, # Pass the UI-derived cutoff here
+                    # prominence_threshold_butter_cutoff_calc can be kept default or made configurable
+                    # normalization_factor_butter can be kept default or made configurable
+                    butter_order=butter_order,
+                    time_resolution=rate
+                )
+                # Update UI if cutoff was auto-calculated by adjust_lowpass_cutoff
+                if manual_cutoff == 0.0 and 'cutoff_hz' in app.applied_filter_settings:
+                    auto_calculated_val = app.applied_filter_settings['cutoff_hz']
+                    if hasattr(app, 'filter_cutoff_freq'):
+                        app.filter_cutoff_freq.set(f"{auto_calculated_val:.2f}")
+                        print(f"DEBUG: Auto-calculated Butterworth cutoff {auto_calculated_val:.2f} Hz updated in UI.")
+
+                calculated_cutoff_display = f"{app.applied_filter_settings.get('cutoff_hz', 'N/A'):.1f} Hz (Order: {app.applied_filter_settings.get('order', 'N/A')})"
+                app.filter_bandwidth.set(f"{app.applied_filter_settings.get('cutoff_hz', 0.0):.2f}")
+
+            elif filter_type == 'savgol':
+                print(f"\n--> Applying Savitzky-Golay filter")
+                savgol_window_str = app.savgol_window_var.get()
+                savgol_poly_str = app.savgol_polyorder_var.get()
+
+                savgol_window = None
+                if savgol_window_str:
+                    try:
+                        savgol_window = int(savgol_window_str)
+                    except ValueError:
+                        print(f"Warning: Invalid Sav-Gol window length '{savgol_window_str}'. Will attempt auto-estimation.")
+                
+                savgol_polyorder = None
+                if savgol_poly_str:
+                    try:
+                        savgol_polyorder = int(savgol_poly_str)
+                    except ValueError:
+                        print(f"Warning: Invalid Sav-Gol polynomial order '{savgol_poly_str}'. Will attempt default/auto.")
+
+                # prominence_threshold_savgol_window_est can be made configurable if needed
+                app.filtered_signal, app.applied_filter_settings = adjust_lowpass_cutoff(
+                    signal=x, 
+                    fs=app.fs, 
+                    filter_type='savgol',
+                    savgol_window_length=savgol_window, 
+                    savgol_polyorder=savgol_polyorder,
+                    # prominence_threshold_savgol_window_est = app.some_ui_prom_for_savgol_win_est.get(),
+                    time_resolution=rate # Important for SavGol window estimation if based on peak widths in time units
+                )
+                win = app.applied_filter_settings.get('window_length', 'N/A')
+                poly = app.applied_filter_settings.get('polyorder', 'N/A')
+                calculated_cutoff_display = f"Sav-Gol (Win: {win}, Poly: {poly})"
+                app.filter_bandwidth.set(f"SavGol W{win} P{poly}") # For display consistency
+            
+            else:
+                print(f"Warning: Unknown filter_type '{filter_type}'. Defaulting to raw signal.")
+                app.filtered_signal = x
+                app.applied_filter_settings = {'type': 'unknown', 'error': f'Unknown type: {filter_type}'}
+                app.filter_bandwidth.set("Unknown Filter")
+
+        else:
+            # Filtering disabled
+            print("\n--> Filtering disabled, using raw signal.")
+            app.filtered_signal = x
+            app.applied_filter_settings = {'type': 'none'}
+            calculated_cutoff_display = "Disabled"
+            app.filter_bandwidth.set("Disabled")
+
+        app.update_progress_bar(2) # Filtering step done
 
         # Create a common mask for both signals
         max_points = 10000
@@ -145,6 +194,9 @@ def start_analysis(app, profile_function=None):
         app.figure.clear()
         ax = app.figure.add_subplot(111)
 
+        # Apply theme immediately to prevent white background flash
+        app.theme_manager.apply_plot_theme(app.figure, [ax])
+
         # Get SEMANTIC theme colors
         raw_line_color = app.theme_manager.get_plot_color('line_raw')
         filtered_line_color = app.theme_manager.get_plot_color('line_filtered')
@@ -182,6 +234,16 @@ def start_analysis(app, profile_function=None):
         # Add the custom legend with thicker lines
         ax.legend(handles=legend_lines)
 
+        # Set tight axis limits to eliminate extra space
+        ax.set_xlim(t_plot.min(), t_plot.max())
+        if app.filter_enabled.get():
+            # Use the range that covers both signals
+            y_min = min(x_plot.min(), filtered_plot.min())
+            y_max = max(x_plot.max(), filtered_plot.max())
+            ax.set_ylim(y_min, y_max)
+        else:
+            ax.set_ylim(x_plot.min(), x_plot.max())
+
         # Customize plot (fonts handled by apply_plot_theme)
         ax.set_xlabel('Time (min)')
         ax.set_ylabel('Amplitude (counts)')
@@ -191,7 +253,7 @@ def start_analysis(app, profile_function=None):
         # Annotation (text color handled by apply_plot_theme)
         if app.filter_enabled.get():
             filter_text = (
-                f'Cutoff: {calculated_cutoff:.1f} Hz\n'
+                f'Filter: {calculated_cutoff_display}\n'
                 f'Total points: {len(app.filtered_signal):,}\n'
                 f'Plotted points: {len(filtered_plot):,}'
             )
@@ -207,7 +269,7 @@ def start_analysis(app, profile_function=None):
         # Adjust layout
         app.figure.tight_layout()
 
-        # Apply theme standard styles (bg, grid, text)
+        # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(app.figure, [ax])
 
         # Update progress
@@ -250,8 +312,9 @@ def start_analysis(app, profile_function=None):
 
         # Update status using theme colors
         if app.filter_enabled.get():
+            # Use the calculated_cutoff_display which now includes SavGol info too
             status_msg = (
-                f"Analysis completed (Cutoff: {calculated_cutoff:.1f} Hz, "
+                f"Analysis completed (Filter: {calculated_cutoff_display}, "
                 f"Decimated from {len(app.filtered_signal):,} to {len(filtered_plot):,} points)"
             )
         else:

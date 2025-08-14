@@ -356,28 +356,37 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
     """
     print(f"Creating double peak grid, page {page+1}")
     
-    # Create figure with grid arrangement
-    fig = Figure(figsize=(15, 15))
-    rows, cols = 5, 5
-    grid = fig.add_gridspec(rows, cols, hspace=0.5, wspace=0.4)
+    # Get the background colors from the theme
+    fig_bg_color = app.theme_manager.get_color('background')
+    axes_bg_color = app.theme_manager.get_color('background')
     
-    axs = np.array([[fig.add_subplot(grid[i, j]) for j in range(cols)] for i in range(rows)])
-    axs = axs.ravel()
+    # Create figure with background color matching theme
+    fig, axs = plt.subplots(5, 5, figsize=(15, 15), facecolor=fig_bg_color)
     
-    # Clear all subplots and hide them initially
-    for ax in axs:
-        ax.clear()
-        ax.set_visible(False)
+    # Make sure axs is always a 2D array for consistent handling
+    if 5 == 1 and 5 == 1:
+        axs = np.array([[axs]])
+    elif 5 == 1:
+        axs = np.array([axs])
+    elif 5 == 1:
+        axs = np.array([[ax] for ax in axs])
+    
+    # Flatten for easy iteration
+    axs_flat = axs.flatten()
+    
+    # Set background color for all subplots
+    for ax in axs_flat:
+        ax.set_facecolor(axes_bg_color)
     
     # Calculate the range of pairs to display
-    peaks_per_page = rows * cols
+    peaks_per_page = 5 * 5
     start_idx = page * peaks_per_page
     end_idx = min(start_idx + peaks_per_page, len(double_peaks))
     
     if start_idx >= len(double_peaks):
         print("No pairs to display on this page")
         # Apply theme even to empty figure before returning
-        app.theme_manager.apply_plot_theme(fig, axs)
+        app.theme_manager.apply_plot_theme(fig, axs_flat)
         return fig
     
     print(f"Displaying pairs {start_idx+1} to {end_idx} of {len(double_peaks)}")
@@ -400,8 +409,8 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
     # For each visible double peak pair
     for i, (primary_idx, secondary_idx, distance, amp_ratio, width_ratio) in enumerate(double_peaks[start_idx:end_idx]):
         # Get grid position (row, col)
-        row = i // cols
-        col = i % cols
+        row = i // 5
+        col = i % 5
         
         # Get the actual peaks
         primary_peak = peaks[primary_idx]
@@ -433,7 +442,7 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
         x_ms = (xData - xData[0]) * 1000  # Convert to ms
         
         # Plot filtered signal
-        axs[i].plot(x_ms, yData - background, color=signal_color, linestyle='-', linewidth=0.8)
+        axs_flat[i].plot(x_ms, yData - background, color=signal_color, linestyle='-', linewidth=0.8)
         
         # Calculate positions for markers relative to window start
         primary_x_ms = (t_value[primary_peak] - xData[0]) * 1000
@@ -442,8 +451,8 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
         secondary_y = filtered_signal[secondary_peak] - background
         
         # Mark the peaks with correct positions
-        axs[i].plot(primary_x_ms, primary_y, marker='o', color=primary_marker_color, linestyle='None', markersize=4)
-        axs[i].plot(secondary_x_ms, secondary_y, marker='o', color=secondary_marker_color, linestyle='None', markersize=4)
+        axs_flat[i].plot(primary_x_ms, primary_y, marker='o', color=primary_marker_color, linestyle='None', markersize=4)
+        axs_flat[i].plot(secondary_x_ms, secondary_y, marker='o', color=secondary_marker_color, linestyle='None', markersize=4)
         
         # Get peak widths
         try:
@@ -456,7 +465,7 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
             primary_left_x = (t_value[primary_left_idx] - xData[0]) * 1000
             primary_right_x = (t_value[primary_right_idx] - xData[0]) * 1000
             
-            axs[i].hlines(primary_width_height, primary_left_x, primary_right_x, 
+            axs_flat[i].hlines(primary_width_height, primary_left_x, primary_right_x, 
                           color=primary_width_color, linestyle='--', linewidth=0.8)
             
             # Get width information for secondary peak
@@ -468,7 +477,7 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
             secondary_left_x = (t_value[secondary_left_idx] - xData[0]) * 1000
             secondary_right_x = (t_value[secondary_right_idx] - xData[0]) * 1000
             
-            axs[i].hlines(secondary_width_height, secondary_left_x, secondary_right_x, 
+            axs_flat[i].hlines(secondary_width_height, secondary_left_x, secondary_right_x, 
                           color=secondary_width_color, linestyle='--', linewidth=0.8)
         except (KeyError, IndexError) as e:
             # If width data is not available, just continue
@@ -482,33 +491,33 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
             f"S-S:{double_peak_data['start_distances'][i]*1000:.1f}ms "
             f"A:{amp_ratio:.1f} W:{width_ratio:.1f}"
         )
-        axs[i].set_title(info_text, fontsize=7, pad=2)
+        axs_flat[i].set_title(info_text, fontsize=7, pad=2)
         
         # Set the x-limits to show the full window, not going negative
-        axs[i].set_xlim(0, np.max(x_ms))
+        axs_flat[i].set_xlim(0, np.max(x_ms))
         
         # Only show x-labels on the bottom row
-        if row == rows - 1:
-            axs[i].set_xlabel('Time (ms)', fontsize=7)
+        if row == 4:
+            axs_flat[i].set_xlabel('Time (ms)', fontsize=7)
         else:
-            axs[i].set_xlabel('')
-            axs[i].set_xticklabels([])
+            axs_flat[i].set_xlabel('')
+            axs_flat[i].set_xticklabels([])
         
         # Only show y-labels on the leftmost column
         if col == 0:
-            axs[i].set_ylabel('Amplitude', fontsize=7)
+            axs_flat[i].set_ylabel('Amplitude', fontsize=7)
         else:
-            axs[i].set_ylabel('')
-            axs[i].set_yticklabels([])
+            axs_flat[i].set_ylabel('')
+            axs_flat[i].set_yticklabels([])
         
         # Make tick labels smaller
-        axs[i].tick_params(axis='both', which='major', labelsize=7)
+        axs_flat[i].tick_params(axis='both', which='major', labelsize=7)
         
         # Enable grid but make it very light
-        axs[i].grid(True, alpha=0.2, linestyle=':')
+        axs_flat[i].grid(True, alpha=0.2, linestyle=':')
         
         # Make the subplot visible
-        axs[i].set_visible(True)
+        axs_flat[i].set_visible(True)
     
     # Add legend at the bottom of the figure
     fig.legend(handles=legend_lines, loc='lower center', ncol=3, fontsize=10,
@@ -526,8 +535,11 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
     # Adjust layout to accommodate the legend at the bottom
     fig.tight_layout(rect=[0, 0.04, 1, 0.95])
     
-    # Apply theme colors explicitly to all axes
-    app.theme_manager.apply_plot_theme(fig, axs)
+    # Apply theme to all plots
+    app.theme_manager.apply_plot_theme(fig, axs_flat)
+
+    # Make sure figure background matches theme
+    fig.patch.set_facecolor(fig_bg_color)
 
     return fig
 

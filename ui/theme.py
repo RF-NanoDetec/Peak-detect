@@ -92,9 +92,9 @@ class ThemeManager:
 
     # --- Standard Matplotlib rcParams ---
     LIGHT_PLOT_RCParams = {
-        'figure.facecolor': '#ffffff',
-        'axes.facecolor': '#ffffff',
-        'savefig.facecolor': '#ffffff',
+        'figure.facecolor': '#f5f5f5',  # Background color same as 'background'
+        'axes.facecolor': '#f5f5f5',    # Background color same as 'background'
+        'savefig.facecolor': '#f5f5f5', # Background color same as 'background'
         'text.color': '#333333',
         'axes.labelcolor': '#333333',
         'xtick.color': '#333333',
@@ -107,9 +107,9 @@ class ThemeManager:
     }
 
     DARK_PLOT_RCParams = {
-        'figure.facecolor': '#1e1e1e',
-        'axes.facecolor': '#2d2d2d',
-        'savefig.facecolor': '#1e1e1e',
+        'figure.facecolor': '#1e1e1e',  # Dark theme background color
+        'axes.facecolor': '#1e1e1e',    # Dark theme background color
+        'savefig.facecolor': '#1e1e1e', # Dark theme background color
         'text.color': '#e0e0e0',
         'axes.labelcolor': '#e0e0e0',
         'xtick.color': '#e0e0e0',
@@ -127,11 +127,12 @@ class ThemeManager:
         'default': ('Segoe UI', 10),
         'heading': ('Segoe UI', 12, 'bold'),
         'subheading': ('Segoe UI', 11, 'bold'),
+        'display': ('Segoe UI', 18, 'bold'),
         'monospace': ('Consolas', 10),
         'small': ('Segoe UI', 9)
     }
     
-    def __init__(self, theme_name='light'):
+    def __init__(self, theme_name='dark'):
         """
         Initialize the theme manager with default settings.
         
@@ -148,6 +149,7 @@ class ThemeManager:
                 'default': ('SF Pro Text', 12),
                 'heading': ('SF Pro Display', 14, 'bold'),
                 'subheading': ('SF Pro Display', 13, 'bold'),
+                'display': ('SF Pro Display', 20, 'bold'),
                 'monospace': ('SF Mono', 12),
                 'small': ('SF Pro Text', 11)
             }
@@ -156,6 +158,7 @@ class ThemeManager:
                 'default': ('Ubuntu', 10),
                 'heading': ('Ubuntu', 12, 'bold'),
                 'subheading': ('Ubuntu', 11, 'bold'),
+                'display': ('Ubuntu', 18, 'bold'),
                 'monospace': ('Ubuntu Mono', 10),
                 'small': ('Ubuntu', 9)
             }
@@ -288,6 +291,27 @@ class ThemeManager:
         style.configure('Heading.TLabel',
             font=self.FONTS['heading'],
             foreground=self.COLORS['primary']
+        )
+        
+        # Display labels
+        style.configure('Display.TLabel',
+            background=self.COLORS['background'],
+            foreground=self.COLORS['primary'],
+            font=self.FONTS['display']
+        )
+        
+        # Body labels
+        style.configure('Body.TLabel',
+            background=self.COLORS['background'],
+            foreground=self.COLORS['text'],
+            font=self.FONTS['default']
+        )
+
+        # Small labels
+        style.configure('Small.TLabel',
+            background=self.COLORS['background'],
+            foreground=self.COLORS['text_secondary'],
+            font=self.FONTS['small']
         )
         
         # Configure TFrame
@@ -506,6 +530,27 @@ class ThemeManager:
             font=self.FONTS['heading']
         )
         
+        # Display labels
+        style.configure('Display.TLabel',
+            background=self.COLORS['background'],
+            foreground=self.COLORS['primary'],
+            font=self.FONTS['display']
+        )
+        
+        # Body labels
+        style.configure('Body.TLabel',
+            background=self.COLORS['background'],
+            foreground=self.COLORS['text'],
+            font=self.FONTS['default']
+        )
+
+        # Small labels
+        style.configure('Small.TLabel',
+            background=self.COLORS['background'],
+            foreground=self.COLORS['text_secondary'],
+            font=self.FONTS['small']
+        )
+        
         # === FRAMES ===
         # Standard frame
         style.configure('TFrame',
@@ -687,6 +732,11 @@ class ThemeManager:
             foreground=[('active', 'white')]
         )
         
+        # === SCROLLEDTEXT (for results summary) ===
+        # Note: ScrolledText is a combination of Text widget and Scrollbar
+        # We need to configure both the Text widget colors and the scrollbar
+        # This is handled in apply_scrolledtext_theme method
+        
         # === SCALE/SLIDER ===
         style.configure('TScale',
             background=self.COLORS['background'],
@@ -766,44 +816,99 @@ class ThemeManager:
 
     def apply_plot_theme(self, fig, axes_list=None):
         """
-        Apply the current theme's standard styles (bg, text, grid) directly
-        to a Figure and its Axes. Specific element colors (lines, markers)
-        must be set using get_plot_color in the plotting functions.
+        Apply theme to a matplotlib figure and axes.
+        
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure
+            The figure to apply the theme to
+        axes_list : list, optional
+            List of axes to apply the theme to. If None, all axes in the figure
+            will be styled.
         """
-        # Use the standard rcParams dict for the current theme
-        plot_rcParams = self.PLOT_RCParams
-
-        fig_face_color = plot_rcParams.get('figure.facecolor')
-        ax_face_color = plot_rcParams.get('axes.facecolor')
-        text_color = plot_rcParams.get('text.color')
-        edge_color = plot_rcParams.get('axes.edgecolor')
-        grid_color = plot_rcParams.get('grid.color')
-        grid_alpha = plot_rcParams.get('grid.alpha', 0.5) # Provide default alpha
-
-        if fig_face_color:
-            fig.patch.set_facecolor(fig_face_color)
-
+        # Only apply the background color to the figure
+        fig.patch.set_facecolor(self.COLORS['background'])
+        
+        # Apply to all axes if not specified
         if axes_list is None:
             axes_list = fig.get_axes()
-
+        
+        # Apply to each axis
         for ax in axes_list:
-            if ax_face_color:
-                ax.set_facecolor(ax_face_color)
-            if text_color:
-                ax.tick_params(axis='x', colors=text_color)
-                ax.tick_params(axis='y', colors=text_color)
-                ax.xaxis.label.set_color(text_color)
-                ax.yaxis.label.set_color(text_color)
-                if ax.get_title():
-                    ax.title.set_color(text_color)
-                 # Also set colorbar label/tick colors if it's a colorbar axis
-                if hasattr(ax, 'yaxis') and hasattr(ax.yaxis, 'label'):
-                    ax.yaxis.label.set_color(text_color) # For colorbar label
-
-            if edge_color:
-                for spine in ax.spines.values():
-                    spine.set_edgecolor(edge_color)
-            if grid_color:
-                ax.grid(True, color=grid_color, alpha=grid_alpha)
-            else:
-                ax.grid(False) # Explicitly disable grid if no color defined 
+            # Set axis background, text, and grid colors
+            ax.set_facecolor(self.COLORS['background'])
+            ax.xaxis.label.set_color(self.COLORS['text'])
+            ax.yaxis.label.set_color(self.COLORS['text'])
+            ax.title.set_color(self.COLORS['text'])
+            
+            # Set tick colors
+            ax.tick_params(axis='x', colors=self.COLORS['text'])
+            ax.tick_params(axis='y', colors=self.COLORS['text'])
+            
+            # Set spine colors
+            for spine in ax.spines.values():
+                spine.set_edgecolor(self.COLORS['text_secondary'])
+            
+            # Set the grid color
+            ax.grid(color=self.COLORS['border'], alpha=0.3)
+    
+    def apply_scrolledtext_theme(self, scrolled_text_widget):
+        """
+        Apply theme to a ScrolledText widget.
+        
+        Parameters
+        ----------
+        scrolled_text_widget : tkinter.scrolledtext.ScrolledText
+            The ScrolledText widget to apply the theme to
+        """
+        # Configure the Text widget inside ScrolledText
+        scrolled_text_widget.configure(
+            bg=self.COLORS['card_bg'],
+            fg=self.COLORS['text'],
+            font=self.FONTS['default'],
+            insertbackground=self.COLORS['text'],  # Cursor color
+            selectbackground=self.COLORS['primary'],  # Selection background
+            selectforeground='white',  # Selection text color
+            borderwidth=1,
+            relief='solid',
+            highlightcolor=self.COLORS['border'],
+            highlightbackground=self.COLORS['border'],
+            highlightthickness=1
+        )
+        
+        # Configure the scrollbar (the 'vbar' attribute of ScrolledText)
+        if hasattr(scrolled_text_widget, 'vbar'):
+            scrolled_text_widget.vbar.configure(
+                bg=self.COLORS['panel_bg'],
+                troughcolor=self.COLORS['background'],
+                activebackground=self.COLORS['primary'],
+                borderwidth=1,
+                highlightthickness=0
+            )
+            
+    def update_sliders(self, app):
+        """
+        Update all sliders in the application to match the current theme colors.
+        
+        Parameters
+        ----------
+        app : Application
+            The main application instance
+        """
+        # Find all tk.Scale widgets in the application
+        def update_slider_colors(widget):
+            if isinstance(widget, tk.Scale):
+                widget.config(
+                    bg=self.get_color('background'),
+                    fg=self.get_color('text'),
+                    troughcolor=self.get_color('panel_bg'),
+                    highlightbackground=self.get_color('background'),
+                    highlightthickness=0
+                )
+            
+            # Recursively check all children widgets
+            for child in widget.winfo_children():
+                update_slider_colors(child)
+        
+        # Start from the root window
+        update_slider_colors(app) 
