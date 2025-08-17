@@ -152,6 +152,8 @@ class Application(tk.Tk):
         self.bind_all('<Control-o>', lambda e: self.browse_file(), add=True)  # Ctrl+O to open file
         self.bind_all('<Control-e>', lambda e: self.export_plot(), add=True)  # Ctrl+E to export plot
         self.bind_all('<Control-q>', lambda e: self.quit(), add=True)  # Ctrl+Q to quit
+        self.bind_all('<Control-/>', lambda e: self.show_shortcuts_dialog(), add=True)  # Ctrl+/ to show shortcuts
+        self.bind_all('<F5>', lambda e: self.run_all_pipeline(), add=True)  # F5 Run All
         
         # Load preferences
         self.prefs = load_user_preferences()
@@ -227,6 +229,8 @@ class Application(tk.Tk):
         
         # Add scale mode tracking
         self.log_scale_enabled = tk.BooleanVar(value=bool(self.prefs.get('log_scale', True)))
+        # Guided mode tracking (default on)
+        self.guided_mode = tk.IntVar(value=1 if bool(self.prefs.get('guided_mode', True)) else 0)
         
         # Variables for double peak analysis results
         self.double_peaks = None
@@ -275,6 +279,20 @@ class Application(tk.Tk):
             except Exception:
                 print(f"Warning: Unable to set window icon from {icon_path}")
         self.setup_window_title()
+
+    def toggle_guided_mode(self):
+        try:
+            # Persist preference
+            self.prefs['guided_mode'] = bool(self.guided_mode.get())
+            save_user_preferences(self.prefs)
+        except Exception:
+            pass
+        try:
+            # Update visibility on relevant tabs/controls
+            from ui.components import update_guided_mode_visibility
+            update_guided_mode_visibility(self)
+        except Exception:
+            pass
         
     def get_icon_path(self):
         """Get path to icon file, handling packaged app scenario."""
@@ -525,6 +543,11 @@ class Application(tk.Tk):
         self.btn_export.pack(side=tk.LEFT, padx=3)
         _add_tt(self.btn_export, "Export current plot as image")
 
+        # Run All button
+        self.btn_run_all = ttk.Button(toolbar, text="Run All", command=self.run_all_pipeline, style='Tool.TButton')
+        self.btn_run_all.pack(side=tk.LEFT, padx=3)
+        _add_tt(self.btn_run_all, "Run Load → Preprocess → Detect → Analyze")
+
         # Theme toggle button on toolbar (right side)
         self.btn_theme_toggle = ttk.Button(toolbar, text="Theme", command=self.toggle_theme, style='Tool.TButton')
         self.btn_theme_toggle.pack(side=tk.RIGHT, padx=3)
@@ -577,6 +600,50 @@ class Application(tk.Tk):
         
         self.paned_window.add(summary_container, weight=0)
 
+        # Initialize action states
+        try:
+            self.update_action_states()
+        except Exception:
+            pass
+
+    def update_action_states(self):
+        """Enable/disable primary actions based on current state."""
+        try:
+            data_loaded = hasattr(self, 'data') and self.data is not None
+            filtered_ready = hasattr(self, 'filtered_signal') and self.filtered_signal is not None
+            peaks_ready = hasattr(self, 'peaks') and getattr(self, 'peaks', None) is not None and len(self.peaks) > 0
+
+            # Toolbar buttons
+            try:
+                self.btn_analyze.config(state=(tk.NORMAL if data_loaded else tk.DISABLED))
+            except Exception:
+                pass
+            try:
+                self.btn_detect.config(state=(tk.NORMAL if filtered_ready else tk.DISABLED))
+            except Exception:
+                pass
+            try:
+                self.btn_plot.config(state=(tk.NORMAL if peaks_ready else tk.DISABLED))
+            except Exception:
+                pass
+
+            # Tab-local buttons if present
+            for attr, enabled in [
+                ('view_raw_btn', data_loaded),
+                ('process_btn', data_loaded),
+                ('btn_detect_tab', filtered_ready),
+                ('btn_view_peaks_tab', peaks_ready),
+                ('btn_next_peaks_tab', peaks_ready),
+                ('btn_save_results_tab', peaks_ready),
+            ]:
+                try:
+                    btn = getattr(self, attr)
+                    btn.config(state=(tk.NORMAL if enabled else tk.DISABLED))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     @ui_action(
         processing_message="Loading documentation...",
         success_message="Documentation displayed",
@@ -600,6 +667,222 @@ class Application(tk.Tk):
         This method now uses the integrated UI function from ui.ui_utils.
         """
         return show_about_dialog_with_ui(self)
+
+    def show_shortcuts_dialog(self):
+        try:
+            top = tk.Toplevel(self)
+            top.title("Keyboard Shortcuts")
+            top.transient(self)
+            top.grab_set()
+            top.configure(background=self.theme_manager.get_color('background'))
+            frm = ttk.Frame(top, padding=10)
+            frm.pack(fill=tk.BOTH, expand=True)
+            sections = [
+                ("General", [
+                    ("Ctrl+O", "Open File/Folder"),
+                    ("Ctrl+E", "Export Current Plot"),
+                    ("Ctrl+Q", "Quit"),
+                    ("Ctrl+/", "Show Shortcuts"),
+                ]),
+                ("Workflow", [
+                    ("Analyze", "Run preprocessing/analysis (toolbar)"),
+                    ("Detect Peaks", "Run peak detection (toolbar)"),
+                    ("Plot Analysis", "Show analysis plots (toolbar)"),
+                ]),
+            ]
+            for section, items in sections:
+                ttk.Label(frm, text=section, style='Heading.TLabel').pack(anchor='w', pady=(8, 2))
+                for keys, desc in items:
+                    row = ttk.Frame(frm)
+                    row.pack(fill=tk.X, pady=1)
+                    ttk.Label(row, text=keys, width=16).pack(side=tk.LEFT)
+                    ttk.Label(row, text=desc).pack(side=tk.LEFT)
+            ttk.Button(frm, text='Close', command=top.destroy).pack(pady=10, anchor='e')
+        except Exception:
+            pass
+
+    @ui_action(
+        processing_message="Running full pipeline...",
+        success_message="Pipeline complete",
+        error_message="Pipeline failed"
+    )
+    def run_all_pipeline(self):
+        """Run the main workflow in sequence with current settings."""
+        try:
+            # 1) If no data, prompt load
+            if not (hasattr(self, 'data') and self.data is not None):
+                if not self.browse_file():
+                    return False
+            self.update_progress_bar_with_ui(10)
+
+            # 2) Preprocess / Analyze
+            self.start_analysis()
+            self.update_progress_bar_with_ui(40)
+
+            # 3) Detect peaks (validate handled inside)
+            ok = self.run_peak_detection()
+            self.update_progress_bar_with_ui(70)
+
+            # 4) Show analysis plots
+            self.plot_data()
+            self.update_progress_bar_with_ui(100)
+
+            # Bring the Analyze tab forward in the right notebook if exists
+            try:
+                for tab in self.plot_tab_control.tabs():
+                    if self.plot_tab_control.tab(tab, 'text') in ('Analysis', 'Analyze'):
+                        self.plot_tab_control.select(tab)
+                        break
+            except Exception:
+                pass
+            return ok
+        finally:
+            try:
+                self.update_action_states()
+            except Exception:
+                pass
+
+    @ui_action(
+        processing_message="Saving preset...",
+        success_message="Preset saved",
+        error_message="Error saving preset"
+    )
+    def save_preset(self):
+        try:
+            preset = {
+                'file_mode': self.file_mode.get(),
+                'time_resolution_seconds': float(self.time_resolution.get()) if hasattr(self.time_resolution, 'get') else float(self.time_resolution),
+                'filter_enabled': bool(self.filter_enabled.get()),
+                'filter_type': self.filter_type_var.get() if hasattr(self, 'filter_type_var') else None,
+                'filter_cutoff_freq': float(self.filter_cutoff_freq.get()) if hasattr(self, 'filter_cutoff_freq') and self.filter_cutoff_freq.get() != '' else None,
+                'butter_order': int(self.butter_order_var.get()) if hasattr(self, 'butter_order_var') and self.butter_order_var.get() != '' else None,
+                'savgol_window': int(self.savgol_window_var.get()) if hasattr(self, 'savgol_window_var') and self.savgol_window_var.get() != '' else None,
+                'savgol_polyorder': int(self.savgol_polyorder_var.get()) if hasattr(self, 'savgol_polyorder_var') and self.savgol_polyorder_var.get() != '' else None,
+                'prominence_threshold': float(self.height_lim.get()),
+                'distance': int(self.distance.get()),
+                'rel_height': float(self.rel_height.get()),
+                'width_ms': self.width_p.get(),
+                'prominence_ratio': float(self.prominence_ratio.get()) if hasattr(self, 'prominence_ratio') else None,
+                'throughput_interval': float(self.throughput_interval.get()),
+                'log_scale': bool(self.log_scale_enabled.get()),
+                'guided_mode': bool(self.guided_mode.get()),
+                'double_peak_analysis': self.double_peak_analysis.get(),
+                'double_peak_min_distance': float(self.double_peak_min_distance.get()),
+                'double_peak_max_distance': float(self.double_peak_max_distance.get()),
+                'double_peak_min_amp_ratio': float(self.double_peak_min_amp_ratio.get()),
+                'double_peak_max_amp_ratio': float(self.double_peak_max_amp_ratio.get()),
+                'double_peak_min_width_ratio': float(self.double_peak_min_width_ratio.get()),
+                'double_peak_max_width_ratio': float(self.double_peak_max_width_ratio.get()),
+            }
+            path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[["JSON files", "*.json"], ["All files", "*.*"]],
+                title="Save Preset"
+            )
+            if not path:
+                return None
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(preset, f, indent=2)
+            return path
+        except Exception as e:
+            raise e
+
+    @ui_action(
+        processing_message="Loading preset...",
+        success_message="Preset loaded",
+        error_message="Error loading preset"
+    )
+    def load_preset(self):
+        try:
+            path = filedialog.askopenfilename(
+                defaultextension=".json",
+                filetypes=[["JSON files", "*.json"], ["All files", "*.*"]],
+                title="Load Preset"
+            )
+            if not path:
+                return None
+            with open(path, 'r', encoding='utf-8') as f:
+                preset = json.load(f)
+
+            if 'file_mode' in preset:
+                self.file_mode.set(preset['file_mode'])
+            if 'time_resolution_seconds' in preset:
+                self.time_resolution.set(float(preset['time_resolution_seconds']))
+                try:
+                    if hasattr(self, 'time_resolution_ms'):
+                        self.time_resolution_ms.set(f"{float(preset['time_resolution_seconds'])*1000:.1f}")
+                except Exception:
+                    pass
+            if 'filter_enabled' in preset:
+                self.filter_enabled.set(bool(preset['filter_enabled']))
+            if 'filter_type' in preset and hasattr(self, 'filter_type_var'):
+                self.filter_type_var.set(preset['filter_type'])
+            if 'filter_cutoff_freq' in preset and hasattr(self, 'filter_cutoff_freq') and preset['filter_cutoff_freq'] is not None:
+                self.filter_cutoff_freq.set(str(preset['filter_cutoff_freq']))
+            if 'butter_order' in preset and hasattr(self, 'butter_order_var') and preset['butter_order'] is not None:
+                self.butter_order_var.set(str(preset['butter_order']))
+            if 'savgol_window' in preset and hasattr(self, 'savgol_window_var') and preset['savgol_window'] is not None:
+                self.savgol_window_var.set(str(preset['savgol_window']))
+            if 'savgol_polyorder' in preset and hasattr(self, 'savgol_polyorder_var') and preset['savgol_polyorder'] is not None:
+                self.savgol_polyorder_var.set(str(preset['savgol_polyorder']))
+
+            if 'prominence_threshold' in preset:
+                self.height_lim.set(float(preset['prominence_threshold']))
+            if 'distance' in preset:
+                self.distance.set(int(preset['distance']))
+            if 'rel_height' in preset:
+                self.rel_height.set(float(preset['rel_height']))
+            if 'width_ms' in preset:
+                self.width_p.set(preset['width_ms'])
+                try:
+                    if hasattr(self, 'width_min_ms_var') and hasattr(self, 'width_max_ms_var'):
+                        parts = [p.strip() for p in preset['width_ms'].split(',')]
+                        if len(parts) >= 2:
+                            self.width_min_ms_var.set(parts[0])
+                            self.width_max_ms_var.set(parts[1])
+                except Exception:
+                    pass
+            if 'prominence_ratio' in preset and hasattr(self, 'prominence_ratio') and preset['prominence_ratio'] is not None:
+                self.prominence_ratio.set(float(preset['prominence_ratio']))
+            if 'throughput_interval' in preset:
+                self.throughput_interval.set(float(preset['throughput_interval']))
+            if 'log_scale' in preset:
+                self.log_scale_enabled.set(bool(preset['log_scale']))
+            if 'guided_mode' in preset:
+                self.guided_mode.set(1 if preset['guided_mode'] else 0)
+                try:
+                    self.toggle_guided_mode()
+                except Exception:
+                    pass
+            if 'double_peak_analysis' in preset:
+                self.double_peak_analysis.set(str(preset['double_peak_analysis']))
+            for key, var in [
+                ('double_peak_min_distance', self.double_peak_min_distance),
+                ('double_peak_max_distance', self.double_peak_max_distance),
+                ('double_peak_min_amp_ratio', self.double_peak_min_amp_ratio),
+                ('double_peak_max_amp_ratio', self.double_peak_max_amp_ratio),
+                ('double_peak_min_width_ratio', self.double_peak_min_width_ratio),
+                ('double_peak_max_width_ratio', self.double_peak_max_width_ratio),
+            ]:
+                if key in preset:
+                    try:
+                        var.set(float(preset[key]))
+                    except Exception:
+                        pass
+
+            try:
+                self.update_action_states()
+            except Exception:
+                pass
+            try:
+                from ui.components import update_guided_mode_visibility
+                update_guided_mode_visibility(self)
+            except Exception:
+                pass
+
+            return True
+        except Exception as e:
+            raise e
 
     @ui_action(
         processing_message="Adding tooltip...",
@@ -644,7 +927,12 @@ class Application(tk.Tk):
         if self.double_peak_analysis.get() == "1":
             self.status_indicator.set_text("Double Peak Analysis Mode Enabled")
             
-        return browse_files_with_ui(self, time_resolution=time_res)
+        result = browse_files_with_ui(self, time_resolution=time_res)
+        try:
+            self.update_action_states()
+        except Exception:
+            pass
+        return result
 
     @ui_action(
         processing_message="Resetting application...",
@@ -656,7 +944,12 @@ class Application(tk.Tk):
         Reset all application variables and plots to initial state.
         This method now uses the integrated UI function from core.data_utils.
         """
-        return reset_application_state_with_ui(self)
+        result = reset_application_state_with_ui(self)
+        try:
+            self.update_action_states()
+        except Exception:
+            pass
+        return result
 
     @profile_function
     @ui_action(
@@ -681,7 +974,12 @@ class Application(tk.Tk):
         Start the analysis pipeline with the current configuration.
         This is a UI wrapper around the analysis pipeline function.
         """
-        return start_analysis_function(self, profile_function=profile_function)
+        result = start_analysis_function(self, profile_function=profile_function)
+        try:
+            self.update_action_states()
+        except Exception:
+            pass
+        return result
         
     @ui_action(
         processing_message="Detecting peaks...",
@@ -757,6 +1055,11 @@ class Application(tk.Tk):
         except Exception as e:
             self.show_error("Error during peak detection", str(e))
             return False
+        finally:
+            try:
+                self.update_action_states()
+            except Exception:
+                pass
         
     @ui_action(
         processing_message="Plotting filtered peaks...",

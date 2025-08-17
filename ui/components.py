@@ -50,6 +50,11 @@ def create_menu_bar(app):
     menu_bar.add_cascade(label="File", menu=file_menu)
     file_menu.add_command(label="Open File", command=app.browse_file, accelerator="Ctrl+O")
     file_menu.add_command(label="Export Results", command=app.save_peak_information_to_csv)
+    # Presets submenu
+    presets_menu = tk.Menu(file_menu, tearoff=0)
+    file_menu.add_cascade(label="Presets", menu=presets_menu)
+    presets_menu.add_command(label="Save Preset...", command=app.save_preset)
+    presets_menu.add_command(label="Load Preset...", command=app.load_preset)
     file_menu.add_separator()
     file_menu.add_command(label="Export Current Plot", command=app.export_plot, accelerator="Ctrl+E")
     file_menu.add_command(label="Take Screenshot", command=app.take_screenshot)
@@ -76,6 +81,16 @@ def create_menu_bar(app):
     view_menu.add_command(label=f"Switch to {current_theme} Theme", command=app.toggle_theme)
     # Add reset layout option
     view_menu.add_command(label="Reset Layout", command=app.reset_layout)
+    try:
+        view_menu.add_checkbutton(
+            label="Guided Mode",
+            onvalue=1,
+            offvalue=0,
+            variable=app.guided_mode,
+            command=app.toggle_guided_mode
+        )
+    except Exception:
+        pass
     
     # Tools Menu
     tools_menu = tk.Menu(menu_bar, tearoff=0)
@@ -284,6 +299,20 @@ def create_welcome_screen(app, parent):
     )
     load_button.pack(fill=tk.X, padx=20, pady=10)
     
+    load_folder_button = ttk.Button(
+        quick_start_frame,
+        text="   Open Folder (Batch)",
+        command=lambda: [app.file_mode.set("batch"), app.on_file_mode_change(), app.browse_file()]
+    )
+    load_folder_button.pack(fill=tk.X, padx=20, pady=10)
+
+    example_button = ttk.Button(
+        quick_start_frame,
+        text="   Open Example Data",
+        command=lambda: app.browse_file()  # Reuse loader; example handling can be added later
+    )
+    example_button.pack(fill=tk.X, padx=20, pady=10)
+
     analyze_button = ttk.Button(
         quick_start_frame,
         text="   Start Analysis",
@@ -298,6 +327,13 @@ def create_welcome_screen(app, parent):
         command=app.show_documentation
     )
     docs_button.pack(fill=tk.X, padx=20, pady=10)
+
+    shortcuts_button = ttk.Button(
+        quick_start_frame,
+        text="   Keyboard Shortcuts",
+        command=lambda: app.show_shortcuts_dialog()
+    )
+    shortcuts_button.pack(fill=tk.X, padx=20, pady=10)
     
     # Right side: Features overview with image
     features_frame = ttk.LabelFrame(content_frame, text="Key Features")
@@ -394,7 +430,7 @@ def create_welcome_screen(app, parent):
 def create_data_loading_tab(app, tab_control):
     """Create the data loading tab"""
     data_loading_tab = ttk.Frame(tab_control)
-    tab_control.add(data_loading_tab, text="Load Data")
+    tab_control.add(data_loading_tab, text="Data")
 
     # File mode selection frame
     file_mode_frame = ttk.LabelFrame(data_loading_tab, text="File Mode")
@@ -656,7 +692,7 @@ def create_data_loading_tab(app, tab_control):
 def create_preprocessing_tab(app, tab_control):
     """Create the preprocessing tab"""
     preprocessing_tab = ttk.Frame(tab_control)
-    tab_control.add(preprocessing_tab, text="Preprocessing")
+    tab_control.add(preprocessing_tab, text="Preprocess")
 
     # Add some padding to the main tab content area
     content_frame = ttk.Frame(preprocessing_tab, padding="10 10 10 10")
@@ -903,6 +939,8 @@ def create_preprocessing_tab(app, tab_control):
     app.filter_order_entry = ttk.Entry(butterworth_controls_frame, textvariable=app.butter_order_var, width=20)
     app.filter_order_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
     app.add_tooltip(app.filter_order_entry, "Order of the Butterworth filter (e.g., 2, 3, 4). Higher orders have a steeper rolloff.")
+    # Store for guided mode visibility control
+    app.butter_order_label = order_label
     
 
     # --- Savitzky-Golay Specific Controls ---
@@ -917,6 +955,10 @@ def create_preprocessing_tab(app, tab_control):
     app.savgol_polyorder_entry = ttk.Entry(savgol_controls_frame, textvariable=app.savgol_polyorder_var, width=20)
     app.savgol_polyorder_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
     app.add_tooltip(app.savgol_polyorder_entry, "Polynomial order for Savitzky-Golay filter (integer, less than window length).\nLeave empty for default (e.g., 2 or 3).")
+    # Store for guided mode visibility control
+    app.savgol_controls_frame = savgol_controls_frame
+    app.savgol_window_label = savgol_window_label
+    app.savgol_polyorder_label = savgol_polyorder_label
 
     # Function to toggle filter controls visibility
     def toggle_filter_controls(*args): # Already defined by previous edit, ensure it's robust
@@ -968,11 +1010,22 @@ def create_preprocessing_tab(app, tab_control):
     # should trigger an initial call to update_filter_state if its value changes from None to True/False.
     # To be certain, an explicit call after everything is defined is safest:
     update_filter_state(app.filter_enabled.get()) 
+    # Build remaining UI for the tab
+    try:
+        _build_preprocess_tail(app, preprocessing_tab)
+    except Exception:
+        pass
+    # Apply guided mode visibility if available
+    try:
+        update_guided_mode_visibility(app)
+    except Exception:
+        pass
 
+def _build_preprocess_tail(app, preprocessing_tab):
     # Separator and Preview
-    ttk.Separator(content_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
+    ttk.Separator(preprocessing_tab, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
 
-    signal_processing_frame = ttk.LabelFrame(content_frame, text="Signal Processing")
+    signal_processing_frame = ttk.LabelFrame(preprocessing_tab, text="Signal Processing")
     signal_processing_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
 
     # Main help text for signal processing
@@ -1037,10 +1090,12 @@ def create_preprocessing_tab(app, tab_control):
     
     # Ensure initial state of button text is correct
     toggle_signal_details()
-
+    # Store advanced help container for guided mode
+    app.preprocess_details_frame = details_frame
+    app.preprocess_details_toggle_button = toggle_button
 
     # Action Buttons with improved layout
-    action_frame = ttk.LabelFrame(content_frame, text="Processing Actions")
+    action_frame = ttk.LabelFrame(preprocessing_tab, text="Processing Actions")
     action_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
 
     # Button container for better spacing
@@ -1075,12 +1130,52 @@ def create_preprocessing_tab(app, tab_control):
         "• Filtered: Applies Butterworth filter with specified cutoff\n"
         "• Raw: Processes data without filtering"
     )
+    # Store references for gating
+    app.view_raw_btn = view_raw_btn
     app.process_btn = process_btn # Assign to app for access in update_filter_state
+
+def update_guided_mode_visibility(app):
+    """Show/hide advanced preprocessing controls based on guided mode."""
+    try:
+        is_guided = bool(app.guided_mode.get()) if hasattr(app, 'guided_mode') else True
+        # Advanced text/details
+        try:
+            if is_guided:
+                app.preprocess_details_frame.grid_remove()
+                app.preprocess_details_toggle_button.grid_remove()
+            else:
+                app.preprocess_details_toggle_button.grid()
+                app.preprocess_details_frame.grid()
+            
+        except Exception:
+            pass
+        # Savitzky-Golay advanced frame
+        try:
+            if is_guided:
+                app.savgol_controls_frame.grid_remove()
+            else:
+                app.savgol_controls_frame.grid()
+        except Exception:
+            pass
+        # Butterworth order row widgets
+        try:
+            if is_guided:
+                app.butter_order_label.grid_remove()
+                app.filter_order_entry.grid_remove()
+            else:
+                app.butter_order_label.grid()
+                app.filter_order_entry.grid()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # (Tail UI construction moved into _build_preprocess_tail)
 
 def create_peak_detection_tab(app, tab_control):
     """Create the peak detection tab"""
     peak_detection_tab = ttk.Frame(tab_control)
-    tab_control.add(peak_detection_tab, text="Detection")  # Changed from "Peak Detection"
+    tab_control.add(peak_detection_tab, text="Detect Peaks")  # Renamed from "Detection"
 
     # Create a main container with scrollbar
     main_container = ttk.Frame(peak_detection_tab)
@@ -1566,13 +1661,47 @@ def create_peak_detection_tab(app, tab_control):
     rel_height_entry = ttk.Entry(rel_height_container, textvariable=app.rel_height, width=6)
     rel_height_entry.pack(side=tk.LEFT, padx=5)
     
-    # 3. Width Range
+    # 3. Width range (split into Min/Max in ms)
     width_container = ttk.Frame(params_frame)
     width_container.pack(fill=tk.X, padx=5, pady=2)
     
-    ttk.Label(width_container, text="Width Range (ms):").pack(side=tk.LEFT, padx=5)
-    width_entry = ttk.Entry(width_container, textvariable=app.width_p, width=15)
-    width_entry.pack(side=tk.LEFT, padx=5)
+    # Prepare split variables synced with app.width_p ("min,max")
+    try:
+        _w_vals = [v.strip() for v in (app.width_p.get() if hasattr(app.width_p, 'get') else str(app.width_p)).split(',')]
+        _wmin = _w_vals[0] if len(_w_vals) > 0 and _w_vals[0] != '' else '0.1'
+        _wmax = _w_vals[1] if len(_w_vals) > 1 and _w_vals[1] != '' else '50'
+    except Exception:
+        _wmin, _wmax = '0.1', '50'
+    app.width_min_ms_var = getattr(app, 'width_min_ms_var', tk.StringVar(value=_wmin))
+    app.width_max_ms_var = getattr(app, 'width_max_ms_var', tk.StringVar(value=_wmax))
+
+    def _sync_width_p_from_fields():
+        try:
+            wmin = float(app.width_min_ms_var.get())
+            wmax = float(app.width_max_ms_var.get())
+            if wmin <= 0 or wmax <= 0 or wmin > wmax:
+                if hasattr(app, 'validation_label'):
+                    app.validation_label.config(text="Width: min/max must be >0 and min ≤ max", foreground=app.theme_manager.get_color('error'))
+                return
+            app.width_p.set(f"{wmin},{wmax}")
+            if hasattr(app, 'validation_label'):
+                app.validation_label.config(text="", foreground=app.theme_manager.get_color('text'))
+        except Exception:
+            pass
+
+    ttk.Label(width_container, text="Width (ms):").pack(side=tk.LEFT, padx=(5, 2))
+    ttk.Label(width_container, text="Min:").pack(side=tk.LEFT)
+    width_min_entry = ttk.Entry(width_container, textvariable=app.width_min_ms_var, width=6)
+    width_min_entry.pack(side=tk.LEFT, padx=(2, 4))
+    ttk.Label(width_container, text="Max:").pack(side=tk.LEFT)
+    width_max_entry = ttk.Entry(width_container, textvariable=app.width_max_ms_var, width=6)
+    width_max_entry.pack(side=tk.LEFT, padx=(2, 4))
+    ttk.Label(width_container, text="ms").pack(side=tk.LEFT)
+
+    # Sync on Return/FocusOut
+    for _w in (width_min_entry, width_max_entry):
+        _w.bind("<Return>", lambda *args: _sync_width_p_from_fields())
+        _w.bind("<FocusOut>", lambda *args: _sync_width_p_from_fields())
     
     # Add tooltips for better user guidance
     app.add_tooltip(
@@ -1586,9 +1715,12 @@ def create_peak_detection_tab(app, tab_control):
         "Example: 0.5 = width at half maximum height, 0.9 = width near peak top"
     )
     app.add_tooltip(
-        width_entry,
-        "Enter exact peak width range in milliseconds (min,max).\n"
-        "Example: '0.1,50' means only peaks between 0.1 and 50ms are kept"
+        width_min_entry,
+        "Minimum allowed peak width in milliseconds (e.g., 0.1)"
+    )
+    app.add_tooltip(
+        width_max_entry,
+        "Maximum allowed peak width in milliseconds (e.g., 50)"
     )
 
     # Reset to defaults button for detection params
@@ -1598,6 +1730,11 @@ def create_peak_detection_tab(app, tab_control):
             app.distance.set(5)
             app.rel_height.set(0.8)
             app.width_p.set("0.1,50")
+            try:
+                app.width_min_ms_var.set("0.1")
+                app.width_max_ms_var.set("50")
+            except Exception:
+                pass
             # Clear validation message if present
             if hasattr(app, 'validation_label'):
                 app.validation_label.config(text="")
@@ -1702,6 +1839,12 @@ def create_peak_detection_tab(app, tab_control):
         command=app.save_peak_information_to_csv
     )
     save_btn.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+
+    # Store references for gating
+    app.btn_detect_tab = detect_btn
+    app.btn_view_peaks_tab = view_btn
+    app.btn_next_peaks_tab = next_btn
+    app.btn_save_results_tab = save_btn
     
     # Add tooltips for action buttons
     app.add_tooltip(
@@ -1726,7 +1869,7 @@ def create_peak_detection_tab(app, tab_control):
 def create_peak_analysis_tab(app, tab_control):
     """Create the peak analysis tab"""
     peak_analysis_tab = ttk.Frame(tab_control)
-    tab_control.add(peak_analysis_tab, text="Analysis")  # Changed from "Peak Analysis"
+    tab_control.add(peak_analysis_tab, text="Analyze")  # Renamed from "Analysis"
 
     # Create a main container for all controls
     main_container = ttk.Frame(peak_analysis_tab)
