@@ -53,7 +53,7 @@ class ThemeManager:
         'text_secondary': '#9e9e9e', # Secondary text color
         'button': '#3a4653',       # Match primary color for buttons
         'button_pressed': '#2c3740', # Darker slate for pressed buttons
-        'canvas_bg': '#ffffff',    # White for plot backgrounds - KEEP PLOTS LIGHT
+        'canvas_bg': '#2d2d2d',    # Dark gray for plot backgrounds in dark theme
         'panel_bg': '#2d2d2d',     # Slightly lighter gray for panels
         'highlight': '#545c66',    # Neutral highlight color - same as secondary
         'status_text': '#ffffff'   # White text for status messages
@@ -459,6 +459,48 @@ class ThemeManager:
             fieldbackground=[('readonly', 'white'), ('disabled', self.COLORS['panel_bg'])],
             bordercolor=[('focus', self.COLORS['highlight'])]
         )
+
+        # --- Modern extras: cards, toolbar, status, and consistent progressbar names ---
+        # Card containers (used for elevated sections)
+        style.configure('Card.TFrame',
+            background=self.COLORS['card_bg'],
+            borderwidth=1,
+            relief='solid',
+            bordercolor=self.COLORS['border']
+        )
+
+        # Status container (used by status indicator)
+        style.configure('StatusFrame.TFrame',
+            background=self.COLORS['card_bg'],
+            borderwidth=1,
+            relief='solid',
+            bordercolor=self.COLORS['border']
+        )
+
+        # Toolbar container and buttons
+        style.configure('Toolbar.TFrame',
+            background=self.COLORS['panel_bg'],
+            borderwidth=0
+        )
+        style.configure('Tool.TButton',
+            background=self.COLORS['panel_bg'],
+            foreground=self.COLORS['text'],
+            borderwidth=0,
+            padding=6,
+            font=self.FONTS['default']
+        )
+        style.map('Tool.TButton',
+            background=[('active', self.COLORS['highlight']), ('pressed', self.COLORS['highlight'])],
+            foreground=[('active', 'white'), ('pressed', 'white')]
+        )
+
+        # Provide a consistent alias used by components
+        style.configure('Green.Horizontal.TProgressbar',
+            background=self.COLORS['success'],
+            troughcolor=self.COLORS['panel_bg'],
+            borderwidth=0,
+            thickness=8
+        )
         
     def _apply_dark_theme(self, style):
         """Apply the dark theme to all ttk widgets."""
@@ -756,6 +798,48 @@ class ThemeManager:
         # === SIZEGRIP (resize handle) ===
         style.configure('TSizegrip',
             background=self.COLORS['background']
+        )
+
+        # --- Modern extras: cards, toolbar, status, and consistent progressbar names ---
+        # Card containers (used for elevated sections)
+        style.configure('Card.TFrame',
+            background=self.COLORS['card_bg'],
+            borderwidth=1,
+            relief='solid',
+            bordercolor=self.COLORS['border']
+        )
+
+        # Status container (used by status indicator)
+        style.configure('StatusFrame.TFrame',
+            background=self.COLORS['card_bg'],
+            borderwidth=1,
+            relief='solid',
+            bordercolor=self.COLORS['border']
+        )
+
+        # Toolbar container and buttons
+        style.configure('Toolbar.TFrame',
+            background=self.COLORS['panel_bg'],
+            borderwidth=0
+        )
+        style.configure('Tool.TButton',
+            background=self.COLORS['panel_bg'],
+            foreground=self.COLORS['text'],
+            borderwidth=0,
+            padding=6,
+            font=self.FONTS['default']
+        )
+        style.map('Tool.TButton',
+            background=[('active', self.COLORS['primary']), ('pressed', self.COLORS['primary'])],
+            foreground=[('active', 'white'), ('pressed', 'white')]
+        )
+
+        # Provide a consistent alias used by components
+        style.configure('Green.Horizontal.TProgressbar',
+            background=self.COLORS['success'],
+            troughcolor=self.COLORS['panel_bg'],
+            borderwidth=0,
+            thickness=8
         )
     
     def _apply_default_theme(self, style):

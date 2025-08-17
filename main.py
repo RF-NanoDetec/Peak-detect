@@ -501,29 +501,34 @@ class Application(tk.Tk):
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Top toolbar
-        toolbar = ttk.Frame(main_frame)
+        toolbar = ttk.Frame(main_frame, style='Toolbar.TFrame')
         toolbar.pack(fill=tk.X, side=tk.TOP, padx=6, pady=6)
 
-        self.btn_load = ttk.Button(toolbar, text="Load", command=self.browse_file)
+        self.btn_load = ttk.Button(toolbar, text="Load", command=self.browse_file, style='Tool.TButton')
         self.btn_load.pack(side=tk.LEFT, padx=3)
         from ui.ui_utils import add_tooltip as _add_tt
         _add_tt(self.btn_load, "Load data file(s)")
 
-        self.btn_analyze = ttk.Button(toolbar, text="Analyze", command=self.start_analysis)
+        self.btn_analyze = ttk.Button(toolbar, text="Analyze", command=self.start_analysis, style='Tool.TButton')
         self.btn_analyze.pack(side=tk.LEFT, padx=3)
         _add_tt(self.btn_analyze, "Filter and process the loaded data")
 
-        self.btn_detect = ttk.Button(toolbar, text="Detect Peaks", command=self.run_peak_detection)
+        self.btn_detect = ttk.Button(toolbar, text="Detect Peaks", command=self.run_peak_detection, style='Tool.TButton')
         self.btn_detect.pack(side=tk.LEFT, padx=3)
         _add_tt(self.btn_detect, "Detect peaks with current parameters")
 
-        self.btn_plot = ttk.Button(toolbar, text="Plot Analysis", command=self.plot_data)
+        self.btn_plot = ttk.Button(toolbar, text="Plot Analysis", command=self.plot_data, style='Tool.TButton')
         self.btn_plot.pack(side=tk.LEFT, padx=3)
         _add_tt(self.btn_plot, "Show peak statistics and throughput plots")
 
-        self.btn_export = ttk.Button(toolbar, text="Export Plot", command=self.export_plot)
+        self.btn_export = ttk.Button(toolbar, text="Export Plot", command=self.export_plot, style='Tool.TButton')
         self.btn_export.pack(side=tk.LEFT, padx=3)
         _add_tt(self.btn_export, "Export current plot as image")
+
+        # Theme toggle button on toolbar (right side)
+        self.btn_theme_toggle = ttk.Button(toolbar, text="Theme", command=self.toggle_theme, style='Tool.TButton')
+        self.btn_theme_toggle.pack(side=tk.RIGHT, padx=3)
+        _add_tt(self.btn_theme_toggle, "Toggle between Light and Dark themes")
 
         # Paned layout: left (controls), center (plots), right (summary)
         self.paned_window = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL)

@@ -104,7 +104,7 @@ def create_control_panel(app, main_frame):
     control_frame.configure(width=400)   # Set a fixed width
     
     # Add status indicator at the top
-    status_frame = ttk.Frame(control_frame)
+    status_frame = ttk.Frame(control_frame, style='Card.TFrame')
     status_frame.pack(fill=tk.X, pady=(0, 10))
     
     # Status indicator
@@ -155,7 +155,7 @@ def create_preview_frame(app, main_frame):
     app.plot_tab_control.grid(row=0, column=0, sticky="nsew")
 
     # Create an empty frame with fixed size instead of blank image
-    app.blank_tab = ttk.Frame(app.plot_tab_control, width=800, height=600)
+    app.blank_tab = ttk.Frame(app.plot_tab_control, width=800, height=600, style='Card.TFrame')
     app.plot_tab_control.add(app.blank_tab, text="Welcome")
     
     # Create enhanced welcome screen with modern layout
@@ -165,19 +165,21 @@ def create_preview_frame(app, main_frame):
     app.blank_tab.pack_propagate(False)
 
     # Functional Bar under plot tabs
-    functional_bar = ttk.Frame(preview_frame)
+    functional_bar = ttk.Frame(preview_frame, style='Toolbar.TFrame')
     functional_bar.grid(row=1, column=0, sticky="ew", pady=10)
 
     ttk.Button(functional_bar, 
               text="Export Plot", 
-              command=app.export_plot
+              command=app.export_plot,
+              style='Tool.TButton'
     ).grid(row=0, column=0, padx=5, pady=5)
     
     # Add scale toggle button
     scale_toggle_btn = ttk.Button(
         functional_bar,
         text="Toggle Scale (Log/Linear)",
-        command=app.toggle_scale_mode
+        command=app.toggle_scale_mode,
+        style='Tool.TButton'
     )
     scale_toggle_btn.grid(row=0, column=1, padx=5, pady=5)
     
