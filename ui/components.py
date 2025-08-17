@@ -74,6 +74,8 @@ def create_menu_bar(app):
     # Add theme toggle option
     current_theme = "Light" if app.theme_manager.current_theme == "dark" else "Dark"
     view_menu.add_command(label=f"Switch to {current_theme} Theme", command=app.toggle_theme)
+    # Add reset layout option
+    view_menu.add_command(label="Reset Layout", command=app.reset_layout)
     
     # Tools Menu
     tools_menu = tk.Menu(menu_bar, tearoff=0)
@@ -834,17 +836,21 @@ def create_preprocessing_tab(app, tab_control):
     filtering_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
     filtering_frame.columnconfigure(1, weight=1) # Allow entry fields to expand
 
-    # Initialize filter type variable
+    # Initialize filter type variable (load from prefs if available)
     if not hasattr(app, 'filter_type_var'):
-        app.filter_type_var = tk.StringVar(value=Config.DEFAULT_FILTER_TYPE)
+        initial_filter = app.prefs.get('filter_type', Config.DEFAULT_FILTER_TYPE) if hasattr(app, 'prefs') else Config.DEFAULT_FILTER_TYPE
+        app.filter_type_var = tk.StringVar(value=initial_filter)
     
     # Initialize Savitzky-Golay specific variables
     if not hasattr(app, 'savgol_window_var'):
-        app.savgol_window_var = tk.StringVar(value=str(Config.DEFAULT_SAVGOL_WINDOW_LENGTH)) 
+        initial_win = str(app.prefs.get('savgol_window', Config.DEFAULT_SAVGOL_WINDOW_LENGTH)) if hasattr(app, 'prefs') else str(Config.DEFAULT_SAVGOL_WINDOW_LENGTH)
+        app.savgol_window_var = tk.StringVar(value=initial_win) 
     if not hasattr(app, 'savgol_polyorder_var'):
-        app.savgol_polyorder_var = tk.StringVar(value=str(Config.DEFAULT_SAVGOL_POLYORDER)) 
+        initial_poly = str(app.prefs.get('savgol_polyorder', Config.DEFAULT_SAVGOL_POLYORDER)) if hasattr(app, 'prefs') else str(Config.DEFAULT_SAVGOL_POLYORDER)
+        app.savgol_polyorder_var = tk.StringVar(value=initial_poly) 
     if not hasattr(app, 'butter_order_var'):
-        app.butter_order_var = tk.StringVar(value=str(Config.DEFAULT_BUTTER_FILTER_ORDER))
+        initial_order = str(app.prefs.get('butter_order', Config.DEFAULT_BUTTER_FILTER_ORDER)) if hasattr(app, 'prefs') else str(Config.DEFAULT_BUTTER_FILTER_ORDER)
+        app.butter_order_var = tk.StringVar(value=initial_order)
 
 
     # --- Filter Type Selection ---
@@ -1582,6 +1588,27 @@ def create_peak_detection_tab(app, tab_control):
         "Enter exact peak width range in milliseconds (min,max).\n"
         "Example: '0.1,50' means only peaks between 0.1 and 50ms are kept"
     )
+
+    # Reset to defaults button for detection params
+    def reset_detection_defaults():
+        try:
+            app.height_lim.set(20)
+            app.distance.set(5)
+            app.rel_height.set(0.8)
+            app.width_p.set("0.1,50")
+            # Clear validation message if present
+            if hasattr(app, 'validation_label'):
+                app.validation_label.config(text="")
+            # Sync sliders
+            if hasattr(app, 'distance_slider'):
+                app.distance_slider.set(app.distance.get())
+            if hasattr(app, 'rel_height_slider'):
+                app.rel_height_slider.set(app.rel_height.get())
+        except Exception:
+            pass
+
+    reset_btn = ttk.Button(params_frame, text="Reset to Defaults", command=reset_detection_defaults)
+    reset_btn.pack(anchor=tk.E, padx=5, pady=6)
     
     # Prominence ratio threshold slider
     prominence_ratio_frame = ttk.Frame(manual_params_container)

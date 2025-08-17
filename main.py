@@ -41,6 +41,7 @@ from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 # Local imports
 from config.settings import Config
 from config import resource_path, APP_VERSION
+from config.environment import load_user_preferences, save_user_preferences
 # Import performance utilities
 from core.performance import profile_function, get_memory_usage
 # Import UI utilities
@@ -100,9 +101,7 @@ from plotting.double_peak_analysis import (
     show_prev_double_peaks_page as show_prev_double_peaks_page_function
 )
 
-# Set default seaborn style
-sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
-sns.set_context("notebook", rc={"lines.linewidth": 1.0})
+# Seaborn global styling is handled via ThemeManager's rcParams; avoid global overrides here
 
 
 class Application(tk.Tk):
@@ -154,8 +153,12 @@ class Application(tk.Tk):
         self.bind_all('<Control-e>', lambda e: self.export_plot(), add=True)  # Ctrl+E to export plot
         self.bind_all('<Control-q>', lambda e: self.quit(), add=True)  # Ctrl+Q to quit
         
-        # Initialize theme manager with dark theme as default
-        self.theme_manager = ThemeManager(theme_name='dark')
+        # Load preferences
+        self.prefs = load_user_preferences()
+
+        # Initialize theme manager using saved preference if available
+        theme_name = self.prefs.get('theme', 'dark')
+        self.theme_manager = ThemeManager(theme_name=theme_name)
         self.style = self.theme_manager.apply_theme(self)
         
         # Store the StatusIndicator class for use in create_control_panel
@@ -181,14 +184,14 @@ class Application(tk.Tk):
 
         self.file_path = tk.StringVar()
         self.start_time = tk.StringVar(value="0:00")
-        self.height_lim = tk.DoubleVar(value=20)
-        self.distance = tk.IntVar(value=5)  # Default value for minimum distance between peaks
-        self.rel_height = tk.DoubleVar(value=0.8)  # Default value for relative height
-        self.width_p = tk.StringVar(value="0.1,50")  # Default value for width range
+        self.height_lim = tk.DoubleVar(value=float(self.prefs.get('prominence_threshold', 20)))
+        self.distance = tk.IntVar(value=int(self.prefs.get('distance', 5)))  # minimum distance between peaks
+        self.rel_height = tk.DoubleVar(value=float(self.prefs.get('rel_height', 0.8)))  # relative height
+        self.width_p = tk.StringVar(value=str(self.prefs.get('width_ms', "0.1,50")))  # width range in ms
         self.time_resolution = tk.DoubleVar(value=1e-4)  # Time resolution factor (default: 0.1ms)
-        self.cutoff_value = tk.DoubleVar(value=0)  # Default 0 means auto-detect
+        self.cutoff_value = tk.DoubleVar(value=float(self.prefs.get('cutoff_value', 0)))  # 0 means auto-detect
         self.filter_enabled = tk.BooleanVar(value=True)  # Toggle for filtering (True=enabled)
-        self.sigma_multiplier = tk.DoubleVar(value=5.0)  # Sigma multiplier for auto threshold detection (1-10)
+        self.sigma_multiplier = tk.DoubleVar(value=float(self.prefs.get('sigma_multiplier', 5.0)))  # Sigma multiplier for auto threshold detection (1-10)
         self.filter_bandwidth = tk.DoubleVar(value=0)  # Store the current filter bandwidth
         self.filtered_signal = None
         self.rect_selector = None
@@ -208,7 +211,7 @@ class Application(tk.Tk):
         self.protocol_notes = tk.StringVar()
 
         # Add file mode selection
-        self.file_mode = tk.StringVar(value="single")  # "single" for Standard Mode, "batch" for Timestamp Mode
+        self.file_mode = tk.StringVar(value=self.prefs.get('file_mode', "single"))  # "single" or "batch"
         self.batch_timestamps = tk.StringVar()
         
         # Add double peak analysis toggle
@@ -223,7 +226,7 @@ class Application(tk.Tk):
         self.double_peak_max_width_ratio = tk.DoubleVar(value=5.0) # 500%
         
         # Add scale mode tracking
-        self.log_scale_enabled = tk.BooleanVar(value=True)  # True for logarithmic, False for linear
+        self.log_scale_enabled = tk.BooleanVar(value=bool(self.prefs.get('log_scale', True)))
         
         # Variables for double peak analysis results
         self.double_peaks = None
@@ -236,12 +239,21 @@ class Application(tk.Tk):
         self.protocol_files = tk.StringVar()
         
         # Add throughput interval parameter for time-resolved analysis
-        self.throughput_interval = tk.DoubleVar(value=10.0)  # Default 10 seconds, adjustable 1-100
+        self.throughput_interval = tk.DoubleVar(value=float(self.prefs.get('throughput_interval', 10.0)))
         
         # Create the menu bar
         self.menu_bar = create_menu_bar(self)
 
         self.create_widgets()
+        # Restore splitter sizes if saved
+        try:
+            sizes = self.prefs.get('paned_sizes')
+            if sizes and hasattr(self, 'paned_window'):
+                self.paned_window.sashpos(0, sizes[0])
+                # Right sash move: need width; apply after idle to ensure geometry
+                self.after(100, lambda: self.paned_window.sashpos(1, sizes[1]))
+        except Exception:
+            pass
         self.blank_tab_exists = True  # Track if the blank tab exists
 
         # Initialize data plot attributes
@@ -289,6 +301,52 @@ class Application(tk.Tk):
         """Set up a more descriptive window title"""
         version = "1.0"  # Define your version number
         self.title(f"Peak Analysis Tool v{version} - Signal Processing and Analysis")
+
+    def reset_layout(self):
+        try:
+            # Remove saved pane sizes and restore defaults
+            if 'paned_sizes' in self.prefs:
+                del self.prefs['paned_sizes']
+                save_user_preferences(self.prefs)
+            # Recreate layout by destroying and rebuilding widgets
+            for child in self.winfo_children():
+                child.destroy()
+            self.create_widgets()
+        except Exception:
+            pass
+
+    def quit(self):
+        try:
+            # Save preferences on exit
+            try:
+                if hasattr(self, 'paned_window'):
+                    sizes = []
+                    try:
+                        sizes.append(self.paned_window.sashpos(0))
+                        sizes.append(self.paned_window.sashpos(1))
+                    except Exception:
+                        pass
+                    self.prefs['paned_sizes'] = sizes
+                self.prefs['file_mode'] = self.file_mode.get()
+                self.prefs['log_scale'] = bool(self.log_scale_enabled.get())
+                self.prefs['throughput_interval'] = float(self.throughput_interval.get())
+                # Persist filter settings if present
+                try:
+                    self.prefs['filter_type'] = self.filter_type_var.get()
+                    self.prefs['savgol_window'] = int(self.savgol_window_var.get()) if self.savgol_window_var.get() else ''
+                    self.prefs['savgol_polyorder'] = int(self.savgol_polyorder_var.get()) if self.savgol_polyorder_var.get() else ''
+                    self.prefs['butter_order'] = int(self.butter_order_var.get()) if self.butter_order_var.get() else Config.DEFAULT_BUTTER_FILTER_ORDER
+                except Exception:
+                    pass
+                save_user_preferences(self.prefs)
+            except Exception:
+                pass
+            super().quit()
+        except Exception:
+            try:
+                self.destroy()
+            except Exception:
+                pass
 
     def setup_performance_logging(self):
         """
@@ -442,26 +500,51 @@ class Application(tk.Tk):
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
+        # Top toolbar
+        toolbar = ttk.Frame(main_frame)
+        toolbar.pack(fill=tk.X, side=tk.TOP, padx=6, pady=6)
+
+        self.btn_load = ttk.Button(toolbar, text="Load", command=self.browse_file)
+        self.btn_load.pack(side=tk.LEFT, padx=3)
+        from ui.ui_utils import add_tooltip as _add_tt
+        _add_tt(self.btn_load, "Load data file(s)")
+
+        self.btn_analyze = ttk.Button(toolbar, text="Analyze", command=self.start_analysis)
+        self.btn_analyze.pack(side=tk.LEFT, padx=3)
+        _add_tt(self.btn_analyze, "Filter and process the loaded data")
+
+        self.btn_detect = ttk.Button(toolbar, text="Detect Peaks", command=self.run_peak_detection)
+        self.btn_detect.pack(side=tk.LEFT, padx=3)
+        _add_tt(self.btn_detect, "Detect peaks with current parameters")
+
+        self.btn_plot = ttk.Button(toolbar, text="Plot Analysis", command=self.plot_data)
+        self.btn_plot.pack(side=tk.LEFT, padx=3)
+        _add_tt(self.btn_plot, "Show peak statistics and throughput plots")
+
+        self.btn_export = ttk.Button(toolbar, text="Export Plot", command=self.export_plot)
+        self.btn_export.pack(side=tk.LEFT, padx=3)
+        _add_tt(self.btn_export, "Export current plot as image")
+
         # Paned layout: left (controls), center (plots), right (summary)
-        paned = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL)
-        paned.pack(fill=tk.BOTH, expand=True)
+        self.paned_window = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL)
+        self.paned_window.pack(fill=tk.BOTH, expand=True)
         
         # Left pane: Control panel
-        control_container = ttk.Frame(paned)
+        control_container = ttk.Frame(self.paned_window)
         control_container.pack(fill=tk.BOTH, expand=False)
         control_frame = create_control_panel(self, control_container)
         control_frame.pack(fill=tk.BOTH, expand=True)
-        paned.add(control_container, weight=0)
+        self.paned_window.add(control_container, weight=0)
         
         # Center pane: Preview frame with plot tabs
-        preview_container = ttk.Frame(paned)
+        preview_container = ttk.Frame(self.paned_window)
         preview_container.pack(fill=tk.BOTH, expand=True)
         preview_frame = create_preview_frame(self, preview_container)
         preview_frame.pack(fill=tk.BOTH, expand=True)
-        paned.add(preview_container, weight=3)
+        self.paned_window.add(preview_container, weight=3)
         
         # Right pane: Results summary
-        summary_container = ttk.Frame(paned)
+        summary_container = ttk.Frame(self.paned_window)
         summary_container.pack(fill=tk.BOTH, expand=False)
         
         summary_frame = ttk.Frame(summary_container)
@@ -487,7 +570,7 @@ class Application(tk.Tk):
         # Apply theme to the ScrolledText widget
         self.theme_manager.apply_scrolledtext_theme(self.results_summary)
         
-        paned.add(summary_container, weight=0)
+        self.paned_window.add(summary_container, weight=0)
 
     @ui_action(
         processing_message="Loading documentation...",
@@ -549,7 +632,8 @@ class Application(tk.Tk):
         This method now uses the integrated UI function from core.file_handler.
         """
         time_res = self.time_resolution.get()
-        print(f"Using time resolution: {time_res}")
+        import logging
+        logging.getLogger(__name__).debug(f"Using time resolution: {time_res}")
         
         # Update status if double peak analysis is enabled
         if self.double_peak_analysis.get() == "1":
@@ -605,12 +689,39 @@ class Application(tk.Tk):
         This is a UI wrapper around the peak detection pipeline function.
         """
         try:
+            # Validate parameters before running
+            from core.data_utils import validate_peak_params
+            ok, msg = validate_peak_params(
+                prominence_threshold=self.height_lim.get(),
+                distance=self.distance.get(),
+                rel_height=self.rel_height.get(),
+                width_ms=self.width_p.get(),
+                time_resolution=self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution,
+                prominence_ratio=self.prominence_ratio.get() if hasattr(self, 'prominence_ratio') else None,
+            )
+            if not ok:
+                # Inline validation feedback
+                try:
+                    if hasattr(self, 'validation_label'):
+                        self.validation_label.config(text=msg, foreground=self.theme_manager.get_color('error'))
+                    else:
+                        # Create on-demand near toolbar
+                        self.validation_label = ttk.Label(self, text=msg, foreground=self.theme_manager.get_color('error'))
+                        self.validation_label.pack(side=tk.TOP, anchor='w', padx=8)
+                except Exception:
+                    pass
+                self.preview_label.config(text=f"Parameter error: {msg}", foreground=self.theme_manager.get_color('error'))
+                if hasattr(self, 'status_indicator'):
+                    self.status_indicator.set_state('warning')
+                    self.status_indicator.set_text(msg)
+                return False
             # Debug: Print width values used for peak detection
             width_values = self.width_p.get().strip().split(',')
             time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
             sampling_rate = 1 / time_res
             width_samples = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
-            print(f"[DEBUG][run_peak_detection] width_p (ms): {width_values}, width_p (samples): {width_samples}, sampling_rate: {sampling_rate}")
+            import logging
+            logging.getLogger(__name__).debug(f"[run_peak_detection] width_p (ms): {width_values}, width_p (samples): {width_samples}, sampling_rate: {sampling_rate}")
 
             # Run peak detection
             peaks, properties, peak_areas = run_peak_detection_function(self, profile_function=profile_function)
@@ -1374,6 +1485,13 @@ class Application(tk.Tk):
         if hasattr(self, 'preprocessing_comparison_canvas'):
             self._redraw_preprocessing_comparison()
 
+        # Persist theme selection
+        try:
+            self.prefs['theme'] = new_theme
+            save_user_preferences(self.prefs)
+        except Exception:
+            pass
+
         # === Update General UI Elements within Tabs ===
         for tab in self.tab_control.winfo_children():
             if isinstance(tab, ttk.Frame):
@@ -2103,6 +2221,31 @@ class Application(tk.Tk):
         Analyze time-resolved data using current parameters and update the visualization.
         """
         try:
+            # Validate parameters first
+            from core.data_utils import validate_peak_params
+            ok, msg = validate_peak_params(
+                prominence_threshold=self.height_lim.get(),
+                distance=self.distance.get(),
+                rel_height=self.rel_height.get(),
+                width_ms=self.width_p.get(),
+                time_resolution=self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution,
+                prominence_ratio=self.prominence_ratio.get() if hasattr(self, 'prominence_ratio') else None,
+            )
+            if not ok:
+                try:
+                    if hasattr(self, 'validation_label'):
+                        self.validation_label.config(text=msg, foreground=self.theme_manager.get_color('error'))
+                    else:
+                        self.validation_label = ttk.Label(self, text=msg, foreground=self.theme_manager.get_color('error'))
+                        self.validation_label.pack(side=tk.TOP, anchor='w', padx=8)
+                except Exception:
+                    pass
+                self.preview_label.config(text=f"Parameter error: {msg}", foreground=self.theme_manager.get_color('error'))
+                if hasattr(self, 'status_indicator'):
+                    self.status_indicator.set_state('warning')
+                    self.status_indicator.set_text(msg)
+                return False
+
             # Prefer pure analysis function with explicit parameters
             time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
             results = analyze_time_resolved_pure_function(

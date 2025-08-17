@@ -25,6 +25,7 @@ Functions:
 """
 
 import os
+import json
 import sys
 import logging
 from pathlib import Path
@@ -157,6 +158,35 @@ def is_frozen():
         >>>     print("Running in development mode")
     """
     return hasattr(sys, 'frozen') and hasattr(sys, '_MEIPASS')
+
+
+# -----------------------------
+# User preferences persistence
+# -----------------------------
+
+def load_user_preferences():
+    """
+    Load user preferences JSON from USER_PREFS_FILE. Returns dict.
+    """
+    try:
+        if os.path.exists(USER_PREFS_FILE):
+            with open(USER_PREFS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load preferences: {e}")
+    return {}
+
+
+def save_user_preferences(prefs: dict):
+    """
+    Save user preferences dict to USER_PREFS_FILE.
+    """
+    try:
+        os.makedirs(os.path.dirname(USER_PREFS_FILE), exist_ok=True)
+        with open(USER_PREFS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(prefs or {}, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save preferences: {e}")
 
 def get_app_info():
     """

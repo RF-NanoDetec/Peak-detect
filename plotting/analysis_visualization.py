@@ -31,7 +31,8 @@ def plot_data(app, profile_function=None):
         return False
 
     try:
-        print("Starting plot_data function...")
+        import logging
+        logging.getLogger(__name__).debug("Starting plot_data function...")
 
         # Create a new figure for data plot
         # Figure background color is handled by theme manager
@@ -63,10 +64,11 @@ def plot_data(app, profile_function=None):
         width_p = convert_width_ms_to_samples(app.width_p.get(), sampling_rate)
         
         # Debug output
-        print(f"\nDEBUG - Width parameter information in plot_data:")
-        print(f"Original width values: {app.width_p.get()} (ms)")
-        print(f"Sampling rate: {sampling_rate:.1f} Hz")
-        print(f"Converted width_p (in samples): {width_p}")
+        log = logging.getLogger(__name__)
+        log.debug("\nDEBUG - Width parameter information in plot_data:")
+        log.debug(f"Original width values: {app.width_p.get()} (ms)")
+        log.debug(f"Sampling rate: {sampling_rate:.1f} Hz")
+        log.debug(f"Converted width_p (in samples): {width_p}")
         
         # Get the prominence ratio threshold
         prominence_ratio = app.prominence_ratio.get()
@@ -100,16 +102,16 @@ def plot_data(app, profile_function=None):
         )
         
         # Additional debug information after peak detection
-        print(f"DEBUG - Peak detection results:")
-        print(f"Found {len(peaks)} peaks (after prominence ratio filter)")
-        print(f"Found {len(unfiltered_peaks)} peaks (before prominence ratio filter)")
+        log.debug("DEBUG - Peak detection results:")
+        log.debug(f"Found {len(peaks)} peaks (after prominence ratio filter)")
+        log.debug(f"Found {len(unfiltered_peaks)} peaks (before prominence ratio filter)")
         if len(peaks) > 0:
-            print(f"Peak properties keys: {list(properties.keys())}")
-            print(f"First few peak positions: {peaks[:5]}")
+            log.debug(f"Peak properties keys: {list(properties.keys())}")
+            log.debug(f"First few peak positions: {peaks[:5]}")
             if 'widths' in properties:
-                print(f"First few peak widths (in samples): {properties['widths'][:5]}")
-                print(f"Peak widths in seconds (min/mean/max): {np.min(properties['widths']*rate):.6f}/{np.mean(properties['widths']*rate):.6f}/{np.max(properties['widths']*rate):.6f}")
-                print(f"Peak widths in ms (min/mean/max): {np.min(properties['widths']*rate*1000):.2f}/{np.mean(properties['widths']*rate*1000):.2f}/{np.max(properties['widths']*rate*1000):.2f}")
+                log.debug(f"First few peak widths (in samples): {properties['widths'][:5]}")
+                log.debug(f"Peak widths in seconds (min/mean/max): {np.min(properties['widths']*rate):.6f}/{np.mean(properties['widths']*rate):.6f}/{np.max(properties['widths']*rate):.6f}")
+                log.debug(f"Peak widths in ms (min/mean/max): {np.min(properties['widths']*rate*1000):.2f}/{np.mean(properties['widths']*rate*1000):.2f}/{np.max(properties['widths']*rate*1000):.2f}")
         
         # Identify filtered peaks (those in unfiltered_peaks but not in peaks)
         filtered_out_peaks = []
@@ -138,7 +140,7 @@ def plot_data(app, profile_function=None):
                         if key not in filtered_out_properties:
                             filtered_out_properties[key] = values[filtered_mask]
             
-            print(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
+            log.debug(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
         
         # Calculate peak properties
         widths = properties["widths"]  # Width in samples
@@ -353,8 +355,8 @@ def plot_data(app, profile_function=None):
 
     except Exception as e:
         import traceback
-        print("Error in plot_data:", str(e))
-        print(traceback.format_exc())
+        import logging
+        logging.getLogger(__name__).error(f"Error in plot_data: {str(e)}\n{traceback.format_exc()}")
         app.preview_label.config(
             text=f"Error creating peak analysis plot: {str(e)}",
             foreground=app.theme_manager.get_color('error')

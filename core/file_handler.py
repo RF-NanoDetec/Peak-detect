@@ -14,6 +14,7 @@ import traceback
 import matplotlib.pyplot as plt
 from tkinter import messagebox
 from functools import wraps
+from config.environment import save_user_preferences
 import tkinter as tk
 
 from core.performance import profile_function, get_memory_usage
@@ -41,8 +42,9 @@ def load_single_file(file, timestamps=None, index=0, time_resolution=1e-4):
     Returns:
         dict: Dictionary containing time, amplitude and index data with time converted to seconds
     """
-    print(f"Loading file {index+1}: {file}")
-    print(f"Using time resolution factor: {time_resolution} (converts raw time values to seconds)")
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Loading file {index+1}: {file}")
+    logger.debug(f"Using time resolution factor: {time_resolution} (converts raw time values to seconds)")
 
     try:
         # Determine file type based on extension
@@ -100,7 +102,7 @@ def load_single_file(file, timestamps=None, index=0, time_resolution=1e-4):
             'time_resolution': time_resolution  # Store the resolution used
         }
     except Exception as e:
-        print(f"Error loading file {file}: {str(e)}")
+        logger.error(f"Error loading file {file}: {str(e)}")
         raise
 
 @profile_function
@@ -116,9 +118,10 @@ def browse_files(app, time_resolution=1e-4):
     Returns:
         tuple: (t_value, x_value, data, loaded_files) containing the loaded data with time in seconds
     """
-    print(f"Memory before loading: {get_memory_usage_wrapper():.2f} MB")
-    print(f"Current file mode: {app.file_mode.get()}")
-    print(f"Using time resolution: {time_resolution} (converts raw time values to seconds)")
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Memory before loading: {get_memory_usage_wrapper():.2f} MB")
+    logger.debug(f"Current file mode: {app.file_mode.get()}")
+    logger.debug(f"Using time resolution: {time_resolution} (converts raw time values to seconds)")
     
     try:
         # Set status indicator to loading
@@ -130,16 +133,20 @@ def browse_files(app, time_resolution=1e-4):
         app.update_progress_bar(0)
         
         files = []
+        # Resolve starting directory from preferences if available
+        initial_dir = getattr(app, 'prefs', {}).get('last_dir', None) if hasattr(app, 'prefs') else None
+
         if app.file_mode.get() == "single":
             files = list(filedialog.askopenfilenames(
                 title="Select Data File",
                 filetypes=(
                     ("Data files", "*.txt *.xls *.xlsx"),
                     ("All files", "*.*")
-                )
+                ),
+                initialdir=initial_dir or os.getcwd()
             ))
         else:  # batch mode
-            folder = filedialog.askdirectory(title="Select Folder with Data Files")
+            folder = filedialog.askdirectory(title="Select Folder with Data Files", initialdir=initial_dir or os.getcwd())
             if folder:
                 # Include both text and Excel files
                 files = [os.path.join(folder, f) for f in os.listdir(folder) 
@@ -151,6 +158,13 @@ def browse_files(app, time_resolution=1e-4):
             return None, None, None, []
         
         files = list(Tcl().call('lsort', '-dict', files))
+        # Save last directory in preferences if available
+        try:
+            if hasattr(app, 'prefs'):
+                app.prefs['last_dir'] = os.path.dirname(files[0])
+                save_user_preferences(app.prefs)
+        except Exception:
+            pass
         app.preview_label.config(text="Loading files...", foreground="blue")
         app.update_idletasks()
         
@@ -186,7 +200,7 @@ def browse_files(app, time_resolution=1e-4):
                 except Exception as e:
                     app.status_indicator.set_state('error')
                     app.status_indicator.set_text(f"Error loading file {i+1}")
-                    print(f"Error loading file {i}: {str(e)}")
+                    logger.error(f"Error loading file {i}: {str(e)}")
                     raise e
 
         # Sort results by index to maintain order
@@ -237,7 +251,7 @@ def browse_files(app, time_resolution=1e-4):
         t_value = combined_times
         x_value = combined_amplitudes
         
-        print(f"Total data points after concatenation: {len(t_value)}")  # Debug print
+        logger.debug(f"Total data points after concatenation: {len(t_value)}")
         
         # Create combined DataFrame - more efficient version
         # Only create DataFrame with data that will actually be used
@@ -285,8 +299,7 @@ def browse_files(app, time_resolution=1e-4):
         return t_value, x_value, data, loaded_files
         
     except Exception as e:
-        print(f"Detailed error: {str(e)}")
-        traceback.print_exc()
+        logger.error(f"Detailed error: {str(e)}\n{traceback.format_exc()}")
         app.update_progress_bar(0)  # Reset on error
         
         # Update status

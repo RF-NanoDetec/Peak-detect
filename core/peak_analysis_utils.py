@@ -30,9 +30,7 @@ from scipy.signal import find_peaks, butter, filtfilt, peak_widths, savgol_filte
 # Import profiling utilities from the performance module
 from core.performance import profile_function, get_memory_usage
 
-# Set default seaborn style
-sns.set_theme(style="whitegrid", palette="tab10", font_scale=1.2)
-sns.set_context("notebook", rc={"lines.linewidth": 1.0})
+# Styling is controlled by UI ThemeManager; avoid global seaborn rc changes here
 
 print("Lade peak_analysis_utils.py")
 

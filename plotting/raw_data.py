@@ -159,4 +159,5 @@ def plot_raw_data(app, profiler=None):
     except Exception as e:
         app.preview_label.config(text=f"Error plotting raw data: {str(e)}",
                                   foreground=app.theme_manager.get_color('error'))
-        traceback.print_exc() 
+        import logging, traceback as _tb
+        logging.getLogger(__name__).error(f"Error plotting raw data: {str(e)}\n{_tb.format_exc()}")

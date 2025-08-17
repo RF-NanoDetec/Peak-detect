@@ -188,6 +188,89 @@ def convert_width_ms_to_samples(width_ms, sampling_rate):
         # Reasonable default window if conversion fails
         return [1, 200]
 
+
+def validate_width_ms_string(width_ms):
+    """
+    Validate width specification string "min,max" in milliseconds.
+
+    Returns (ok: bool, message: str)
+    """
+    try:
+        if isinstance(width_ms, str):
+            parts = [p.strip() for p in width_ms.split(',')]
+        else:
+            parts = [str(v) for v in width_ms]
+        if len(parts) != 2:
+            return False, "Width must have two numbers: min,max (ms)"
+        wmin = float(parts[0])
+        wmax = float(parts[1])
+        if wmin <= 0 or wmax <= 0:
+            return False, "Width values must be > 0 ms"
+        if wmin > wmax:
+            return False, "Width min must be <= max"
+        return True, ""
+    except Exception:
+        return False, "Invalid width format; use min,max (e.g., 1,200)"
+
+
+def validate_peak_params(
+    prominence_threshold,
+    distance,
+    rel_height,
+    width_ms,
+    time_resolution,
+    prominence_ratio=None,
+):
+    """
+    Validate common peak detection parameters.
+
+    Returns (ok: bool, message: str)
+    """
+    # Time resolution
+    try:
+        if time_resolution is None or float(time_resolution) <= 0:
+            return False, "Time resolution must be > 0"
+    except Exception:
+        return False, "Time resolution is invalid"
+
+    # Prominence threshold
+    try:
+        if float(prominence_threshold) < 0:
+            return False, "Prominence threshold must be >= 0"
+    except Exception:
+        return False, "Prominence threshold is invalid"
+
+    # Distance (samples)
+    try:
+        if int(distance) < 0:
+            return False, "Minimum distance must be >= 0 samples"
+    except Exception:
+        return False, "Minimum distance is invalid"
+
+    # rel_height (0..1]
+    try:
+        rh = float(rel_height)
+        if rh <= 0 or rh > 1:
+            return False, "Relative height must be in (0, 1]"
+    except Exception:
+        return False, "Relative height is invalid"
+
+    # prominence_ratio (0..1], optional if None
+    if prominence_ratio is not None:
+        try:
+            pr = float(prominence_ratio)
+            if pr <= 0 or pr > 1:
+                return False, "Prominence ratio must be in (0, 1]"
+        except Exception:
+            return False, "Prominence ratio is invalid"
+
+    # width
+    ok, msg = validate_width_ms_string(width_ms)
+    if not ok:
+        return False, msg
+
+    return True, ""
+
 def reset_application_state(app):
     """
     Reset all application variables and plots to initial state

@@ -146,7 +146,8 @@ def run_peak_detection(app, profile_function=None):
         if hasattr(app, 'canvas'):
             app.canvas.draw()
         else:
-             print("Warning: app.canvas not found during peak detection update.")
+            import logging
+            logging.getLogger(__name__).warning("app.canvas not found during peak detection update.")
 
         # Update progress and status using theme colors
         app.update_progress_bar(3)
@@ -161,6 +162,8 @@ def run_peak_detection(app, profile_function=None):
         error_msg = str(e)
         app.status_indicator.set_state('error')
         app.status_indicator.set_text(f"Error: {error_msg}")
+        import logging
+        logging.getLogger(__name__).error(f"Peak Detection Error: {error_msg}\n{traceback.format_exc()}")
         app.show_error("Peak Detection Error", traceback.format_exc())
         return None
 
@@ -391,7 +394,8 @@ def plot_filtered_peaks(app, profile_function=None):
             text=f"Error plotting filtered peaks: {str(e)}",
             foreground=app.theme_manager.get_color('error')
         )
-        traceback.print_exc()
+        import logging, traceback as _tb
+        logging.getLogger(__name__).error(f"Error plotting filtered peaks: {str(e)}\n{_tb.format_exc()}")
         return False
 
 
