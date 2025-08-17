@@ -65,14 +65,16 @@ from core.data_analysis import (
     calculate_peak_areas as calculate_peak_areas_function,
     calculate_peak_intervals,
     calculate_auto_threshold,
-    analyze_time_resolved as analyze_time_resolved_function
+    analyze_time_resolved as analyze_time_resolved_function,
+    analyze_time_resolved_pure as analyze_time_resolved_pure_function,
 )
 from core.data_utils import (
     decimate_for_plot as decimate_for_plot_function,
     get_width_range as get_width_range_function,
     reset_application_state_with_ui,
     find_nearest,
-    timestamps_to_seconds  # For single timestamp conversion
+    timestamps_to_seconds,  # For single timestamp conversion
+    convert_width_ms_to_samples,
 )
 from core.peak_analysis_utils import timestamps_array_to_seconds, adjust_lowpass_cutoff, calculate_lowpass_cutoff, find_peaks_with_window
 from core.file_export import (
@@ -83,8 +85,6 @@ from core.file_export import (
 
 # Import UI modules
 from ui.components import create_control_panel, create_menu_bar, create_preview_frame
-from ui.theme import ThemeManager
-from ui.status_indicator import StatusIndicator
 
 # Import all plotting functions directly
 from plotting.raw_data import plot_raw_data as plot_raw_data_function
@@ -255,8 +255,13 @@ class Application(tk.Tk):
         # Initialize the PeakDetector
         self.peak_detector = PeakDetector(logger=self.logger)
         
-        # Set icon and window title
-        self.iconbitmap(self.get_icon_path())
+        # Set icon and window title (guard against missing icon)
+        icon_path = self.get_icon_path()
+        if icon_path:
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                print(f"Warning: Unable to set window icon from {icon_path}")
         self.setup_window_title()
         
     def get_icon_path(self):
@@ -437,25 +442,30 @@ class Application(tk.Tk):
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Configure columns - control panel (0), plot area (1), and results summary (2)
-        main_frame.columnconfigure(0, weight=0)  # Control panel - fixed width
-        main_frame.columnconfigure(1, weight=3)  # Plot area gets most space
-        main_frame.columnconfigure(2, weight=0)  # Results summary - fixed width
+        # Paned layout: left (controls), center (plots), right (summary)
+        paned = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True)
         
-        # Configure rows - only one row now since results summary is on the right
-        main_frame.rowconfigure(0, weight=1)  # All elements share the same row
+        # Left pane: Control panel
+        control_container = ttk.Frame(paned)
+        control_container.pack(fill=tk.BOTH, expand=False)
+        control_frame = create_control_panel(self, control_container)
+        control_frame.pack(fill=tk.BOTH, expand=True)
+        paned.add(control_container, weight=0)
         
-        # Create left control panel
-        control_frame = create_control_panel(self, main_frame)
-        control_frame.grid(row=0, column=0, sticky="nsew")
+        # Center pane: Preview frame with plot tabs
+        preview_container = ttk.Frame(paned)
+        preview_container.pack(fill=tk.BOTH, expand=True)
+        preview_frame = create_preview_frame(self, preview_container)
+        preview_frame.pack(fill=tk.BOTH, expand=True)
+        paned.add(preview_container, weight=3)
         
-        # Create preview frame with plot tabs (center)
-        preview_frame = create_preview_frame(self, main_frame)
-        preview_frame.grid(row=0, column=1, sticky="nsew")
+        # Right pane: Results summary
+        summary_container = ttk.Frame(paned)
+        summary_container.pack(fill=tk.BOTH, expand=False)
         
-        # Create results summary panel frame (right side)
-        summary_frame = ttk.Frame(main_frame)
-        summary_frame.grid(row=0, column=2, sticky="nsew", padx=10, pady=10)
+        summary_frame = ttk.Frame(summary_container)
+        summary_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Configure the summary frame's grid
         summary_frame.columnconfigure(0, weight=1)
@@ -476,6 +486,8 @@ class Application(tk.Tk):
         
         # Apply theme to the ScrolledText widget
         self.theme_manager.apply_scrolledtext_theme(self.results_summary)
+        
+        paned.add(summary_container, weight=0)
 
     @ui_action(
         processing_message="Loading documentation...",
@@ -1091,15 +1103,7 @@ class Application(tk.Tk):
         """
         return get_width_range_function(self.width_p.get())
 
-    # Function to update the results summary text box
-    def update_results_summary(self, events=None, max_amp=None, peak_areas=None, peak_intervals=None, preview_text=None):
-       """
-       DEPRECATED: Use ui.ui_utils.update_results_summary_with_ui instead.
-       """
-       from ui.ui_utils import update_results_summary_with_ui
-       print("WARNING: Called deprecated update_results_summary. Please use update_results_summary_with_ui.")
-       update_results_summary_with_ui(self, events=events, max_amp=max_amp, peak_areas=peak_areas, 
-                                    peak_intervals=peak_intervals, preview_text=preview_text)
+    # Removed deprecated update_results_summary; call the UI utility directly where needed
 
     # Add this validation method to your class
     def validate_float(self, value):
@@ -2099,8 +2103,18 @@ class Application(tk.Tk):
         Analyze time-resolved data using current parameters and update the visualization.
         """
         try:
-            # Run time-resolved analysis
-            results = analyze_time_resolved_function(self)
+            # Prefer pure analysis function with explicit parameters
+            time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
+            results = analyze_time_resolved_pure_function(
+                signal=self.filtered_signal,
+                time_values=self.t_value,
+                width_ms=self.width_p.get(),
+                time_resolution=time_res,
+                prominence_threshold=self.height_lim.get(),
+                distance=self.distance.get(),
+                rel_height=self.rel_height.get(),
+                prominence_ratio=self.prominence_ratio.get(),
+            )
             
             if results:
                 peaks, areas, intervals = results
@@ -2118,7 +2132,8 @@ class Application(tk.Tk):
                 
                 # Update the right panel results summary
                 if hasattr(self, 'results_summary'):
-                    self.update_results_summary(
+                    update_results_summary_with_ui(
+                        self,
                         events=len(peaks),
                         peak_areas=areas,
                         peak_intervals=intervals,

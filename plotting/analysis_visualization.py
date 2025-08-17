@@ -59,8 +59,8 @@ def plot_data(app, profile_function=None):
         print(f"DEBUG - plot_data sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
         
         # Convert width from ms to samples
-        width_values = app.width_p.get().strip().split(',')
-        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+        from core.data_utils import convert_width_ms_to_samples
+        width_p = convert_width_ms_to_samples(app.width_p.get(), sampling_rate)
         
         # Debug output
         print(f"\nDEBUG - Width parameter information in plot_data:")
@@ -285,6 +285,9 @@ def plot_data(app, profile_function=None):
 
         # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(app.data_figure, axes)
+        # Use canvas background on axes for readability in dark mode
+        for ax in axes:
+            ax.set_facecolor(app.theme_manager.get_color('canvas_bg'))
 
         # Create or update the tab in plot_tab_control
         tab_name = "Peak Analysis"
@@ -333,7 +336,13 @@ def plot_data(app, profile_function=None):
         
         # Update the right panel results summary
         if hasattr(app, 'results_summary'):
-            app.update_results_summary(events=filtered_kept, peak_areas=areas, preview_text=preview_text)
+            # Use UI utility to update summary
+            app.update_results_summary_with_ui = getattr(app, 'update_results_summary_with_ui', None)
+            if callable(app.update_results_summary_with_ui):
+                app.update_results_summary_with_ui(events=filtered_kept, peak_areas=areas, preview_text=preview_text)
+            else:
+                from ui.ui_utils import update_results_summary_with_ui
+                update_results_summary_with_ui(app, events=filtered_kept, peak_areas=areas, preview_text=preview_text)
 
         app.preview_label.config(
             text="Peak analysis plot created successfully",

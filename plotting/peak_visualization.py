@@ -127,7 +127,9 @@ def run_peak_detection(app, profile_function=None):
             f"Peak detection threshold: {height_lim_factor}"
         )
 
-        app.update_results_summary(events=len(peaks_x_filter), peak_areas=peak_areas, preview_text=summary_text)
+        # Use UI utility to update summary
+        from ui.ui_utils import update_results_summary_with_ui
+        update_results_summary_with_ui(app, events=len(peaks_x_filter), peak_areas=peak_areas, preview_text=summary_text)
 
         # Set or update app.peaks property for use in other functions
         app.peaks = peaks_x_filter
@@ -137,10 +139,9 @@ def run_peak_detection(app, profile_function=None):
         # Apply theme standard styles (bg, grid, text)
         app.theme_manager.apply_plot_theme(app.figure, [ax])
         
-        # Set figure background to match the app background
+        # Keep figure background matching app background, but axes on canvas background for readability
         app.figure.patch.set_facecolor(app.theme_manager.get_color('background'))
-        # Set the axes background to match the app background
-        ax.set_facecolor(app.theme_manager.get_color('background'))
+        ax.set_facecolor(app.theme_manager.get_color('canvas_bg'))
         
         if hasattr(app, 'canvas'):
             app.canvas.draw()
@@ -175,9 +176,14 @@ def plot_filtered_peaks(app, profile_function=None):
 
     try:
         # Get peaks and properties
-        width_values = app.width_p.get().strip().split(',')
-        width_p = [int(float(value.strip()) * 10) for value in width_values]
-        
+        # Convert width from milliseconds to samples using centralized utility
+        time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
+        if time_res <= 0:
+            time_res = 0.0001
+        sampling_rate = 1 / time_res
+        from core.data_utils import convert_width_ms_to_samples
+        width_p = convert_width_ms_to_samples(app.width_p.get(), sampling_rate)
+
         # Get the prominence ratio threshold
         prominence_ratio = app.prominence_ratio.get()
 

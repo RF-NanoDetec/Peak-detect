@@ -271,6 +271,8 @@ def start_analysis(app, profile_function=None):
 
         # Apply theme again to ensure everything is properly styled
         app.theme_manager.apply_plot_theme(app.figure, [ax])
+        # Keep axes on canvas background for readability in dark mode
+        ax.set_facecolor(app.theme_manager.get_color('canvas_bg'))
 
         # Update progress
         app.update_progress_bar(3)

@@ -158,6 +158,36 @@ def find_nearest(array, value):
         idx = (np.abs(array - value)).argmin()
         return idx
 
+
+def convert_width_ms_to_samples(width_ms, sampling_rate):
+    """
+    Convert peak width range from milliseconds to samples given sampling rate.
+
+    Parameters
+    ----------
+    width_ms : str | list | tuple
+        Width specification in milliseconds, e.g., "1,200" or [1, 200]
+    sampling_rate : float
+        Samples per second (Hz)
+
+    Returns
+    -------
+    list[int]
+        [min_width_samples, max_width_samples]
+    """
+    try:
+        if isinstance(width_ms, str):
+            values = [v.strip() for v in width_ms.split(',')]
+        else:
+            values = [str(v) for v in width_ms]
+
+        width_samples = [int(float(v) * sampling_rate / 1000) for v in values]
+        return width_samples
+    except Exception as e:
+        logger.error(f"Error converting width from ms to samples: {e}\n{traceback.format_exc()}")
+        # Reasonable default window if conversion fails
+        return [1, 200]
+
 def reset_application_state(app):
     """
     Reset all application variables and plots to initial state
@@ -216,7 +246,11 @@ def reset_application_state(app):
 
         # Clear results summary
         if hasattr(app, 'results_summary'):
-            app.update_results_summary(preview_text="")
+            try:
+                from ui.ui_utils import update_results_summary_with_ui
+                update_results_summary_with_ui(app, preview_text="")
+            except Exception:
+                pass
         else:
             # Fallback to just updating the preview label
             app.preview_label.config(text="", foreground=app.theme_manager.get_color('text'))

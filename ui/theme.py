@@ -835,8 +835,8 @@ class ThemeManager:
         
         # Apply to each axis
         for ax in axes_list:
-            # Set axis background, text, and grid colors
-            ax.set_facecolor(self.COLORS['background'])
+            # Set axis background to canvas background for plot readability
+            ax.set_facecolor(self.COLORS['canvas_bg'])
             ax.xaxis.label.set_color(self.COLORS['text'])
             ax.yaxis.label.set_color(self.COLORS['text'])
             ax.title.set_color(self.COLORS['text'])

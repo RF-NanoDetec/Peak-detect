@@ -276,7 +276,11 @@ def browse_files(app, time_resolution=1e-4):
         app.status_indicator.set_text(f"Loaded {len(files)} files successfully")
         
         app.preview_label.config(text="Files loaded successfully", foreground="green")
-        app.update_results_summary(preview_text=preview_text)
+        try:
+            from ui.ui_utils import update_results_summary_with_ui
+            update_results_summary_with_ui(app, preview_text=preview_text)
+        except Exception:
+            pass
         
         return t_value, x_value, data, loaded_files
         

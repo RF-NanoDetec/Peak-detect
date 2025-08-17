@@ -189,6 +189,94 @@ def analyze_time_resolved(app):
         logger.error(f"Error in analyze_time_resolved: {str(e)}\n{traceback.format_exc()}")
         return None
 
+
+@profile_function
+def analyze_time_resolved_pure(
+    signal,
+    time_values,
+    width_ms,
+    time_resolution,
+    prominence_threshold,
+    distance,
+    rel_height,
+    prominence_ratio,
+):
+    """
+    Pure, UI-free time-resolved analysis.
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        Filtered signal
+    time_values : np.ndarray
+        Time values in seconds
+    width_ms : str | list | tuple
+        Peak width range in milliseconds, e.g., "1,200" or [1, 200]
+    time_resolution : float
+        Time resolution in seconds per sample (e.g., 1e-4)
+    prominence_threshold : float
+        Minimum prominence/height
+    distance : int
+        Minimum distance between peaks (in samples)
+    rel_height : float
+        Relative height for widths
+    prominence_ratio : float
+        Prominence-to-height ratio filter
+
+    Returns
+    -------
+    tuple | None
+        (peaks, areas, intervals) or None if no peaks
+    """
+    try:
+        if signal is None or len(signal) == 0:
+            return None
+
+        # Normalize width input
+        if isinstance(width_ms, str):
+            width_values = width_ms.strip().split(',')
+        else:
+            width_values = [str(v) for v in width_ms]
+
+        # Convert width from ms to samples
+        if time_resolution is None or time_resolution <= 0:
+            time_resolution = 1e-4
+        sampling_rate = 1.0 / time_resolution
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+
+        # Detect peaks
+        peaks, properties = find_peaks_with_window(
+            signal,
+            width=width_p,
+            prominence=prominence_threshold,
+            distance=distance,
+            rel_height=rel_height,
+            prominence_ratio=prominence_ratio,
+        )
+
+        if len(peaks) == 0:
+            return None
+
+        # Areas under peaks
+        areas = []
+        for i, _ in enumerate(peaks):
+            left_idx = int(properties["left_ips"][i])
+            right_idx = int(properties["right_ips"][i])
+            if left_idx < right_idx:
+                areas.append(np.trapz(signal[left_idx:right_idx]))
+            else:
+                areas.append(0)
+        areas = np.array(areas)
+
+        # Intervals between peaks
+        intervals = calculate_peak_intervals(time_values, peaks)
+
+        return peaks, areas, intervals
+
+    except Exception as e:
+        logger.error(f"Error in analyze_time_resolved_pure: {str(e)}\n{traceback.format_exc()}")
+        return None
+
 @profile_function
 def calculate_auto_threshold(signal, percentile=95, sigma_multiplier=None):
     """

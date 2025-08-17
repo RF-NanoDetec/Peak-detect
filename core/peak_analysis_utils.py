@@ -330,17 +330,25 @@ def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold):
         else:
             filtered_properties[key] = values
     
-    # Print debugging information
+    # Logging for debugging information
+    import logging
+    _logger = logging.getLogger(__name__)
     total_peaks = len(peaks)
     filtered_out_peaks = total_peaks - len(filtered_peaks)
-    print(f"Filtered out {filtered_out_peaks} subpeaks out of {total_peaks} total peaks")
-    print(f"Using prominence-to-height ratio threshold of {prominence_ratio_threshold:.2f}")
-    print(f"Keeping {len(filtered_peaks)} peaks with prominence/height ratio >= {prominence_ratio_threshold:.2f}")
+    _logger.debug(
+        f"Filtered out {filtered_out_peaks} subpeaks out of {total_peaks} total peaks"
+    )
+    _logger.debug(
+        f"Using prominence-to-height ratio threshold of {prominence_ratio_threshold:.2f}"
+    )
+    _logger.debug(
+        f"Keeping {len(filtered_peaks)} peaks with prominence/height ratio >= {prominence_ratio_threshold:.2f}"
+    )
     
     return filtered_peaks, filtered_properties
 
 # Estimate the average peak width
-def estimate_peak_widths(signal, fs, prominence_threshold, time_resolution=1e-4):
+def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=1e-4, big_counts=None, **kwargs):
     """
     Estimate the average width of peaks in a signal.
     
@@ -351,9 +359,10 @@ def estimate_peak_widths(signal, fs, prominence_threshold, time_resolution=1e-4)
     Parameters:
         signal (numpy.ndarray): The signal to analyze
         fs (float): Sampling frequency of the signal
-        prominence_threshold (float): Threshold for peak prominence or height
-        time_resolution (float, optional): Time resolution in seconds per unit.
-            Defaults to 1e-4 (0.1 milliseconds per unit).
+        prominence_threshold (float | None): Threshold for peak prominence or height. If None,
+            an adaptive threshold of 5*std(signal) is used.
+        time_resolution (float, optional): Deprecated. Not used for conversion; widths are
+            converted to seconds using fs. Kept for backward compatibility.
         
     Returns:
         float: Average width of peaks in seconds
@@ -364,44 +373,52 @@ def estimate_peak_widths(signal, fs, prominence_threshold, time_resolution=1e-4)
         time resolution of 0.1ms (1e-4 seconds), a width of 10 samples 
         represents 1 millisecond.
     """
-    print("\n---- DEBUG: Starting estimate_peak_widths ----")
-    print(f"Input signal shape: {signal.shape}")
-    print(f"Sampling frequency (fs): {fs} Hz")
-    print(f"Prominence threshold: {prominence_threshold}")
-    print(f"Time resolution: {time_resolution} seconds per unit")
+    import logging
+    _logger = logging.getLogger(__name__)
+    _logger.debug("---- Starting estimate_peak_widths ----")
+    _logger.debug(f"Input signal shape: {signal.shape}")
+    _logger.debug(f"Sampling frequency (fs): {fs} Hz")
+    # Determine threshold if not provided
+    if prominence_threshold is None or prominence_threshold <= 0:
+        prominence_threshold = max(5.0 * np.std(signal), 0.1)
+    _logger.debug(f"Prominence threshold: {prominence_threshold}")
     
     # Find significant peaks for width estimation
     peaks, _ = find_peaks(signal, width=[1, 20000], prominence=prominence_threshold, distance=1000)
     
     # If no peaks found, use default width
     if len(peaks) == 0:
-        print("DEBUG: No peaks found for width estimation, using default width")
+        _logger.debug("No peaks found for width estimation, using default width")
         default_width = 0.001  # Default width if no peaks found (1 ms)
-        print(f"Returned default width: {default_width}")
-        print("---- DEBUG: Finished estimate_peak_widths ----\n")
+        _logger.debug(f"Returned default width: {default_width}")
+        _logger.debug("---- Finished estimate_peak_widths ----")
         return default_width
     
     # Calculate widths at half-prominence
     width_results = peak_widths(signal, peaks, rel_height=0.5)
     widths = width_results[0]
     
-    # Calculate average width and convert to seconds using time_resolution
+    # Calculate average width and convert to seconds using sampling frequency
     avg_samples = np.mean(widths)
-    avg_width = avg_samples * time_resolution  # Convert from samples to seconds
+    # Prefer fs for conversion; fallback to time_resolution only if fs is invalid
+    if fs and fs > 0:
+        avg_width = avg_samples / fs
+    else:
+        avg_width = avg_samples * time_resolution
     
     # Print detailed debug info
-    print(f"DEBUG: Peaks found: {len(peaks)}")
+    _logger.debug(f"Peaks found: {len(peaks)}")
     if len(peaks) < 20:  # Only print all widths if there aren't too many
-        print(f"DEBUG: Raw width values in samples: {widths}")
+        _logger.debug(f"Raw width values in samples: {widths}")
     else:
-        print(f"DEBUG: First 5 width values in samples: {widths[:5]}...")
+        _logger.debug(f"First 5 width values in samples: {widths[:5]}...")
     
-    print(f"DEBUG: Average width in samples: {avg_samples:.2f}")
-    print(f"DEBUG: Time resolution: {time_resolution} seconds per unit")
-    print(f"DEBUG: Average width in seconds (avg_samples * time_resolution): {avg_width:.6f}")
-    print(f"DEBUG: Inverse of avg_width (1/avg_width): {1/avg_width:.2f}")
-    print(f"DEBUG: For cutoff calculation (1/avg_width): {1/avg_width:.2f} Hz")
-    print("---- DEBUG: Finished estimate_peak_widths ----\n")
+    _logger.debug(f"Average width in samples: {avg_samples:.2f}")
+    _logger.debug(f"Average width in seconds: {avg_width:.6f}")
+    if avg_width > 0:
+        _logger.debug(f"Inverse of avg_width (1/avg_width): {1/avg_width:.2f}")
+        _logger.debug(f"For cutoff calculation (1/avg_width): {1/avg_width:.2f} Hz")
+    _logger.debug("---- Finished estimate_peak_widths ----")
     
     return avg_width
 
@@ -461,6 +478,25 @@ def adjust_lowpass_cutoff(
         The return signature has changed from (filtered_signal, cutoff_frequency).
         The second element is now a dictionary of parameters.
     """
+    # Backwards compatibility: support legacy signature where the third argument
+    # is a numeric prominence threshold and the fourth is a normalization factor.
+    if not isinstance(filter_type, str):
+        try:
+            legacy_prominence = float(filter_type)
+        except Exception:
+            legacy_prominence = 0.1
+        try:
+            legacy_norm = float(manual_cutoff_hz)
+        except Exception:
+            legacy_norm = 1.0
+        cutoff_hz = calculate_lowpass_cutoff(
+            signal, fs, legacy_prominence, legacy_norm, time_resolution
+        )
+        filtered_signal_legacy = apply_butterworth_filter(
+            butter_order, cutoff_hz, 'lowpass', fs, signal
+        )
+        return filtered_signal_legacy, cutoff_hz
+
     print(f"\\n==== DEBUG: Starting adjust_lowpass_cutoff (Filter Type: {filter_type}) ====")
     print(f"DEBUG: Input parameters:")
     print(f"- fs: {fs}")
