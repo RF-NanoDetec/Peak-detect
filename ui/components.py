@@ -92,6 +92,19 @@ def create_toolbar(app, parent):
     # Primary actions
     ttk.Button(bar, text="Run All", command=app.run_all_pipeline, style='Primary.TButton').pack(side=tk.LEFT, padx=5)
     ttk.Button(bar, text="Open File", command=app.browse_file, style='Tool.TButton').pack(side=tk.LEFT, padx=5)
+
+    # Open Recent (dropdown)
+    try:
+        recent = app.prefs.get('recent_files', [])[:10]
+    except Exception:
+        recent = []
+    if recent:
+        recent_menu = tk.Menu(bar, tearoff=0)
+        for path in recent:
+            recent_menu.add_command(label=path, command=lambda p=path: app.open_path(p))
+        recent_btn = ttk.Menubutton(bar, text="Open Recent", style='Tool.TButton', direction='below')
+        recent_btn.pack(side=tk.LEFT, padx=5)
+        recent_btn['menu'] = recent_menu
     ttk.Button(bar, text="Export Plot", command=app.export_plot, style='Tool.TButton').pack(side=tk.LEFT, padx=5)
 
     # Right side controls
@@ -1307,9 +1320,14 @@ def create_peak_detection_tab(app, tab_control):
     scrollbar.pack(side="right", fill="y")
     app.peak_detection_main_canvas.pack(side="left", fill="both", expand=True)
 
-    # Create a dedicated Auto Threshold frame with clear explanation
-    auto_threshold_frame = ttk.LabelFrame(scrollable_frame, text="Automatic Threshold Detection")
-    auto_threshold_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Create a dedicated Auto Threshold section with clear explanation
+    _, _, auto_threshold_frame = create_section(
+        app,
+        scrollable_frame,
+        title="Automatic Threshold Detection",
+        help_text=None,
+        collapsible=False
+    )
     
     # Add description text
     description_text = (
@@ -1572,32 +1590,15 @@ def create_peak_detection_tab(app, tab_control):
         "You can manually edit this value or use auto-calculation."
     )
     
-    # Horizontal separator to visually separate auto threshold from other parameters
-    ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=10)
-    
-    # Create a collapsible frame for manual peak detection parameters
-    manual_params_frame = ttk.LabelFrame(scrollable_frame, text="Manual Peak Detection Parameters")
-    manual_params_frame.pack(fill=tk.X, padx=5, pady=5)
-    
-    # Add a toggle button for the manual parameters section
-    toggle_button = ttk.Button(
-        manual_params_frame,
-        text="▼ Show Manual Parameters",
-        command=lambda: toggle_section(manual_params_container, toggle_button)
+    # Collapsible Manual Peak Detection Parameters section
+    _, _, manual_params_container = create_section(
+        app,
+        scrollable_frame,
+        title="Manual Peak Detection Parameters",
+        help_text=None,
+        collapsible=True,
+        start_collapsed=True
     )
-    toggle_button.pack(fill=tk.X, padx=5, pady=5)
-    
-    # Container for manual parameters (initially hidden)
-    manual_params_container = ttk.Frame(manual_params_frame)
-    
-    # Function to toggle section visibility
-    def toggle_section(container, button):
-        if container.winfo_viewable():
-            container.pack_forget()
-            button.config(text="▼ Show Manual Parameters")
-        else:
-            container.pack(fill=tk.X, padx=5, pady=5)
-            button.config(text="▲ Hide Manual Parameters")
     
     # Create a single comprehensive visualization frame
     visualization_frame = ttk.LabelFrame(manual_params_container, text="Peak Detection Parameters Visualization")
@@ -1980,12 +1981,11 @@ def create_peak_analysis_tab(app, tab_control):
     tab_control.add(peak_analysis_tab, text="Analyze")  # Renamed from "Analysis"
 
     # Create a main container for all controls
-    main_container = ttk.Frame(peak_analysis_tab)
-    main_container.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+    main_container = ttk.Frame(peak_analysis_tab, padding=(10, 10, 10, 10))
+    main_container.pack(fill=tk.BOTH, expand=True, anchor="w")
     
     # Analysis Options Frame - placed at the top
-    analysis_options_frame = ttk.LabelFrame(main_container, text="Analysis Options")
-    analysis_options_frame.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+    _, _, analysis_options_frame = create_section(app, main_container, title="Analysis Options", help_text=None, collapsible=False)
 
     # Button container for analysis buttons
     button_container = ttk.Frame(analysis_options_frame)
@@ -2006,8 +2006,7 @@ def create_peak_analysis_tab(app, tab_control):
     ).pack(side=tk.LEFT, padx=5, pady=5)
     
     # Filter Controls Frame - placed below the analysis options
-    filter_frame = ttk.LabelFrame(main_container, text="Peak Filtering")
-    filter_frame.pack(fill=tk.X, padx=5, pady=5, anchor="w")
+    _, _, filter_frame = create_section(app, main_container, title="Peak Filtering", help_text=None, collapsible=False)
     
     # Create top row container for filter controls
     filter_controls_row = ttk.Frame(filter_frame)
@@ -2137,8 +2136,7 @@ def create_peak_analysis_tab(app, tab_control):
     )
 
     # --- Throughput Interval Control ---
-    interval_frame = ttk.LabelFrame(main_container, text="Throughput Interval (s)")
-    interval_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+    _, _, interval_frame = create_section(app, main_container, title="Throughput Interval (s)", help_text=None, collapsible=False)
     
     # Entry for precise value
     interval_entry = ttk.Entry(interval_frame, textvariable=app.throughput_interval, width=6)
@@ -2190,13 +2188,14 @@ def create_double_peak_analysis_tab(app, tab_control):
     double_peak_tab = ttk.Frame(tab_control)
     tab_control.add(double_peak_tab, text="Double Peak")  # Changed from "Double Peak Analysis"
     
-    # Parameter frame for double peak detection
-    param_frame = ttk.LabelFrame(double_peak_tab, text="Double Peak Detection Parameters")
-    param_frame.pack(fill=tk.X, padx=5, pady=5)
+    container = ttk.Frame(double_peak_tab, padding=(10, 10, 10, 10))
+    container.pack(fill=tk.BOTH, expand=True)
+    
+    # Parameter section for double peak detection
+    _, _, param_frame = create_section(app, container, title="Double Peak Detection Parameters", help_text=None, collapsible=False)
     
     # Distance parameters with sliders and entry fields
-    distance_frame = ttk.LabelFrame(param_frame, text="Peak Distance Range (ms)")
-    distance_frame.pack(fill=tk.X, padx=5, pady=5)
+    _, _, distance_frame = create_section(app, param_frame, title="Peak Distance Range (ms)", help_text=None, collapsible=False)
     
     # Create variables to store the slider values in milliseconds
     min_distance_ms = tk.DoubleVar(value=app.double_peak_min_distance.get() * 1000)
@@ -2321,8 +2320,7 @@ def create_double_peak_analysis_tab(app, tab_control):
     ttk.Label(max_slider_frame, text="ms").pack(side=tk.LEFT)
     
     # Amplitude ratio parameters
-    amp_frame = ttk.LabelFrame(param_frame, text="Amplitude Ratio")
-    amp_frame.pack(fill=tk.X, padx=5, pady=5)
+    _, _, amp_frame = create_section(app, param_frame, title="Amplitude Ratio", help_text=None, collapsible=False)
     
     # Create variables to store the slider values
     min_amp_ratio = tk.DoubleVar(value=app.double_peak_min_amp_ratio.get())
@@ -2455,8 +2453,7 @@ def create_double_peak_analysis_tab(app, tab_control):
     app.amp_hist_canvas = amp_hist_canvas
     
     # Width ratio parameters
-    width_frame = ttk.LabelFrame(param_frame, text="Width Ratio")
-    width_frame.pack(fill=tk.X, padx=5, pady=5)
+    _, _, width_frame = create_section(app, param_frame, title="Width Ratio", help_text=None, collapsible=False)
     
     # Create variables to store the slider values
     min_width_ratio = tk.DoubleVar(value=app.double_peak_min_width_ratio.get())

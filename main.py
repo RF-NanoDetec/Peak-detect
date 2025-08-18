@@ -162,6 +162,9 @@ class Application(tk.Tk):
         theme_name = self.prefs.get('theme', 'dark')
         self.theme_manager = ThemeManager(theme_name=theme_name)
         self.style = self.theme_manager.apply_theme(self)
+        # Initialize recent files list in prefs
+        self.prefs.setdefault('recent_files', [])
+
         # Ensure matplotlib theme is synchronized
         try:
             self.theme_manager.apply_matplotlib_theme()
@@ -948,11 +951,59 @@ class Application(tk.Tk):
             self.status_indicator.set_text("Double Peak Analysis Mode Enabled")
             
         result = browse_files_with_ui(self, time_resolution=time_res)
+        # Track recent files if a path or list of paths is returned
+        try:
+            paths = []
+            if isinstance(result, str):
+                paths = [result]
+            elif isinstance(result, (list, tuple)):
+                paths = [p for p in result if isinstance(p, str)]
+            if paths:
+                recent = self.prefs.get('recent_files', [])
+                for p in paths:
+                    if p in recent:
+                        recent.remove(p)
+                    recent.insert(0, p)
+                self.prefs['recent_files'] = recent[:10]
+                save_user_preferences(self.prefs)
+        except Exception:
+            pass
         try:
             self.update_action_states()
         except Exception:
             pass
         return result
+
+    @ui_action(
+        processing_message="Opening file...",
+        success_message="File opened",
+        error_message="Error opening file"
+    )
+    def open_path(self, path):
+        """Open a specific file path and update recents."""
+        try:
+            # Reuse browse handler path if available
+            # Set internal state and call core handler directly
+            # Delegating to core.file_handler if it supports direct path load
+            from core.file_handler import load_file_direct_with_ui as load_direct
+        except Exception:
+            load_direct = None
+        try:
+            if load_direct:
+                loaded = load_direct(self, path)
+            else:
+                # Fallback: set selection and call browse handler
+                loaded = browse_files_with_ui(self, preset_paths=[path], time_resolution=self.time_resolution.get())
+            # Update recent
+            recent = self.prefs.get('recent_files', [])
+            if path in recent:
+                recent.remove(path)
+            recent.insert(0, path)
+            self.prefs['recent_files'] = recent[:10]
+            save_user_preferences(self.prefs)
+            return loaded
+        except Exception as e:
+            raise e
 
     @ui_action(
         processing_message="Resetting application...",

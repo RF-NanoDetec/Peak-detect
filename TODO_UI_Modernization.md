@@ -25,13 +25,16 @@ Status owner: UI/UX pass for Peak Analysis Tool
 - [ ] Replace all hard-coded colors/rcParams in UI with `ThemeManager` tokens
 
 #### Step 4 — Top toolbar
-- [ ] Implement `Toolbar` component (title, theme toggle, density switch, Run All, Open Recent)
-- [ ] Mount toolbar in `Application.__init__` above main grid
+- [x] Implement `Toolbar` component (title, theme toggle, density switch, Run All, Open Recent)
+- [x] Mount toolbar in `Application.__init__` above main grid
 
 #### Step 5 — Componentize control panel
 - [x] Create `Section`, `Card`, `FormRow` helpers
-- [x] Start refactor: Data tab uses a padded content container; colors and tokens applied
-- [x] Begin refactor: Preprocess tab uses `Section`
+- [x] Data tab: padded content container; colors and tokens applied
+- [x] Preprocess tab: converted to `Section`
+- [x] Detect Peaks tab: wrapped groups in `Section` and made manual parameters collapsible
+- [x] Analyze tab: wrapped key groups in `Section`
+- [x] Double Peak tab: wrapped parameter groups in `Section`
 
 #### Step 6 — Welcome screen refresh
 - [ ] Update typography and actions; add "Open Recent" list; ensure theme awareness
@@ -42,7 +45,7 @@ Status owner: UI/UX pass for Peak Analysis Tool
 
 #### Step 8 — Preferences dialog
 - [ ] Theme (light/dark), Accent selection, Density (comfortable/compact), Start on Welcome, Recent limit
-- [ ] Persist via `load_user_preferences`/`save_user_preferences`
+- [x] Persist recent files; surface "Open Recent" in toolbar
 
 #### Step 9 — Matplotlib consistency
 - [ ] Remove ad-hoc styling in `plotting/*`; rely on `ThemeManager` rcParams and helpers
