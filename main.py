@@ -171,6 +171,13 @@ class Application(tk.Tk):
         # Store the StatusIndicator class for use in create_control_panel
         self.status_indicator_class = StatusIndicator
         
+        # Top toolbar
+        try:
+            from ui.components import create_toolbar
+            self.toolbar = create_toolbar(self, self)
+        except Exception:
+            pass
+
         # Initialize high-resolution figure
         self.figure = Figure(
             figsize=Config.Plot.FIGURE_SIZE, 
@@ -178,13 +185,21 @@ class Application(tk.Tk):
             facecolor=self.theme_manager.get_color('canvas_bg')
         )
         
-        # Configure default plot styling
-        plt.rcParams['figure.dpi'] = Config.Plot.DPI
-        plt.rcParams['savefig.dpi'] = Config.Plot.EXPORT_DPI
-        plt.rcParams['lines.linewidth'] = Config.Plot.LINE_WIDTH
-        plt.rcParams['font.size'] = Config.Plot.FONT_SIZE
-        plt.rcParams['axes.titlesize'] = Config.Plot.TITLE_SIZE
-        plt.rcParams['axes.labelsize'] = Config.Plot.LABEL_SIZE
+        # Configure default plot styling via ThemeManager and Config
+        try:
+            self.theme_manager.apply_matplotlib_theme()
+        except Exception:
+            pass
+        # Apply numeric rcParams that come from Config (non-color aesthetic tokens)
+        try:
+            plt.rcParams['figure.dpi'] = Config.Plot.DPI
+            plt.rcParams['savefig.dpi'] = Config.Plot.EXPORT_DPI
+            plt.rcParams['lines.linewidth'] = Config.Plot.LINE_WIDTH
+            plt.rcParams['font.size'] = Config.Plot.FONT_SIZE
+            plt.rcParams['axes.titlesize'] = Config.Plot.TITLE_SIZE
+            plt.rcParams['axes.labelsize'] = Config.Plot.LABEL_SIZE
+        except Exception:
+            pass
 
         # Initialize figure and canvas as None
         self.canvas = None

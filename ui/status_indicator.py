@@ -55,7 +55,14 @@ class StatusIndicator(ttk.Frame):
         self.indicator.pack(side=tk.LEFT, padx=(0, 8))
         
         # Create initial indicator circle with default color
-        self.indicator.create_oval(2, 2, 12, 12, fill="#e0e0e0", outline="#d0d0d0", tags="indicator")
+        # Initial indicator uses theme colors when available
+        if self.theme_manager:
+            fill = self.theme_manager.get_color('panel_bg')
+            outline = self.theme_manager.get_color('border')
+        else:
+            fill = "#e0e0e0"
+            outline = "#d0d0d0"
+        self.indicator.create_oval(2, 2, 12, 12, fill=fill, outline=outline, tags="indicator")
         
         # Status label with appropriate font
         if self.theme_manager:

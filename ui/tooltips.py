@@ -17,7 +17,7 @@ class EnhancedTooltip:
     """
     
     def __init__(self, widget, text, delay=300, duration=5000, 
-                 bg="#505a64", fg="white", font=None, padding=5):
+                 bg=None, fg=None, font=None, padding=5):
         """
         Initialize a new enhanced tooltip.
         
@@ -44,8 +44,17 @@ class EnhancedTooltip:
         self.text = text
         self.delay = delay
         self.duration = duration
-        self.bg = bg
-        self.fg = fg
+        # Default to theme colors if available
+        try:
+            app = widget.winfo_toplevel()
+            theme = getattr(app, 'theme_manager', None)
+            default_bg = theme.get_color('card_bg') if theme else '#505a64'
+            default_fg = theme.get_color('text') if theme else 'white'
+        except Exception:
+            default_bg = '#505a64'
+            default_fg = 'white'
+        self.bg = bg or default_bg
+        self.fg = fg or default_fg
         self.font = font or ("Segoe UI", 9)
         self.padding = padding
         

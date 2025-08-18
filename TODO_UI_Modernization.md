@@ -30,7 +30,7 @@ Status owner: UI/UX pass for Peak Analysis Tool
 
 #### Step 5 — Componentize control panel
 - [ ] Create `Section`, `Card`, `FormRow`, `LabeledField`
-- [ ] Refactor tabs to use sections, add collapsible "Advanced" areas
+- [x] Start refactor: Data tab uses a padded content container; colors and tokens applied
 
 #### Step 6 — Welcome screen refresh
 - [ ] Update typography and actions; add "Open Recent" list; ensure theme awareness

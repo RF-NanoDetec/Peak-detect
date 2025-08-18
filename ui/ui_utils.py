@@ -315,13 +315,23 @@ def add_tooltip(widget, text):
     tooltip.attributes("-topmost", True)  # Stay on top of all windows
     
     # Create a frame with a label inside the Toplevel
-    frame = tk.Frame(tooltip, bg="#FFFFEA", relief="solid", borderwidth=1)
+    # Use theme colors if available via widget's app reference
+    try:
+        app = widget.winfo_toplevel()
+        from ui import ThemeManager  # for isinstance check if needed
+        # Pick a subtle tooltip background derived from theme panel/card
+        bg_color = getattr(app, 'theme_manager', None).get_color('card_bg') if getattr(app, 'theme_manager', None) else "#FFFFEA"
+        border_color = getattr(app, 'theme_manager', None).get_color('border') if getattr(app, 'theme_manager', None) else "#CCCCAA"
+    except Exception:
+        bg_color = "#FFFFEA"
+        border_color = "#CCCCAA"
+    frame = tk.Frame(tooltip, bg=bg_color, relief="solid", borderwidth=1)
     frame.pack(fill="both", expand=True)
     
     label = tk.Label(
         frame, 
         text=text, 
-        bg="#FFFFEA", 
+        bg=bg_color, 
         padx=5,
         pady=3,
         wraplength=250,

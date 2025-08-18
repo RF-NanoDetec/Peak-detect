@@ -17,6 +17,43 @@ from PIL import Image, ImageTk
 import numpy as np
 from config.settings import Config
 
+def create_toolbar(app, parent):
+    """Create a top toolbar with key actions and theme/density toggles."""
+    bar = ttk.Frame(parent, style='Toolbar.TFrame')
+    bar.pack(fill=tk.X, padx=10, pady=6)
+
+    # App title
+    ttk.Label(bar, text="Peak Analysis Tool", style='Heading.TLabel').pack(side=tk.LEFT)
+
+    # Spacer
+    ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+
+    # Primary actions
+    ttk.Button(bar, text="Run All", command=app.run_all_pipeline, style='Primary.TButton').pack(side=tk.LEFT, padx=5)
+    ttk.Button(bar, text="Open File", command=app.browse_file, style='Tool.TButton').pack(side=tk.LEFT, padx=5)
+    ttk.Button(bar, text="Export Plot", command=app.export_plot, style='Tool.TButton').pack(side=tk.LEFT, padx=5)
+
+    # Right side controls
+    right = ttk.Frame(bar, style='Toolbar.TFrame')
+    right.pack(side=tk.RIGHT)
+    
+    # Theme toggle
+    theme_btn = ttk.Button(right, text="Toggle Theme", command=app.toggle_theme, style='Tool.TButton')
+    theme_btn.pack(side=tk.LEFT, padx=5)
+    app.add_tooltip(theme_btn, "Switch between light and dark theme")
+
+    # Density toggle
+    def toggle_density():
+        new_density = 'compact' if app.theme_manager.current_density == 'comfortable' else 'comfortable'
+        app.theme_manager.set_density(new_density)
+        app.theme_manager.apply_theme(app)
+        app.theme_manager.update_sliders(app)
+    density_btn = ttk.Button(right, text="Toggle Density", command=toggle_density, style='Tool.TButton')
+    density_btn.pack(side=tk.LEFT, padx=5)
+    app.add_tooltip(density_btn, "Toggle UI density between comfortable and compact")
+
+    return bar
+
 def validate_float_entry(value):
     """Validate that entry value is a valid float or empty string"""
     if value == "" or value == "-":
@@ -436,8 +473,12 @@ def create_data_loading_tab(app, tab_control):
     data_loading_tab = ttk.Frame(tab_control)
     tab_control.add(data_loading_tab, text="Data")
 
+    # Use a content container with consistent padding
+    content = ttk.Frame(data_loading_tab, padding=(10, 10, 10, 10))
+    content.pack(fill=tk.BOTH, expand=True)
+
     # File mode selection frame
-    file_mode_frame = ttk.LabelFrame(data_loading_tab, text="File Mode")
+    file_mode_frame = ttk.LabelFrame(content, text="File Mode")
     file_mode_frame.pack(fill=tk.X, padx=5, pady=5)
 
     # Radio buttons for file mode
@@ -463,7 +504,7 @@ def create_data_loading_tab(app, tab_control):
     )
 
     # Add peak analysis mode frame (normal vs double peak)
-    peak_mode_frame = ttk.LabelFrame(data_loading_tab, text="Peak Analysis Mode")
+    peak_mode_frame = ttk.LabelFrame(content, text="Peak Analysis Mode")
     peak_mode_frame.pack(fill=tk.X, padx=5, pady=5)
     
     # Radio buttons for normal vs double peak analysis
@@ -493,7 +534,7 @@ def create_data_loading_tab(app, tab_control):
     )
 
     # File selection frame
-    file_frame = ttk.LabelFrame(data_loading_tab, text="File Selection")
+    file_frame = ttk.LabelFrame(content, text="File Selection")
     file_frame.pack(fill=tk.X, padx=5, pady=5)
 
     # Browse button with styled appearance
@@ -517,7 +558,7 @@ def create_data_loading_tab(app, tab_control):
     app.timestamps_entry.pack_forget()
     
     # Time resolution configuration - make it more prominent
-    time_res_frame = ttk.LabelFrame(data_loading_tab, text="⚠️ Dwell Time - Critical Setting ⚠️")
+    time_res_frame = ttk.LabelFrame(content, text="⚠️ Dwell Time - Critical Setting ⚠️")
     time_res_frame.pack(fill=tk.X, padx=5, pady=10, ipady=5)
     
     # Create a container for the explanation text
@@ -626,7 +667,7 @@ def create_data_loading_tab(app, tab_control):
     )
 
     # Protocol information frame
-    protocol_frame = ttk.LabelFrame(data_loading_tab, text="Protocol Information")
+    protocol_frame = ttk.LabelFrame(content, text="Protocol Information")
     protocol_frame.pack(fill=tk.X, padx=5, pady=5)
 
     # Protocol information entries
@@ -790,7 +831,7 @@ def create_preprocessing_tab(app, tab_control):
     # Draw axis
     app.preprocessing_comparison_canvas.create_line(
         10, baseline_y, canvas_width-10, baseline_y,
-        fill="#aaaaaa", dash=(4, 4), width=1
+        fill=app.theme_manager.get_color('border'), dash=(4, 4), width=1
     )
     
     # Draw raw data (noisy)
@@ -804,7 +845,12 @@ def create_preprocessing_tab(app, tab_control):
         raw_points.append(int(y))
     
     # Create raw data curve
-    app.preprocessing_comparison_canvas.create_line(raw_points, fill="#333333", width=1.5, smooth=False)
+    app.preprocessing_comparison_canvas.create_line(
+        raw_points,
+        fill=app.theme_manager.get_plot_color('line_raw'),
+        width=1.5,
+        smooth=False
+    )
     
     # Draw filtered data (smooth)
     filtered_points = []
@@ -814,7 +860,12 @@ def create_preprocessing_tab(app, tab_control):
         filtered_points.append(x)
         filtered_points.append(int(y))
     
-    app.preprocessing_comparison_canvas.create_line(filtered_points, fill="#0078D7", width=2, smooth=True)
+    app.preprocessing_comparison_canvas.create_line(
+        filtered_points,
+        fill=app.theme_manager.get_plot_color('line_filtered'),
+        width=2,
+        smooth=True
+    )
     
     # Function to update UI based on filter state
     def update_filter_state(is_filtered):
@@ -1280,12 +1331,12 @@ def create_peak_detection_tab(app, tab_control):
     # Low sigma (e.g., σ=2) - will detect all peaks including some noise
     app.threshold_diagram_canvas.create_line(
         10, low_thresh_y, canvas_width-10, low_thresh_y,
-        fill="#4CAF50", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_color('success'), width=1, dash=(2, 2)
     )
     app.threshold_diagram_canvas.create_text(
         canvas_width-15, low_thresh_y-8, 
         text="σ=2", 
-        fill="#4CAF50", 
+        fill=app.theme_manager.get_color('success'), 
         anchor=tk.E,
         font=("TkDefaultFont", 8)
     )
@@ -1293,12 +1344,12 @@ def create_peak_detection_tab(app, tab_control):
     # Medium sigma (e.g., σ=5) - balanced threshold
     app.threshold_diagram_canvas.create_line(
         10, med_thresh_y, canvas_width-10, med_thresh_y,
-        fill="#FF9800", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_color('warning'), width=1, dash=(2, 2)
     )
     app.threshold_diagram_canvas.create_text(
         canvas_width-15, med_thresh_y-8, 
         text="σ=5", 
-        fill="#FF9800", 
+        fill=app.theme_manager.get_color('warning'), 
         anchor=tk.E,
         font=("TkDefaultFont", 8)
     )
@@ -1306,12 +1357,12 @@ def create_peak_detection_tab(app, tab_control):
     # High sigma (e.g., σ=8) - only detects the largest peak
     app.threshold_diagram_canvas.create_line(
         10, high_thresh_y, canvas_width-10, high_thresh_y,
-        fill="#F44336", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_color('error'), width=1, dash=(2, 2)
     )
     app.threshold_diagram_canvas.create_text(
         canvas_width-15, high_thresh_y-8, 
         text="σ=8", 
-        fill="#F44336", 
+        fill=app.theme_manager.get_color('error'), 
         anchor=tk.E,
         font=("TkDefaultFont", 8)
     )
@@ -1322,7 +1373,7 @@ def create_peak_detection_tab(app, tab_control):
         app.threshold_diagram_canvas.create_oval(
             x_pos-3, low_thresh_y-3, 
             x_pos+3, low_thresh_y+3, 
-            fill="#4CAF50", outline=""
+            fill=app.theme_manager.get_color('success'), outline=""
         )
         
     # For medium threshold (detects medium and large peaks)
@@ -1330,14 +1381,14 @@ def create_peak_detection_tab(app, tab_control):
         app.threshold_diagram_canvas.create_oval(
             x_pos-3, med_thresh_y-3, 
             x_pos+3, med_thresh_y+3, 
-            fill="#FF9800", outline=""
+            fill=app.theme_manager.get_color('warning'), outline=""
         )
         
     # For high threshold (detects only the largest peak)
     app.threshold_diagram_canvas.create_oval(
         190-3, high_thresh_y-3, 
         190+3, high_thresh_y+3, 
-        fill="#F44336", outline=""
+        fill=app.theme_manager.get_color('error'), outline=""
     )
     
     # Add explanatory caption
@@ -1549,12 +1600,12 @@ def create_peak_detection_tab(app, tab_control):
     app.manual_diagram_canvas.create_line(
         peaks[0]['x'], distance_y,
         peaks[1]['x'], distance_y,
-        fill="#FF6B6B", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_color('error'), width=1, dash=(2, 2)
     )
     app.manual_diagram_canvas.create_text(
         (peaks[0]['x'] + peaks[1]['x'])/2, distance_y + 10,
         text="Distance between peaks",
-        fill="black",
+        fill=app.theme_manager.get_color('text'),
         font=("TkDefaultFont", 8)
     )
     
@@ -1564,12 +1615,12 @@ def create_peak_detection_tab(app, tab_control):
     app.manual_diagram_canvas.create_line(
         peaks[0]['x'], baseline_y - peaks[0]['height'],  # Start from peak top
         peaks[0]['x'], rel_height_y,  # End at width measurement height
-        fill="#4ECDC4", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_plot_color('line_dist_max'), width=1, dash=(2, 2)
     )
     app.manual_diagram_canvas.create_text(
         peaks[0]['x'], rel_height_y - 10,
         text="Relative Height (0.8 = 80% from top)",
-        fill="black",
+        fill=app.theme_manager.get_color('text'),
         font=("TkDefaultFont", 8)
     )
     
@@ -1579,25 +1630,25 @@ def create_peak_detection_tab(app, tab_control):
     app.manual_diagram_canvas.create_line(
         peaks[0]['x'] - peaks[0]['width'], width_y,
         peaks[0]['x'] + peaks[0]['width'], width_y,
-        fill="#45B7D1", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_plot_color('line_filtered'), width=1, dash=(2, 2)
     )
     # Vertical lines to show width measurement
     app.manual_diagram_canvas.create_line(
         peaks[0]['x'] - peaks[0]['width'], width_y,
         peaks[0]['x'] - peaks[0]['width'], rel_height_y,
-        fill="#45B7D1", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_plot_color('line_filtered'), width=1, dash=(2, 2)
     )
     app.manual_diagram_canvas.create_line(
         peaks[0]['x'] + peaks[0]['width'], width_y,
         peaks[0]['x'] + peaks[0]['width'], rel_height_y,
-        fill="#45B7D1", width=1, dash=(2, 2)
+        fill=app.theme_manager.get_plot_color('line_filtered'), width=1, dash=(2, 2)
     )
     
     # Add width range text for first peak
     app.manual_diagram_canvas.create_text(
         peaks[0]['x'], width_y + 10,
         text="Width Range",
-        fill="black",
+        fill=app.theme_manager.get_color('text'),
         font=("TkDefaultFont", 8)
     )
     
