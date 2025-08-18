@@ -29,8 +29,9 @@ Status owner: UI/UX pass for Peak Analysis Tool
 - [ ] Mount toolbar in `Application.__init__` above main grid
 
 #### Step 5 — Componentize control panel
-- [ ] Create `Section`, `Card`, `FormRow`, `LabeledField`
+- [x] Create `Section`, `Card`, `FormRow` helpers
 - [x] Start refactor: Data tab uses a padded content container; colors and tokens applied
+- [x] Begin refactor: Preprocess tab uses `Section`
 
 #### Step 6 — Welcome screen refresh
 - [ ] Update typography and actions; add "Open Recent" list; ensure theme awareness

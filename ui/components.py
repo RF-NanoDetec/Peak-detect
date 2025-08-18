@@ -17,6 +17,67 @@ from PIL import Image, ImageTk
 import numpy as np
 from config.settings import Config
 
+def create_card(parent, padding=(10, 10, 10, 10)):
+    """Return a card-like frame with standard padding and border."""
+    card = ttk.Frame(parent, style='Card.TFrame', padding=padding)
+    return card
+
+def create_section(app, parent, title, help_text=None, collapsible=False, start_collapsed=False):
+    """
+    Create a titled section with optional help text and collapsible content.
+
+    Returns a tuple: (section_frame, header_frame, content_frame)
+    """
+    section_frame = create_card(parent, padding=(8, 8, 8, 8))
+    section_frame.pack(fill=tk.X, padx=5, pady=6)
+
+    header = ttk.Frame(section_frame)
+    header.pack(fill=tk.X)
+
+    title_label = ttk.Label(header, text=title, style='Heading.TLabel')
+    title_label.pack(side=tk.LEFT)
+
+    toggle_btn = None
+    content = ttk.Frame(section_frame)
+    content.pack(fill=tk.X, pady=(6, 0))
+
+    if help_text:
+        help_label = ttk.Label(content, text=help_text, style='Body.TLabel', wraplength=480, justify=tk.LEFT)
+        help_label.pack(fill=tk.X, pady=(0, 6))
+
+    if collapsible:
+        state = {'collapsed': bool(start_collapsed)}
+
+        def toggle():
+            state['collapsed'] = not state['collapsed']
+            if state['collapsed']:
+                content.forget()
+                toggle_btn.config(text='Show')
+            else:
+                content.pack(fill=tk.X, pady=(6, 0))
+                toggle_btn.config(text='Hide')
+
+        toggle_btn = ttk.Button(header, text=('Show' if start_collapsed else 'Hide'), command=toggle, style='Tool.TButton')
+        toggle_btn.pack(side=tk.RIGHT)
+        app.add_tooltip(toggle_btn, "Show/Hide section content")
+
+    return section_frame, header, content
+
+def form_row(parent, label_text, widget_factory, help_text=None):
+    """
+    Create a labeled form row. widget_factory should be a callable returning the input widget.
+    Returns the created widget.
+    """
+    row = ttk.Frame(parent)
+    row.pack(fill=tk.X, padx=5, pady=3)
+    ttk.Label(row, text=label_text).pack(side=tk.LEFT, padx=(0, 8))
+    widget = widget_factory(row)
+    widget.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    if help_text:
+        hint = ttk.Label(row, text=help_text, style='Small.TLabel')
+        hint.pack(side=tk.LEFT, padx=8)
+    return widget
+
 def create_toolbar(app, parent):
     """Create a top toolbar with key actions and theme/density toggles."""
     bar = ttk.Frame(parent, style='Toolbar.TFrame')
@@ -739,29 +800,21 @@ def create_preprocessing_tab(app, tab_control):
     preprocessing_tab = ttk.Frame(tab_control)
     tab_control.add(preprocessing_tab, text="Preprocess")
 
-    # Add some padding to the main tab content area
-    content_frame = ttk.Frame(preprocessing_tab, padding="10 10 10 10")
+    content_frame = ttk.Frame(preprocessing_tab, padding=(10, 10, 10, 10))
     content_frame.pack(expand=True, fill=tk.BOTH)
-    
-    # Make content_frame expand with window
-    content_frame.columnconfigure(0, weight=1) 
+    content_frame.columnconfigure(0, weight=1)
 
-    mode_frame = ttk.LabelFrame(content_frame, text="Signal Processing Mode")
-    mode_frame.pack(fill=tk.X, padx=5, pady=5)
-    
-    # Add description text
-    description_text = (
-        "Signal preprocessing helps improve peak detection by reducing noise and enhancing signal quality.\n"
-        "You can choose between filtered data (recommended for most signals) or raw data (preserves original characteristics)."
+    # Section: Signal Processing Mode
+    _, _, mode_frame = create_section(
+        app,
+        content_frame,
+        title="Signal Processing Mode",
+        help_text=(
+            "Signal preprocessing helps improve peak detection by reducing noise and enhancing signal quality. "
+            "Choose filtered data (recommended) or raw data (preserves original characteristics)."
+        ),
+        collapsible=False
     )
-    description_label = ttk.Label(
-        mode_frame, 
-        text=description_text,
-        wraplength=380, 
-        justify=tk.LEFT,
-        padding=(5, 5)
-    )
-    description_label.pack(fill=tk.X, padx=5, pady=5)
     
     # Create a more compact and modern processing mode selector
     mode_selector = ttk.Frame(mode_frame)
