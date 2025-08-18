@@ -16,10 +16,10 @@ Status owner: UI/UX pass for Peak Analysis Tool
 - [x] Add `apply_matplotlib_theme()` in `ui/theme.py` and call it from `main.py`
 
 #### Step 2 — ttk style polish (modern look)
-- [ ] Buttons: visible focus ring; clearer hover/active states
-- [ ] Notebook tabs: underline/indicator for active; better selected contrast
-- [ ] Scrollbar: slimmer track/handle with hover state
-- [ ] Progressbars: semantic variants (Primary/Success/Warning/Error) and consistent thickness
+- [x] Buttons: visible focus ring; clearer hover/active states
+- [x] Notebook tabs: indicator for active; better selected/active background
+- [x] Scrollbar: slimmer arrowsize, active state
+- [x] Progressbars: semantic variants (Primary/Success/Warning/Error/Info) and consistent thickness
 
 #### Step 3 — Tokenize remaining literals
 - [ ] Replace all hard-coded colors/rcParams in UI with `ThemeManager` tokens

@@ -373,9 +373,10 @@ class ThemeManager:
             font=self.FONTS['default']
         )
         style.map('TButton',
-            background=[('active', self.COLORS['button_pressed']), 
+            background=[('active', self.COLORS['button_pressed']),
                         ('pressed', self.COLORS['button_pressed'])],
-            relief=[('pressed', 'sunken')]
+            relief=[('pressed', 'sunken')],
+            bordercolor=[('focus', self.FOCUS['ring_color'])]
         )
         
         # Configure primary action button
@@ -464,7 +465,7 @@ class ThemeManager:
             font=self.FONTS['default']
         )
         style.map('TNotebook.Tab',
-            background=[('selected', self.COLORS['primary'])],
+            background=[('selected', self.COLORS['primary']), ('active', self.COLORS['highlight'])],
             foreground=[('selected', 'white')],
             expand=[('selected', [1, 1, 1, 0])]
         )
@@ -477,10 +478,12 @@ class ThemeManager:
             thickness=progress_thickness_value
         )
         
-        # Configure Success Progressbar
-        style.configure('Success.TProgressbar',
-            background=self.COLORS['success']
-        )
+        # Semantic Progressbars
+        style.configure('Primary.Horizontal.TProgressbar', background=self.COLORS['primary'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Success.Horizontal.TProgressbar', background=self.COLORS['success'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Warning.Horizontal.TProgressbar', background=self.COLORS['warning'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Error.Horizontal.TProgressbar', background=self.COLORS['error'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Info.Horizontal.TProgressbar', background=self.COLORS['info'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
         
         # Configure Scrollbar
         style.configure('TScrollbar',
@@ -488,8 +491,9 @@ class ThemeManager:
             troughcolor=self.COLORS['panel_bg'],
             borderwidth=1,
             bordercolor=self.COLORS['border'],
-            arrowsize=14
+            arrowsize=10
         )
+        style.map('TScrollbar', background=[('active', self.COLORS['highlight'])])
         
         # Configure TEntry
         style.configure('TEntry',
@@ -505,7 +509,7 @@ class ThemeManager:
         )
         style.map('TEntry',
             fieldbackground=[('readonly', self.COLORS['background'])],
-            bordercolor=[('focus', self.COLORS['highlight'])]
+            bordercolor=[('focus', self.FOCUS['ring_color'])]
         )
         
         # Configure Treeview
@@ -573,7 +577,7 @@ class ThemeManager:
         )
         style.map('TCombobox',
             fieldbackground=[('readonly', 'white'), ('disabled', self.COLORS['panel_bg'])],
-            bordercolor=[('focus', self.COLORS['highlight'])]
+            bordercolor=[('focus', self.FOCUS['ring_color'])]
         )
 
         # --- Modern extras: cards, toolbar, status, and consistent progressbar names ---
@@ -611,12 +615,7 @@ class ThemeManager:
         )
 
         # Provide a consistent alias used by components
-        style.configure('Green.Horizontal.TProgressbar',
-            background=self.COLORS['success'],
-            troughcolor=self.COLORS['panel_bg'],
-            borderwidth=0,
-            thickness=8
-        )
+        style.configure('Green.Horizontal.TProgressbar', background=self.COLORS['success'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
         
     def _apply_dark_theme(self, style):
         """Apply the dark theme to all ttk widgets."""
@@ -655,7 +654,8 @@ class ThemeManager:
             background=[('active', self.COLORS['button_pressed']), 
                         ('pressed', self.COLORS['button_pressed'])],
             foreground=[('active', 'white'), ('pressed', 'white')],
-            relief=[('pressed', 'flat')]
+            relief=[('pressed', 'flat')],
+            bordercolor=[('focus', self.FOCUS['ring_color'])]
         )
         
         # Primary action button
@@ -750,7 +750,7 @@ class ThemeManager:
             font=self.FONTS['default']
         )
         style.map('TNotebook.Tab',
-            background=[('selected', self.COLORS['primary'])],
+            background=[('selected', self.COLORS['primary']), ('active', self.COLORS['button_pressed'])],
             foreground=[('selected', 'white')],
             expand=[('selected', [1, 1, 1, 0])]
         )
@@ -776,13 +776,9 @@ class ThemeManager:
             bordercolor=self.COLORS['border'],
             arrowcolor=self.COLORS['text'],
             borderwidth=1,
-            arrowsize=14
+            arrowsize=10
         )
-        style.map('TScrollbar',
-            background=[('active', self.COLORS['primary']), 
-                       ('pressed', self.COLORS['primary'])],
-            arrowcolor=[('active', 'white'), ('pressed', 'white')]
-        )
+        style.map('TScrollbar', background=[('active', self.COLORS['button_pressed'])], arrowcolor=[('active', 'white')])
         
         # === ENTRY FIELDS ===
         style.configure('TEntry',
@@ -801,7 +797,7 @@ class ThemeManager:
                             ('disabled', self.COLORS['background'])],
             foreground=[('readonly', self.COLORS['text_secondary']), 
                        ('disabled', self.COLORS['text_secondary'])],
-            bordercolor=[('focus', self.COLORS['secondary'])]
+            bordercolor=[('focus', self.FOCUS['ring_color'])]
         )
         
         # === COMBOBOX ===
@@ -819,7 +815,7 @@ class ThemeManager:
                             ('disabled', self.COLORS['background'])],
             foreground=[('readonly', self.COLORS['text']), 
                        ('disabled', self.COLORS['text_secondary'])],
-            bordercolor=[('focus', self.COLORS['secondary'])]
+            bordercolor=[('focus', self.FOCUS['ring_color'])]
         )
         
         # === RADIO BUTTONS ===
@@ -956,12 +952,14 @@ class ThemeManager:
         )
 
         # Provide a consistent alias used by components
-        style.configure('Green.Horizontal.TProgressbar',
-            background=self.COLORS['success'],
-            troughcolor=self.COLORS['panel_bg'],
-            borderwidth=0,
-            thickness=8
-        )
+        style.configure('Green.Horizontal.TProgressbar', background=self.COLORS['success'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+
+        # Semantic Progressbars
+        style.configure('Primary.Horizontal.TProgressbar', background=self.COLORS['primary'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Success.Horizontal.TProgressbar', background=self.COLORS['success'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Warning.Horizontal.TProgressbar', background=self.COLORS['warning'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Error.Horizontal.TProgressbar', background=self.COLORS['error'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
+        style.configure('Info.Horizontal.TProgressbar', background=self.COLORS['info'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
     
     def _apply_default_theme(self, style):
         """Apply the default theme (fallback)."""
