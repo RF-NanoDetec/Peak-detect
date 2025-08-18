@@ -328,10 +328,16 @@ def add_tooltip(widget, text):
     frame = tk.Frame(tooltip, bg=bg_color, relief="solid", borderwidth=1)
     frame.pack(fill="both", expand=True)
     
+    # High-contrast text based on theme
+    try:
+        fg_color = app.theme_manager.get_color('text') if app.theme_manager.current_theme == 'light' else '#ffffff'
+    except Exception:
+        fg_color = 'black'
     label = tk.Label(
         frame, 
         text=text, 
         bg=bg_color, 
+        fg=fg_color,
         padx=5,
         pady=3,
         wraplength=250,

@@ -58,6 +58,13 @@ Status owner: UI/UX pass for Peak Analysis Tool
 - [ ] Remove dead styles, update screenshots in `docs/` and `README.md`
 - [ ] Final QA on Windows scaling 100–150%
 
+#### Reported Issues (to fix next)
+- [ ] Duplicate action bars: keep only menu bar + one primary toolbar; remove functional bar under preview and any duplicate theme toggles/actions
+- [ ] Tooltip contrast: ensure high-contrast foreground/background for dark and light themes; unify tooltip styling via tokens
+- [ ] Light theme backgrounds: fix dark backgrounds appearing behind section titles and containers in light theme across all tabs
+- [ ] Preprocessing default controls: on first load, show only Butterworth controls; hide Savitzky–Golay until selected
+- [ ] Theme ripple: on theme toggle, refresh canvases, sections, and tooltips to adopt new colors immediately
+
 Notes:
 - Files updated so far: `ui/theme.py`, `ui/components.py`
 

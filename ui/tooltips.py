@@ -100,19 +100,20 @@ class EnhancedTooltip:
         self.tooltip_window.attributes("-topmost", True)
         
         # Create tooltip content
-        frame = ttk.Frame(self.tooltip_window)
+        # Use tk.Frame + tk.Label to honor explicit bg/fg reliably across themes
+        frame = tk.Frame(self.tooltip_window, bg=self.bg, bd=1, relief="solid")
         frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create a label for the tooltip text
-        label = ttk.Label(
-            frame, 
-            text=self.text, 
-            background=self.bg,
-            foreground=self.fg,
+        label = tk.Label(
+            frame,
+            text=self.text,
+            bg=self.bg,
+            fg=self.fg,
             font=self.font,
             wraplength=400,
             justify=tk.LEFT,
-            padding=self.padding
+            padx=self.padding,
+            pady=max(3, self.padding//2)
         )
         label.pack(fill=tk.BOTH, expand=True)
         

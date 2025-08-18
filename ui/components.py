@@ -294,30 +294,7 @@ def create_preview_frame(app, main_frame):
     # Prevent the blank tab from shrinking
     app.blank_tab.pack_propagate(False)
 
-    # Functional Bar under plot tabs
-    functional_bar = ttk.Frame(preview_frame, style='Toolbar.TFrame')
-    functional_bar.grid(row=1, column=0, sticky="ew", pady=10)
-
-    ttk.Button(functional_bar, 
-              text="Export Plot", 
-              command=app.export_plot,
-              style='Tool.TButton'
-    ).grid(row=0, column=0, padx=5, pady=5)
-    
-    # Add scale toggle button
-    scale_toggle_btn = ttk.Button(
-        functional_bar,
-        text="Toggle Scale (Log/Linear)",
-        command=app.toggle_scale_mode,
-        style='Tool.TButton'
-    )
-    scale_toggle_btn.grid(row=0, column=1, padx=5, pady=5)
-    
-    # Add tooltip for scale toggle button
-    app.add_tooltip(
-        scale_toggle_btn,
-        "Toggle between logarithmic and linear scales for peak analysis plots"
-    )
+    # Note: functional bar removed to prevent duplicated actions (toolbar handles these)
     
     return preview_frame
 
