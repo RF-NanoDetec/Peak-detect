@@ -149,7 +149,11 @@ def create_control_panel(app, main_frame):
     app.progress.pack(fill=tk.X, padx=5, pady=5)
 
     # Preview label for status messages
-    app.preview_label = ttk.Label(control_frame, text="", foreground="black")
+    app.preview_label = ttk.Label(
+        control_frame,
+        text="",
+        foreground=app.theme_manager.get_color('text')
+    )
     app.preview_label.pack(fill=tk.X, padx=5, pady=5)
     
     return control_frame

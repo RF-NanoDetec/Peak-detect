@@ -162,6 +162,11 @@ class Application(tk.Tk):
         theme_name = self.prefs.get('theme', 'dark')
         self.theme_manager = ThemeManager(theme_name=theme_name)
         self.style = self.theme_manager.apply_theme(self)
+        # Ensure matplotlib theme is synchronized
+        try:
+            self.theme_manager.apply_matplotlib_theme()
+        except Exception:
+            pass
         
         # Store the StatusIndicator class for use in create_control_panel
         self.status_indicator_class = StatusIndicator

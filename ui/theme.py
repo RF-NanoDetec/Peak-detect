@@ -132,6 +132,56 @@ class ThemeManager:
         'small': ('Segoe UI', 9)
     }
     
+    # Spacing scale (design tokens). Values are in pixels.
+    SPACING = {
+        '0': 0,
+        '1': 2,
+        '2': 4,
+        '3': 6,
+        '4': 8,
+        '5': 12,
+        '6': 16,
+        '7': 20,
+        '8': 24
+    }
+
+    # Radii tokens (used conceptually; ttk support varies by platform/theme)
+    RADII = {
+        'none': 0,
+        'sm': 2,
+        'md': 4,
+        'lg': 8
+    }
+
+    # Focus ring tokens
+    FOCUS = {
+        'ring_color': '#3b82f6',  # default accent blue for focus outline
+        'ring_width': 1
+    }
+
+    # Shadow tokens (not natively supported by ttk; kept for conceptual parity)
+    SHADOWS = {
+        'none': 0,
+        'sm': 1,
+        'md': 2
+    }
+
+    # Density presets for compact vs comfortable UI. Used to tune heights/paddings.
+    DENSITIES = {
+        'comfortable': {
+            'padding': 6,
+            'tab_padding': [10, 4],
+            'row_height': 24,
+            'progress_thickness': 8
+        },
+        'compact': {
+            'padding': 4,
+            'tab_padding': [8, 2],
+            'row_height': 20,
+            'progress_thickness': 6
+        }
+    }
+    
     def __init__(self, theme_name='dark'):
         """
         Initialize the theme manager with default settings.
@@ -142,6 +192,8 @@ class ThemeManager:
             Name of the theme to use ('light' or 'dark')
         """
         self.set_theme(theme_name)
+        # UI density (comfortable by default)
+        self.current_density = 'comfortable'
         
         # Adjust fonts based on platform
         if platform.system() == 'Darwin':  # macOS
@@ -197,6 +249,30 @@ class ThemeManager:
             self.set_theme('light')
         return self.current_theme
     
+    def set_density(self, density_name):
+        """
+        Set the UI density preset.
+        
+        Parameters
+        ----------
+        density_name : str
+            Either 'comfortable' or 'compact'.
+        """
+        name = (density_name or '').lower()
+        if name not in self.DENSITIES:
+            name = 'comfortable'
+        self.current_density = name
+
+    # --- Token helpers ---
+    def get_spacing(self, key, default=6):
+        return self.SPACING.get(str(key), default)
+
+    def get_radius(self, key, default=4):
+        return self.RADII.get(key, default)
+
+    def get_outline(self):
+        return {'color': self.FOCUS['ring_color'], 'width': self.FOCUS['ring_width']}
+    
     def apply_theme(self, root):
         """
         Apply the selected theme to the application.
@@ -218,21 +294,61 @@ class ThemeManager:
         
         # Update matplotlib style if it's installed
         try:
-            import matplotlib.pyplot as plt
-            plt.style.use('default') # Reset to default first
-            # Apply ONLY standard, valid rcParams
-            plt.rcParams.update(self.PLOT_RCParams)
-        except ImportError:
-            pass  # matplotlib not installed
+            self.apply_matplotlib_theme()
         except Exception as e:
-             print(f"Error applying matplotlib rcParams: {e}") # Add error logging
+            print(f"Error applying matplotlib theme: {e}")
             
         return style
+
+    def apply_matplotlib_theme(self):
+        """
+        Apply the current theme to matplotlib global rcParams.
+        Safe to call multiple times.
+        """
+        try:
+            import matplotlib
+            import matplotlib.pyplot as plt
+            from matplotlib import cycler
+        except Exception:
+            return  # matplotlib not available; skip quietly
+
+        # Reset style then apply our rcParams
+        try:
+            plt.style.use('default')
+        except Exception:
+            pass
+
+        rc = dict(self.PLOT_RCParams)
+
+        # Build a tasteful color cycle using semantic plot colors if available
+        palette = [
+            self.PLOT_COLORS.get('line_filtered', '#1f77b4'),
+            self.PLOT_COLORS.get('line_raw', '#555555'),
+            self.PLOT_COLORS.get('marker_peak', '#FF0000'),
+            self.PLOT_COLORS.get('line_dist_max', '#4ECDC4'),
+            self.PLOT_COLORS.get('line_dist_min', '#FF6B6B'),
+            '#9ca3af' if self.current_theme == 'light' else '#6b7280'
+        ]
+        try:
+            rc['axes.prop_cycle'] = cycler.cycler(color=palette)
+        except Exception:
+            pass
+
+        # Apply DPI-related rc if needed; caller may override
+        try:
+            plt.rcParams.update(rc)
+        except Exception as e:
+            print(f"Error applying matplotlib rcParams: {e}")
     
     def _apply_light_theme(self, style):
         """Apply the light theme to all ttk widgets."""
         style.theme_use('clam')  # Start with clam as base
         
+        padding_value = self.DENSITIES[self.current_density]['padding']
+        tab_padding_value = self.DENSITIES[self.current_density]['tab_padding']
+        row_height_value = self.DENSITIES[self.current_density]['row_height']
+        progress_thickness_value = self.DENSITIES[self.current_density]['progress_thickness']
+
         # Configure the main colors
         style.configure('.',
             background=self.COLORS['background'],
@@ -253,7 +369,7 @@ class ThemeManager:
             foreground='white',
             borderwidth=1,
             bordercolor=self.COLORS['border'],
-            padding=6,
+            padding=padding_value,
             font=self.FONTS['default']
         )
         style.map('TButton',
@@ -344,7 +460,7 @@ class ThemeManager:
         style.configure('TNotebook.Tab',
             background=self.COLORS['panel_bg'],
             foreground=self.COLORS['text'],
-            padding=[10, 4],
+            padding=tab_padding_value,
             font=self.FONTS['default']
         )
         style.map('TNotebook.Tab',
@@ -358,7 +474,7 @@ class ThemeManager:
             background=self.COLORS['secondary'],
             troughcolor=self.COLORS['panel_bg'],
             borderwidth=0,
-            thickness=8
+            thickness=progress_thickness_value
         )
         
         # Configure Success Progressbar
@@ -383,7 +499,7 @@ class ThemeManager:
             lightcolor=self.COLORS['card_bg'],
             darkcolor=self.COLORS['border'],
             borderwidth=1,
-            padding=5,
+            padding=padding_value,
             font=self.FONTS['default'],
             insertcolor=self.COLORS['text']
         )
@@ -399,7 +515,7 @@ class ThemeManager:
             fieldbackground='white',
             bordercolor=self.COLORS['border'],
             borderwidth=1,
-            rowheight=24,
+            rowheight=row_height_value,
             font=self.FONTS['default']
         )
         style.configure('Treeview.Heading',
@@ -453,7 +569,7 @@ class ThemeManager:
             fieldbackground='white',
             bordercolor=self.COLORS['border'],
             arrowcolor=self.COLORS['text'],
-            padding=5
+            padding=padding_value
         )
         style.map('TCombobox',
             fieldbackground=[('readonly', 'white'), ('disabled', self.COLORS['panel_bg'])],
@@ -486,7 +602,7 @@ class ThemeManager:
             background=self.COLORS['panel_bg'],
             foreground=self.COLORS['text'],
             borderwidth=0,
-            padding=6,
+            padding=padding_value,
             font=self.FONTS['default']
         )
         style.map('Tool.TButton',
@@ -506,6 +622,11 @@ class ThemeManager:
         """Apply the dark theme to all ttk widgets."""
         style.theme_use('clam')  # Start with clam as base
         
+        padding_value = self.DENSITIES[self.current_density]['padding']
+        tab_padding_value = self.DENSITIES[self.current_density]['tab_padding']
+        row_height_value = self.DENSITIES[self.current_density]['row_height']
+        progress_thickness_value = self.DENSITIES[self.current_density]['progress_thickness']
+
         # === MAIN ELEMENTS ===
         # Configure the main colors
         style.configure('.',
@@ -527,7 +648,7 @@ class ThemeManager:
             background=self.COLORS['button'],
             foreground='white',
             borderwidth=0,
-            padding=6,
+            padding=padding_value,
             font=self.FONTS['default']
         )
         style.map('TButton',
@@ -625,7 +746,7 @@ class ThemeManager:
         style.configure('TNotebook.Tab',
             background=self.COLORS['panel_bg'],
             foreground=self.COLORS['text'],
-            padding=[10, 4],
+            padding=tab_padding_value,
             font=self.FONTS['default']
         )
         style.map('TNotebook.Tab',
@@ -640,7 +761,7 @@ class ThemeManager:
             background=self.COLORS['secondary'],
             troughcolor=self.COLORS['panel_bg'],
             borderwidth=0,
-            thickness=8
+            thickness=progress_thickness_value
         )
         
         # Success progressbar
@@ -671,7 +792,7 @@ class ThemeManager:
             lightcolor=self.COLORS['card_bg'],
             darkcolor=self.COLORS['card_bg'],
             borderwidth=1,
-            padding=5,
+            padding=padding_value,
             font=self.FONTS['default'],
             insertcolor=self.COLORS['text']
         )
@@ -754,7 +875,7 @@ class ThemeManager:
             fieldbackground=self.COLORS['card_bg'],
             bordercolor=self.COLORS['border'],
             borderwidth=1,
-            rowheight=24,
+            rowheight=row_height_value,
             font=self.FONTS['default']
         )
         style.configure('Treeview.Heading',
@@ -826,7 +947,7 @@ class ThemeManager:
             background=self.COLORS['panel_bg'],
             foreground=self.COLORS['text'],
             borderwidth=0,
-            padding=6,
+            padding=padding_value,
             font=self.FONTS['default']
         )
         style.map('Tool.TButton',
