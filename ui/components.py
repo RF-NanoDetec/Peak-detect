@@ -16,6 +16,7 @@ from datetime import datetime
 from PIL import Image, ImageTk
 import numpy as np
 from config.settings import Config
+from core.performance import profiling_log
 
 def create_card(parent, padding=(10, 10, 10, 10)):
     """Return a card-like frame with standard padding and border."""
@@ -125,6 +126,16 @@ def create_toolbar(app, parent):
     density_btn = ttk.Button(right, text="Toggle Density", command=toggle_density, style='Tool.TButton')
     density_btn.pack(side=tk.LEFT, padx=5)
     app.add_tooltip(density_btn, "Toggle UI density between comfortable and compact")
+
+    # Profiling toggle
+    profiling_toggle = ttk.Checkbutton(
+        right,
+        text="Diagnostics",
+        variable=app.profiling_enabled_var,
+        command=app.on_profiling_toggle
+    )
+    profiling_toggle.pack(side=tk.LEFT, padx=5)
+    app.add_tooltip(profiling_toggle, "Enable verbose profiling/logging (writes to logs/performance.log)")
 
     return bar
 
@@ -346,7 +357,7 @@ def create_welcome_screen(app, parent):
             icon_label = ttk.Label(header_frame, image=icon_photo, background=app.theme_manager.get_color('background'))
             icon_label.pack(side=tk.LEFT, padx=10)
     except Exception as e:
-        print(f"Could not load icon image: {e}")
+        profiling_log(f"Could not load icon image: {e}")
     
     # App name and version
     from config import APP_VERSION
@@ -468,7 +479,7 @@ def create_welcome_screen(app, parent):
             img_label.pack(padx=10, pady=10)
             image_loaded = True
     except Exception as e:
-        print(f"Could not load example image: {e}")
+        profiling_log(f"Could not load example image: {e}")
     
     # Always display features text, either with or without image
     features_text = """
@@ -643,7 +654,7 @@ def create_data_loading_tab(app, tab_control):
             # Convert from ms to seconds
             ms_value = float(app.time_resolution_ms.get())
             app.time_resolution.set(ms_value / 1000.0)
-            print(f"Time resolution updated: {ms_value} ms = {app.time_resolution.get()} seconds")
+            profiling_log(f"Time resolution updated: {ms_value} ms = {app.time_resolution.get()} seconds")
         except ValueError:
             # Handle invalid input
             pass
@@ -684,7 +695,7 @@ def create_data_loading_tab(app, tab_control):
         else:
             # If it's a float, recreate it as a Tkinter variable
             app.time_resolution = tk.DoubleVar(value=1e-4)
-            print("Recreated time_resolution as a Tkinter variable")
+            profiling_log("Recreated time_resolution as a Tkinter variable")
         init_time_resolution_ms()
     
     reset_button = ttk.Button(
@@ -704,6 +715,55 @@ def create_data_loading_tab(app, tab_control):
         "- 1.0 ms: 1,000 points = 1 second\n"
         "- 0.01 ms: 100,000 points = 1 second\n\n"
         "Using the wrong dwell time will result in incorrect peak width values!"
+    )
+
+    # Photon counter dead-time correction
+    correction_frame = ttk.LabelFrame(content, text="Photon Counter Correction")
+    correction_frame.pack(fill=tk.X, padx=5, pady=10)
+
+    # Info text
+    correction_info = (
+        "Correct for detector non-linearity due to dead time. "
+        "During dead time the counter is blind, so measured counts underestimate the true photon rate. "
+        "Correction uses 1 / (1 - R_measured * T_D)."
+    )
+    ttk.Label(correction_frame, text=correction_info, wraplength=380, justify=tk.LEFT).pack(fill=tk.X, padx=8, pady=4)
+
+    # Controls container
+    correction_controls = ttk.Frame(correction_frame)
+    correction_controls.pack(fill=tk.X, padx=8, pady=4)
+
+    # Toggle
+    correction_check = ttk.Checkbutton(
+        correction_controls,
+        text="Apply dead-time correction on load",
+        variable=app.apply_dead_time_correction,
+    )
+    correction_check.pack(side=tk.LEFT, padx=5)
+
+    # Dead time entry (ns)
+    ttk.Label(correction_controls, text="Dead time (ns):").pack(side=tk.LEFT, padx=(15, 5))
+    dead_time_entry = ttk.Entry(correction_controls, width=8, textvariable=app.photon_dead_time_ns, validate="key",
+        validatecommand=(app.register(lambda P: validate_float_entry(P)), "%P"))
+    dead_time_entry.pack(side=tk.LEFT, padx=5)
+
+    # Enable/disable entry based on toggle
+    def update_dead_time_state(*_):
+        state = tk.NORMAL if app.apply_dead_time_correction.get() else tk.DISABLED
+        try:
+            dead_time_entry.config(state=state)
+        except Exception:
+            pass
+
+    app.apply_dead_time_correction.trace_add("write", lambda *_: update_dead_time_state())
+    update_dead_time_state()
+
+    # Tooltip
+    app.add_tooltip(
+        correction_frame,
+        "Applies non-linearity correction due to detector dead time T_D. "
+        "Measured rate R_measured is counts per second (counts / dwell time). "
+        "Corrected counts = counts * 1 / (1 - R_measured * T_D). Default T_D = 43 ns."
     )
 
     # Add tooltips for file selection controls
@@ -1028,7 +1088,14 @@ def create_preprocessing_tab(app, tab_control):
 
     # Auto-calculate cutoff button (Butterworth)
     # Ensure app.calculate_auto_cutoff_frequency is defined in main app class
-    auto_cutoff_button = ttk.Button(butterworth_controls_frame, text="Auto", command=app.calculate_auto_cutoff_frequency if hasattr(app, 'calculate_auto_cutoff_frequency') else lambda: print("Auto-cutoff function not set"), width=5)
+    auto_cutoff_button = ttk.Button(
+        butterworth_controls_frame,
+        text="Auto",
+        command=app.calculate_auto_cutoff_frequency
+        if hasattr(app, 'calculate_auto_cutoff_frequency')
+        else lambda: profiling_log("Auto-cutoff function not set"),
+        width=5
+    )
     auto_cutoff_button.grid(row=0, column=2, padx=5, pady=5, sticky=tk.E)
     app.add_tooltip(auto_cutoff_button, "Automatically estimate a suitable cutoff frequency based on average peak width.")
 

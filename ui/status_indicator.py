@@ -7,6 +7,7 @@ to show processing status, success, error, and other states.
 
 import tkinter as tk
 from tkinter import ttk
+from core.performance import profiling_log
 
 class StatusIndicator(ttk.Frame):
     """
@@ -128,7 +129,7 @@ class StatusIndicator(ttk.Frame):
                 text_color = self.STATES[state]['fg']
         except Exception as e:
             # Fallback to default colors if there's any issue with theme colors
-            print(f"Error getting color for state {state}: {e}")
+            profiling_log(f"Error getting color for state {state}: {e}")
             bg_color = self.STATES[state]['bg']
             text_color = self.STATES[state]['fg']
         
@@ -225,12 +226,12 @@ class StatusIndicator(ttk.Frame):
                 new_stipple = '' if current_stipple else 'gray50'
                 self.indicator.itemconfig(indicator_item, stipple=new_stipple)
             except Exception as e:
-                print(f"Error in animation effect: {e}")
+                profiling_log(f"Error in animation effect: {e}")
             
             # Schedule next animation frame
             self.after(500, self._animate)
         except Exception as e:
-            print(f"Animation error: {e}")
+            profiling_log(f"Animation error: {e}")
             self._animation_running = False
     
     def set_text(self, text):

@@ -330,7 +330,12 @@ def add_tooltip(widget, text):
     
     # High-contrast text based on theme
     try:
-        fg_color = app.theme_manager.get_color('text') if app.theme_manager.current_theme == 'light' else '#ffffff'
+        if getattr(app, 'theme_manager', None) and app.theme_manager.current_theme == 'dark':
+            fg_color = '#ffffff'
+        elif getattr(app, 'theme_manager', None):
+            fg_color = app.theme_manager.get_color('text')
+        else:
+            fg_color = 'black'
     except Exception:
         fg_color = 'black'
     label = tk.Label(
@@ -375,6 +380,11 @@ def add_tooltip(widget, text):
     
     widget.bind("<Destroy>", on_widget_destroy)
     
+    # Attach a reference for retheming later
+    try:
+        setattr(widget, '_enhanced_tooltip', tooltip)
+    except Exception:
+        pass
     return tooltip
 
 def show_documentation(app):
@@ -1392,7 +1402,10 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
                         left_indices=(app.peak_left_ips if hasattr(app, 'peak_left_ips') else None),
                         right_indices=(app.peak_right_ips if hasattr(app, 'peak_right_ips') else None),
                     )
-                    baseline_signal = app.filtered_signal[baseline_mask]
+                    # Use RAW signal for baseline noise estimation while keeping
+                    # peak indices/widths derived from the filtered signal
+                    signal_array = app.x_value if hasattr(app, 'x_value') and app.x_value is not None else app.filtered_signal
+                    baseline_signal = signal_array[baseline_mask]
                     noise_std, noise_mad_std, baseline_mean = compute_noise_stats(baseline_signal)
 
                     # Persist for reuse in plotting/export
@@ -1409,7 +1422,7 @@ def update_results_summary_with_ui(app, events=None, max_amp=None, peak_areas=No
                         snr_values = np.array([])
 
                     snr_section = "=== SIGNAL-TO-NOISE (BASELINE METHOD) ===\n"
-                    total_points = len(app.filtered_signal)
+                    total_points = len(signal_array)
                     baseline_pct = (app.baseline_points / total_points * 100.0) if total_points > 0 else 0.0
                     snr_section += f"Baseline Points: {app.baseline_points} / {total_points} ({baseline_pct:.1f}%)\n"
                     snr_section += f"Noise Std (baseline): {noise_std:.4g}\n"

@@ -33,7 +33,7 @@ A robust Python application for scientific peak analysis in time series data. De
   - SciPy (1.7+)
   - Tkinter (8.6+)
   - Seaborn (0.11+)
-  - Numba (optional, for performance acceleration)
+  - Numba (required for optimized peak math)
 
 ## 🔧 Installation
 

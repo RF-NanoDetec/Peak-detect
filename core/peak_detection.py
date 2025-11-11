@@ -24,6 +24,7 @@ from scipy.signal import find_peaks, peak_widths
 
 # Local imports
 from .peak_analysis_utils import profile_function, find_peaks_with_window, find_nearest
+from core.performance import profiling_log
 
 class PeakDetector:
     """
@@ -112,11 +113,11 @@ class PeakDetector:
             if width_range:
                 # Convert from milliseconds to samples using time resolution
                 width_p = [int(float(value) * sampling_rate / 1000) for value in width_range]
-                print(f"DEBUG - Width conversion in detect_peaks:")
-                print(f"  Original width values (ms): {width_range}")
-                print(f"  Time resolution: {time_resolution} seconds per unit")
-                print(f"  Sampling rate: {sampling_rate:.1f} Hz")
-                print(f"  Converted width_p (samples): {width_p}")
+                profiling_log("DEBUG - Width conversion in detect_peaks:")
+                profiling_log(f"  Original width values (ms): {width_range}")
+                profiling_log(f"  Time resolution: {time_resolution} seconds per unit")
+                profiling_log(f"  Sampling rate: {sampling_rate:.1f} Hz")
+                profiling_log(f"  Converted width_p (samples): {width_p}")
             else:
                 width_p = None
             

@@ -28,11 +28,11 @@ from numba import njit
 from scipy.signal import find_peaks, butter, filtfilt, peak_widths, savgol_filter
 
 # Import profiling utilities from the performance module
-from core.performance import profile_function, get_memory_usage
+from core.performance import profile_function, get_memory_usage, profiling_log
 
 # Styling is controlled by UI ThemeManager; avoid global seaborn rc changes here
 
-print("Lade peak_analysis_utils.py")
+profiling_log("Loading peak_analysis_utils.py")
 
 # Butterworth filter application
 def apply_butterworth_filter(order, Wn, btype, fs, x):
@@ -56,8 +56,8 @@ def apply_butterworth_filter(order, Wn, btype, fs, x):
     """
     b, a = butter(order, Wn, btype=btype, fs=fs)
     x_f = filtfilt(b, a, x)
-    print(f'Butterworth filter coefficients (b, a): {b}, {a}')
-    print(f'Filtered signal: {x_f[:10]}...')  # Printing the first 10 values for brevity
+    profiling_log(f'Butterworth filter coefficients (b, a): {b}, {a}')
+    profiling_log(f'Filtered signal: {x_f[:10]}...')  # Printing the first 10 values for brevity
     return x_f
 
 # Find the nearest value in an array
@@ -197,8 +197,8 @@ def timestamps_array_to_seconds(timestamps, start_time):
             
         return seconds
     except Exception as e:
-        print(f"Error in timestamps_array_to_seconds: {e}")
-        print(f"Timestamps: {timestamps}, Start time: {start_time}")
+        profiling_log(f"Error in timestamps_array_to_seconds: {e}")
+        profiling_log(f"Timestamps: {timestamps}, Start time: {start_time}")
         raise ValueError(f"Error converting timestamps: {e}\n"
                         f"Format should be 'MM:SS' (e.g., '01:30')")
 
@@ -249,15 +249,15 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, prom
         properties['right_ips'] = width_results[3]  # Right interpolated position
         
         # Print debug information for the first few peaks
-        print("\nPeak Width Analysis:")
+        profiling_log("\nPeak Width Analysis:")
         for i in range(min(3, len(peaks))):
-            print(f"\nPeak {i+1}:")
-            print(f"  Position: {peaks[i]}")
-            print(f"  Value: {signal[peaks[i]]:.3f}")
-            print(f"  Width: {width_results[0][i]:.3f} samples")
-            print(f"  Width height: {width_results[1][i]:.3f}")
-            print(f"  Left IP: {width_results[2][i]:.3f}")
-            print(f"  Right IP: {width_results[3][i]:.3f}")
+            profiling_log(f"\nPeak {i+1}:")
+            profiling_log(f"  Position: {peaks[i]}")
+            profiling_log(f"  Value: {signal[peaks[i]]:.3f}")
+            profiling_log(f"  Width: {width_results[0][i]:.3f} samples")
+            profiling_log(f"  Width height: {width_results[1][i]:.3f}")
+            profiling_log(f"  Left IP: {width_results[2][i]:.3f}")
+            profiling_log(f"  Right IP: {width_results[3][i]:.3f}")
     else:
         # If no peaks found, initialize empty arrays
         properties['widths'] = np.array([])
@@ -495,47 +495,47 @@ def adjust_lowpass_cutoff(
         )
         return filtered_signal_legacy, cutoff_hz
 
-    print(f"\\n==== DEBUG: Starting adjust_lowpass_cutoff (Filter Type: {filter_type}) ====")
-    print(f"DEBUG: Input parameters:")
-    print(f"- fs: {fs}")
+    profiling_log(f"\\n==== DEBUG: Starting adjust_lowpass_cutoff (Filter Type: {filter_type}) ====")
+    profiling_log(f"DEBUG: Input parameters:")
+    profiling_log(f"- fs: {fs}")
     if filter_type == 'butterworth':
-        print(f"- manual_cutoff_hz (input): {manual_cutoff_hz}")
-        print(f"- prominence_threshold_butter_cutoff_calc (for auto): {prominence_threshold_butter_cutoff_calc}")
-        print(f"- normalization_factor_butter (for auto): {normalization_factor_butter}")
-        print(f"- butter_order: {butter_order}")
+        profiling_log(f"- manual_cutoff_hz (input): {manual_cutoff_hz}")
+        profiling_log(f"- prominence_threshold_butter_cutoff_calc (for auto): {prominence_threshold_butter_cutoff_calc}")
+        profiling_log(f"- normalization_factor_butter (for auto): {normalization_factor_butter}")
+        profiling_log(f"- butter_order: {butter_order}")
     elif filter_type == 'savgol':
-        print(f"- savgol_window_length (input): {savgol_window_length}")
-        print(f"- savgol_polyorder (input): {savgol_polyorder}")
-        print(f"- prominence_threshold_savgol_window_est: {prominence_threshold_savgol_window_est}")
-    print(f"- time_resolution: {time_resolution}")
+        profiling_log(f"- savgol_window_length (input): {savgol_window_length}")
+        profiling_log(f"- savgol_polyorder (input): {savgol_polyorder}")
+        profiling_log(f"- prominence_threshold_savgol_window_est: {prominence_threshold_savgol_window_est}")
+    profiling_log(f"- time_resolution: {time_resolution}")
 
     applied_filter_params = {'type': filter_type}
     filtered_signal = signal # Default to original if filtering fails or not applicable
 
     if filter_type == 'butterworth':
-        print(f"DEBUG: Butterworth mode selected.")
+        profiling_log(f"DEBUG: Butterworth mode selected.")
         final_cutoff_hz = 0.0
 
         if manual_cutoff_hz > 0:
-            print(f"DEBUG: Using provided manual_cutoff_hz: {manual_cutoff_hz} Hz")
+            profiling_log(f"DEBUG: Using provided manual_cutoff_hz: {manual_cutoff_hz} Hz")
             final_cutoff_hz = manual_cutoff_hz
             # Store this in applied_params for clarity, even if no auto-estimation done
             applied_filter_params['estimation_method'] = 'manual_override'
         else:
-            print(f"DEBUG: manual_cutoff_hz is 0 or not provided. Auto-calculating Butterworth cutoff.")
+            profiling_log(f"DEBUG: manual_cutoff_hz is 0 or not provided. Auto-calculating Butterworth cutoff.")
             avg_width_sec = estimate_peak_widths(signal, fs, prominence_threshold_butter_cutoff_calc, time_resolution)
-            print(f'\nDEBUG: Average width of peaks (for Butterworth cutoff): {avg_width_sec} seconds')
+            profiling_log(f'\nDEBUG: Average width of peaks (for Butterworth cutoff): {avg_width_sec} seconds')
             
             if avg_width_sec <= 1e-9: 
-                print(f"Warning: avg_width_sec ({avg_width_sec:.2e}) is very small or zero. ")
+                profiling_log(f"Warning: avg_width_sec ({avg_width_sec:.2e}) is very small or zero. ")
                 base_cutoff_hz = fs / 4.0
-                print(f"Using a fallback base_cutoff_hz: {base_cutoff_hz:.2f} Hz due to small avg_width_sec.")
+                profiling_log(f"Using a fallback base_cutoff_hz: {base_cutoff_hz:.2f} Hz due to small avg_width_sec.")
             else:
                 base_cutoff_hz = 1.0 / avg_width_sec
-            print(f'DEBUG: Base cutoff frequency (1/avg_width_sec): {base_cutoff_hz:.2f} Hz')
+            profiling_log(f'DEBUG: Base cutoff frequency (1/avg_width_sec): {base_cutoff_hz:.2f} Hz')
             
             normalized_cutoff = base_cutoff_hz * float(normalization_factor_butter)
-            print(f'DEBUG: Normalized cutoff (base * norm_factor): {normalized_cutoff:.2f} Hz')
+            profiling_log(f'DEBUG: Normalized cutoff (base * norm_factor): {normalized_cutoff:.2f} Hz')
             final_cutoff_hz = normalized_cutoff
             applied_filter_params['estimated_avg_width_sec'] = avg_width_sec
             applied_filter_params['prominence_for_cutoff_calc'] = prominence_threshold_butter_cutoff_calc
@@ -544,10 +544,10 @@ def adjust_lowpass_cutoff(
         nyquist_hz = fs / 2.0
         final_cutoff_hz = min(final_cutoff_hz, nyquist_hz * 0.95)
         final_cutoff_hz = max(final_cutoff_hz, 0.01) 
-        print(f'DEBUG: Final Butterworth cutoff to be applied: {final_cutoff_hz:.2f} Hz')
+        profiling_log(f'DEBUG: Final Butterworth cutoff to be applied: {final_cutoff_hz:.2f} Hz')
 
         filtered_signal = apply_butterworth_filter(butter_order, final_cutoff_hz, 'lowpass', fs, signal)
-        print(f'DEBUG: Butterworth filter applied with order={butter_order}, cutoff_hz={final_cutoff_hz:.2f} Hz')
+        profiling_log(f'DEBUG: Butterworth filter applied with order={butter_order}, cutoff_hz={final_cutoff_hz:.2f} Hz')
         
         applied_filter_params['cutoff_hz'] = final_cutoff_hz
         applied_filter_params['order'] = butter_order
@@ -555,12 +555,12 @@ def adjust_lowpass_cutoff(
         # The logic above already sets 'estimated_avg_width_sec' etc. only in the auto path.
 
     elif filter_type == 'savgol':
-        print(f"DEBUG: Savitzky-Golay mode selected.")
+        profiling_log(f"DEBUG: Savitzky-Golay mode selected.")
         current_savgol_window_length = savgol_window_length
         current_savgol_polyorder = savgol_polyorder
 
         if len(signal) < 3: # SavGol not applicable for very short signals
-            print(f"ERROR: Signal length ({len(signal)}) is too short for Savitzky-Golay filter. Returning unfiltered signal.")
+            profiling_log(f"ERROR: Signal length ({len(signal)}) is too short for Savitzky-Golay filter. Returning unfiltered signal.")
             filtered_signal = signal.copy() # Return original signal
             applied_filter_params['error'] = "Signal too short for Sav-Gol filter (min length 3)."
             applied_filter_params['window_length'] = None
@@ -568,36 +568,36 @@ def adjust_lowpass_cutoff(
         else:
             # Estimate window length if not provided
             if current_savgol_window_length is None:
-                print(f"DEBUG: Sav-Gol window_length not provided. Estimating using prominence: {prominence_threshold_savgol_window_est}")
+                profiling_log(f"DEBUG: Sav-Gol window_length not provided. Estimating using prominence: {prominence_threshold_savgol_window_est}")
                 s_peaks, _ = find_peaks(signal, prominence=prominence_threshold_savgol_window_est)
                 if len(s_peaks) > 0:
                     s_width_results = peak_widths(signal, s_peaks, rel_height=0.5)
                     avg_s_width_samples = np.mean(s_width_results[0]) # Widths in samples
-                    print(f"DEBUG: Estimated avg peak width for Sav-Gol: {avg_s_width_samples:.2f} samples")
+                    profiling_log(f"DEBUG: Estimated avg peak width for Sav-Gol: {avg_s_width_samples:.2f} samples")
                     
                     estimated_wl = int(np.ceil(avg_s_width_samples * 1.5)) # Heuristic: 1.5x avg peak width
                     current_savgol_window_length = estimated_wl
                     applied_filter_params['estimated_window_source'] = 'peak_width_heuristic'
                     applied_filter_params['estimated_avg_samples_width'] = avg_s_width_samples
                 else: 
-                    print(f"DEBUG: No peaks found for Sav-Gol window estimation (prominence {prominence_threshold_savgol_window_est}). Using fallback.")
+                    profiling_log(f"DEBUG: No peaks found for Sav-Gol window estimation (prominence {prominence_threshold_savgol_window_est}). Using fallback.")
                     fallback_wl = min(max(5, int(len(signal) * 0.05)), 101) # Fallback: 5% of signal, min 5, max 101
                     current_savgol_window_length = fallback_wl
                     applied_filter_params['estimated_window_source'] = 'fallback_no_peaks'
-                print(f"DEBUG: Auto-determined Sav-Gol window_length: {current_savgol_window_length}")
+                profiling_log(f"DEBUG: Auto-determined Sav-Gol window_length: {current_savgol_window_length}")
 
             # Ensure window length is odd and positive
             if current_savgol_window_length < 3: current_savgol_window_length = 3
             if current_savgol_window_length % 2 == 0:
                 current_savgol_window_length += 1
-                print(f"Adjusted Sav-Gol window_length to be odd: {current_savgol_window_length}")
+                profiling_log(f"Adjusted Sav-Gol window_length to be odd: {current_savgol_window_length}")
 
             # Determine polyorder if not provided
             if current_savgol_polyorder is None:
                 # Default polyorder, ensure it's less than window_length. Common default is 2 or 3.
                 current_savgol_polyorder = min(3, current_savgol_window_length - 1)
                 current_savgol_polyorder = max(1, current_savgol_polyorder) # Must be at least 1
-                print(f"DEBUG: Using default Sav-Gol polyorder: {current_savgol_polyorder}")
+                profiling_log(f"DEBUG: Using default Sav-Gol polyorder: {current_savgol_polyorder}")
                 applied_filter_params['polyorder_source'] = 'default'
             else: # User provided polyorder
                 current_savgol_polyorder = max(1, int(savgol_polyorder))
@@ -605,19 +605,19 @@ def adjust_lowpass_cutoff(
 
             # Final validation of Sav-Gol parameters against signal length
             if current_savgol_window_length > len(signal):
-                print(f"Warning: Sav-Gol window_length {current_savgol_window_length} > signal length {len(signal)}. Adjusting to signal length or slightly less.")
+                profiling_log(f"Warning: Sav-Gol window_length {current_savgol_window_length} > signal length {len(signal)}. Adjusting to signal length or slightly less.")
                 current_savgol_window_length = len(signal) if len(signal) % 2 != 0 else len(signal) -1
                 if current_savgol_window_length < 3 : current_savgol_window_length = 3 # if signal itself is very short
             
             if current_savgol_polyorder >= current_savgol_window_length:
-                print(f"Warning: Sav-Gol polyorder {current_savgol_polyorder} >= window_length {current_savgol_window_length}. Adjusting polyorder.")
+                profiling_log(f"Warning: Sav-Gol polyorder {current_savgol_polyorder} >= window_length {current_savgol_window_length}. Adjusting polyorder.")
                 current_savgol_polyorder = current_savgol_window_length - 1
             current_savgol_polyorder = max(1, current_savgol_polyorder) # Ensure polyorder is at least 1
 
-            print(f"DEBUG: Final Sav-Gol params before filtering: window_length={current_savgol_window_length}, polyorder={current_savgol_polyorder}")
+            profiling_log(f"DEBUG: Final Sav-Gol params before filtering: window_length={current_savgol_window_length}, polyorder={current_savgol_polyorder}")
             
             if current_savgol_window_length > len(signal) or current_savgol_window_length <= current_savgol_polyorder or current_savgol_window_length < 1:
-                 print(f"ERROR: Invalid Savitzky-Golay parameters for signal of length {len(signal)}: "
+                 profiling_log(f"ERROR: Invalid Savitzky-Golay parameters for signal of length {len(signal)}: "
                        f"window_length={current_savgol_window_length}, polyorder={current_savgol_polyorder}. "
                        "Returning unfiltered signal.")
                  filtered_signal = signal.copy() # Return original signal
@@ -627,9 +627,9 @@ def adjust_lowpass_cutoff(
             else:
                 try:
                     filtered_signal = savgol_filter(signal, current_savgol_window_length, current_savgol_polyorder)
-                    print(f'DEBUG: Savitzky-Golay filter applied.')
+                    profiling_log(f'DEBUG: Savitzky-Golay filter applied.')
                 except ValueError as e:
-                    print(f"ERROR applying Savitzky-Golay filter: {e}. Returning unfiltered signal.")
+                    profiling_log(f"ERROR applying Savitzky-Golay filter: {e}. Returning unfiltered signal.")
                     filtered_signal = signal.copy() # Return original on error
                     applied_filter_params['error'] = str(e)
 
@@ -637,12 +637,12 @@ def adjust_lowpass_cutoff(
             applied_filter_params['polyorder'] = current_savgol_polyorder
     
     else:
-        print(f"ERROR: Unsupported filter_type: {filter_type}. Choose 'butterworth' or 'savgol'. Returning unfiltered signal.")
+        profiling_log(f"ERROR: Unsupported filter_type: {filter_type}. Choose 'butterworth' or 'savgol'. Returning unfiltered signal.")
         filtered_signal = signal.copy() # Return original signal
         applied_filter_params['error'] = f"Unsupported filter_type: {filter_type}"
 
-    print(f'DEBUG: Filter "{filter_type}" processing complete. Final effective params: {applied_filter_params}')
-    print("==== DEBUG: Finished adjust_lowpass_cutoff ====\\n")
+    profiling_log(f'DEBUG: Filter "{filter_type}" processing complete. Final effective params: {applied_filter_params}')
+    profiling_log("==== DEBUG: Finished adjust_lowpass_cutoff ====\\n")
 
     return filtered_signal, applied_filter_params
 
@@ -662,33 +662,33 @@ def calculate_lowpass_cutoff(signal, fs, prominence_threshold, normalization_fac
     Returns:
         float: Calculated cutoff frequency in Hz
     """
-    print("\n==== DEBUG: Starting calculate_lowpass_cutoff ====")
-    print(f"DEBUG: Input parameters:")
-    print(f"- fs: {fs}")
-    print(f"- prominence_threshold: {prominence_threshold}")
-    print(f"- normalization_factor: {normalization_factor}")
-    print(f"- time_resolution: {time_resolution}")
+    profiling_log("\n==== DEBUG: Starting calculate_lowpass_cutoff ====")
+    profiling_log(f"DEBUG: Input parameters:")
+    profiling_log(f"- fs: {fs}")
+    profiling_log(f"- prominence_threshold: {prominence_threshold}")
+    profiling_log(f"- normalization_factor: {normalization_factor}")
+    profiling_log(f"- time_resolution: {time_resolution}")
     
     avg_width = estimate_peak_widths(signal, fs, prominence_threshold, time_resolution)
-    print(f'\nDEBUG: Average width of peaks: {avg_width} seconds')
+    profiling_log(f'\nDEBUG: Average width of peaks: {avg_width} seconds')
     
     # Calculate base cutoff frequency from average width (in Hz)
     base_cutoff = 1 / avg_width
-    print(f'DEBUG: Base cutoff frequency (1/avg_width): {base_cutoff:.2f} Hz')
+    profiling_log(f'DEBUG: Base cutoff frequency (1/avg_width): {base_cutoff:.2f} Hz')
     
     # Apply normalization factor
     cutoff = base_cutoff * float(normalization_factor)
-    print(f'DEBUG: After normalization:')
-    print(f'- Base cutoff: {base_cutoff:.2f} Hz')
-    print(f'- Normalization factor: {normalization_factor}')
-    print(f'- Final cutoff: {cutoff:.2f} Hz')
+    profiling_log(f'DEBUG: After normalization:')
+    profiling_log(f'- Base cutoff: {base_cutoff:.2f} Hz')
+    profiling_log(f'- Normalization factor: {normalization_factor}')
+    profiling_log(f'- Final cutoff: {cutoff:.2f} Hz')
     
     # Limit cutoff to Nyquist frequency
     nyquist = fs / 2.0
     cutoff = min(cutoff, nyquist * 0.95)  # Stay below 95% of Nyquist
-    print(f'DEBUG: Nyquist frequency: {nyquist:.2f} Hz')
-    print(f'DEBUG: Final cutoff (limited by Nyquist): {cutoff:.2f} Hz')
-    print("==== DEBUG: Finished calculate_lowpass_cutoff ====\n")
+    profiling_log(f'DEBUG: Nyquist frequency: {nyquist:.2f} Hz')
+    profiling_log(f'DEBUG: Final cutoff (limited by Nyquist): {cutoff:.2f} Hz')
+    profiling_log("==== DEBUG: Finished calculate_lowpass_cutoff ====\n")
     
     return cutoff
 

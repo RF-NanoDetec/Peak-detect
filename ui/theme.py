@@ -8,6 +8,7 @@ for consistent UI appearance across the application.
 import tkinter as tk
 from tkinter import ttk
 import platform
+from core.performance import profiling_log
 
 class ThemeManager:
     """
@@ -296,7 +297,7 @@ class ThemeManager:
         try:
             self.apply_matplotlib_theme()
         except Exception as e:
-            print(f"Error applying matplotlib theme: {e}")
+            profiling_log(f"Error applying matplotlib theme: {e}")
             
         return style
 
@@ -338,7 +339,7 @@ class ThemeManager:
         try:
             plt.rcParams.update(rc)
         except Exception as e:
-            print(f"Error applying matplotlib rcParams: {e}")
+            profiling_log(f"Error applying matplotlib rcParams: {e}")
     
     def _apply_light_theme(self, style):
         """Apply the light theme to all ttk widgets."""
@@ -406,6 +407,7 @@ class ThemeManager:
         
         # Configure heading labels
         style.configure('Heading.TLabel',
+            background=self.COLORS['background'],
             font=self.FONTS['heading'],
             foreground=self.COLORS['primary']
         )
@@ -437,17 +439,17 @@ class ThemeManager:
             borderwidth=0
         )
         
-        # Configure TLabelframe
+        # Configure TLabelframe to blend with card surfaces
         style.configure('TLabelframe',
-            background=self.COLORS['background'],
+            background=self.COLORS['card_bg'],
             foreground=self.COLORS['text'],
             borderwidth=1,
             bordercolor=self.COLORS['border'],
             relief='solid'
         )
         style.configure('TLabelframe.Label',
-            background=self.COLORS['background'],
-            foreground=self.COLORS['primary'],
+            background=self.COLORS['card_bg'],
+            foreground=self.COLORS['text'],
             font=self.FONTS['subheading']
         )
         
@@ -614,6 +616,17 @@ class ThemeManager:
             foreground=[('active', 'white'), ('pressed', 'white')]
         )
 
+        # Card inner sections (no borders) and headings that match card background
+        style.configure('CardSection.TFrame',
+            background=self.COLORS['card_bg'],
+            borderwidth=0
+        )
+        style.configure('CardHeading.TLabel',
+            background=self.COLORS['card_bg'],
+            foreground=self.COLORS['text'],
+            font=self.FONTS['heading']
+        )
+
         # Provide a consistent alias used by components
         style.configure('Green.Horizontal.TProgressbar', background=self.COLORS['success'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
         
@@ -722,17 +735,17 @@ class ThemeManager:
         )
         
         # === LABELFRAMES ===
-        # Standard labelframe
+        # Standard labelframe blends with card surface in dark too
         style.configure('TLabelframe',
-            background=self.COLORS['background'],
+            background=self.COLORS['card_bg'],
             foreground=self.COLORS['text'],
             bordercolor=self.COLORS['border'],
             borderwidth=1,
             relief='solid'
         )
         style.configure('TLabelframe.Label',
-            background=self.COLORS['background'],
-            foreground=self.COLORS['secondary'],
+            background=self.COLORS['card_bg'],
+            foreground=self.COLORS['text'],
             font=self.FONTS['subheading']
         )
         
@@ -819,49 +832,33 @@ class ThemeManager:
         )
         
         # === RADIO BUTTONS ===
-        print(f"--- Applying Dark Theme TRadiobutton (Label Styling Focus) ---")
+        # Radiobuttons with clear contrast in dark mode
         style.configure('TRadiobutton',
             background=self.COLORS['background'],
-            foreground=self.COLORS['text'],         # Default text color (dim)
-            indicatorcolor=self.COLORS['border'],   # Default indicator color (dark)
-            indicatorbackground=self.COLORS['background'],
+            foreground=self.COLORS['text'],
+            indicatorcolor=self.COLORS['border'],
+            indicatorbackground=self.COLORS['panel_bg'],
             indicatorrelief='flat'
         )
         style.map('TRadiobutton',
-            # Change background slightly when selected
-            background=[('active', self.COLORS['background']),
-                       ('selected', self.COLORS['panel_bg'])], # <--- Subtle BG change when selected
-            # Make FOREGROUND bright white when selected
-            foreground=[('disabled', self.COLORS['text_secondary']),
-                       ('selected', '#FFFFFF')],             # <--- Bright text when selected
-            indicatorcolor=[
-                ('selected', self.COLORS['text']),          # Try setting indicator selected bright
-                ('active', self.COLORS['panel_bg'])         # Hover state for OFF indicator
-                # Default uses configure settings
-                ]
+            background=[('active', self.COLORS['panel_bg']), ('selected', self.COLORS['panel_bg'])],
+            foreground=[('disabled', self.COLORS['text_secondary']), ('selected', '#FFFFFF')],
+            indicatorcolor=[('selected', '#FFFFFF'), ('active', self.COLORS['text'])]
         )
 
         # === CHECKBUTTONS ===
-        print(f"--- Applying Dark Theme TCheckbutton (Label Styling Focus) ---")
+        # Checkbuttons with clear contrast in dark mode
         style.configure('TCheckbutton',
             background=self.COLORS['background'],
-            foreground=self.COLORS['text'],         # Default text color (dim)
-            indicatorcolor=self.COLORS['border'],   # Default indicator color (dark)
-            indicatorbackground=self.COLORS['background'],
+            foreground=self.COLORS['text'],
+            indicatorcolor=self.COLORS['border'],
+            indicatorbackground=self.COLORS['panel_bg'],
             indicatorrelief='flat'
         )
         style.map('TCheckbutton',
-             # Change background slightly when selected
-            background=[('active', self.COLORS['background']),
-                       ('selected', self.COLORS['panel_bg'])], # <--- Subtle BG change when selected
-            # Make FOREGROUND bright white when selected
-            foreground=[('disabled', self.COLORS['text_secondary']),
-                       ('selected', '#FFFFFF')],             # <--- Bright text when selected
-            indicatorcolor=[
-                ('selected', self.COLORS['text']),          # Try setting indicator selected bright
-                ('active', self.COLORS['panel_bg'])         # Hover state for OFF indicator
-                # Default uses configure settings
-                ]
+            background=[('active', self.COLORS['panel_bg']), ('selected', self.COLORS['panel_bg'])],
+            foreground=[('disabled', self.COLORS['text_secondary']), ('selected', '#FFFFFF')],
+            indicatorcolor=[('selected', '#FFFFFF'), ('active', self.COLORS['text'])]
         )
         
         # === TREEVIEW (for tables) ===
@@ -951,6 +948,17 @@ class ThemeManager:
             foreground=[('active', 'white'), ('pressed', 'white')]
         )
 
+        # Card inner sections (no borders) and headings that match card background
+        style.configure('CardSection.TFrame',
+            background=self.COLORS['card_bg'],
+            borderwidth=0
+        )
+        style.configure('CardHeading.TLabel',
+            background=self.COLORS['card_bg'],
+            foreground=self.COLORS['text'],
+            font=self.FONTS['heading']
+        )
+
         # Provide a consistent alias used by components
         style.configure('Green.Horizontal.TProgressbar', background=self.COLORS['success'], troughcolor=self.COLORS['panel_bg'], borderwidth=0, thickness=progress_thickness_value)
 
@@ -980,7 +988,7 @@ class ThemeManager:
             Hex color code
         """
         if color_name not in self.COLORS:
-            print(f"Warning: Requested color '{color_name}' not found in theme palette. Using primary color instead.")
+            profiling_log(f"Warning: Requested color '{color_name}' not found in theme palette. Using primary color instead.")
             return self.COLORS.get('primary')
         return self.COLORS.get(color_name)
     
@@ -1115,3 +1123,103 @@ class ThemeManager:
         
         # Start from the root window
         update_slider_colors(app) 
+
+    def refresh_tk_widget_backgrounds(self, root):
+        """
+        Update backgrounds of non-ttk widgets (e.g., tk.Frame, tk.Canvas, tk.Label) to match theme.
+        This helps after theme toggles where ttk styles update automatically but tk widgets do not.
+        """
+        import tkinter as tk
+
+        def apply_bg(widget):
+            try:
+                if isinstance(widget, tk.Canvas):
+                    widget.config(bg=self.get_color('background'), highlightbackground=self.get_color('background'))
+                elif isinstance(widget, tk.Frame):
+                    widget.config(bg=self.get_color('background'))
+                elif isinstance(widget, tk.Label):
+                    # Labels should inherit the window background by default
+                    widget.config(bg=self.get_color('background'))
+            except Exception:
+                pass
+            for child in widget.winfo_children():
+                apply_bg(child)
+
+        try:
+            apply_bg(root)
+        except Exception:
+            pass
+
+    def update_radio_check_widgets(self, root):
+        """Update tk.Radiobutton and tk.Checkbutton colors for current theme."""
+        import tkinter as tk
+        from tkinter import ttk
+        select_color = '#ffffff' if self.current_theme == 'dark' else self.get_color('background')
+        text_color = '#ffffff' if self.current_theme == 'dark' else self.get_color('text')
+        bg_surface = self.get_color('background') if self.current_theme == 'light' else self.get_color('panel_bg')
+
+        def apply(widget):
+            try:
+                if isinstance(widget, tk.Radiobutton) or isinstance(widget, tk.Checkbutton):
+                    widget.config(
+                        bg=bg_surface,
+                        fg=text_color,
+                        activebackground=bg_surface,
+                        activeforeground=text_color,
+                        selectcolor=select_color
+                    )
+                # Nudge ttk radio/check widgets to refresh their styles after theme toggle
+                elif isinstance(widget, ttk.Radiobutton):
+                    try:
+                        widget.configure(style='TRadiobutton')
+                    except Exception:
+                        pass
+                elif isinstance(widget, ttk.Checkbutton):
+                    try:
+                        widget.configure(style='TCheckbutton')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            for child in widget.winfo_children():
+                apply(child)
+        try:
+            apply(root)
+        except Exception:
+            pass
+
+    def retheme_tooltips(self, root):
+        """Refresh colors of tooltips created via ui.ui_utils.add_tooltip after theme toggle.
+
+        Scans the widget tree for widgets that have an attached `_enhanced_tooltip`
+        Toplevel and updates its Frame/Label colors to match the current theme.
+        """
+        import tkinter as tk
+
+        bg_color = self.get_color('card_bg') if self.current_theme == 'light' else self.get_color('panel_bg')
+        text_color = '#ffffff' if self.current_theme == 'dark' else self.get_color('text')
+        border_color = self.get_color('border')
+
+        def apply(widget):
+            try:
+                tooltip = getattr(widget, '_enhanced_tooltip', None)
+                if tooltip and isinstance(tooltip, tk.Toplevel) and tooltip.winfo_exists():
+                    try:
+                        for child in tooltip.winfo_children():
+                            # Our add_tooltip builds a Frame then a Label inside
+                            if isinstance(child, tk.Frame):
+                                child.configure(bg=bg_color, highlightbackground=border_color)
+                                for grand in child.winfo_children():
+                                    if isinstance(grand, tk.Label):
+                                        grand.configure(bg=bg_color, fg=text_color)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            for c in widget.winfo_children():
+                apply(c)
+
+        try:
+            apply(root)
+        except Exception:
+            pass

@@ -17,7 +17,7 @@ from functools import wraps
 from config.environment import save_user_preferences
 import tkinter as tk
 
-from core.performance import profile_function, get_memory_usage
+from core.performance import profile_function, get_memory_usage, profiling_log
 from core.peak_analysis_utils import timestamps_array_to_seconds
 
 # Configure logging
@@ -230,12 +230,16 @@ def browse_files(app, time_resolution=1e-4):
                     time_offset = current_time
                     combined_times[start_idx:start_idx + n_points] = time_data + time_offset
                 except Exception as e:
-                    print(f"Error calculating time offset: {str(e)}")
+                    profiling_log(f"Error calculating time offset: {str(e)}")
                     raise
             else:
                 if i > 0:
                     # Calculate time offset from the end of the previous segment
-                    time_offset = combined_times[start_idx - 1] + (time_data[1] - time_data[0])
+                    if n_points > 1:
+                        segment_spacing = time_data[1] - time_data[0]
+                    else:
+                        segment_spacing = result.get('time_resolution', time_resolution)
+                    time_offset = combined_times[start_idx - 1] + segment_spacing
                     combined_times[start_idx:start_idx + n_points] = time_data + time_offset
                 else:
                     # First segment has no offset
@@ -253,12 +257,38 @@ def browse_files(app, time_resolution=1e-4):
         
         logger.debug(f"Total data points after concatenation: {len(t_value)}")
         
-        # Create combined DataFrame - more efficient version
-        # Only create DataFrame with data that will actually be used
+        # Create combined DataFrame
         data = pd.DataFrame({
             'Time - Plot 0': t_value,
             'Amplitude - Plot 0': x_value
         })
+
+        # Optional photon counter dead-time correction
+        try:
+            if hasattr(app, 'apply_dead_time_correction') and app.apply_dead_time_correction.get():
+                # dwell time (seconds) between samples
+                dwell_time_s = time_resolution
+                # measured rate per second from counts in each dwell period
+                # Convert dead time from ns to seconds
+                dead_time_ns = app.photon_dead_time_ns.get() if hasattr(app, 'photon_dead_time_ns') else 43.0
+                dead_time_s = float(dead_time_ns) * 1e-9
+                # R_measured = counts_per_bin / dwell_time
+                r_measured = data['Amplitude - Plot 0'].astype(np.float64) / dwell_time_s
+                # Correction factor: 1 / (1 - R_measured * T_D)
+                # Numerically guard against R_measured * T_D >= 1
+                product = r_measured * dead_time_s
+                # Cap the product slightly below 1 to avoid division by zero
+                product = np.minimum(product, 0.999999)
+                correction_factor = 1.0 / (1.0 - product)
+                # Apply to counts to get corrected counts per bin
+                corrected_counts = data['Amplitude - Plot 0'].astype(np.float64) * correction_factor
+                data['Amplitude - Plot 0'] = corrected_counts.astype(np.float32)
+        except Exception as _corr_err:
+            # Log but do not fail loading if correction fails
+            try:
+                logging.getLogger(__name__).warning(f"Dead-time correction skipped due to error: {_corr_err}")
+            except Exception:
+                pass
         
         # Update GUI
         if len(files) == 1:
@@ -345,9 +375,9 @@ def browse_files_with_ui(app, time_resolution=1e-4):
         
         # Debugging: check if data was properly set
         if not hasattr(app, 'data') or app.data is None:
-            print("WARNING: app.data is not properly set!")
+            profiling_log("WARNING: app.data is not properly set!")
         else:
-            print(f"Data successfully set with {len(app.data)} rows")
+            profiling_log(f"Data successfully set with {len(app.data)} rows")
         
         # Store the resolution used - but don't overwrite the Tkinter variable
         if hasattr(app.time_resolution, 'set'):
@@ -355,7 +385,7 @@ def browse_files_with_ui(app, time_resolution=1e-4):
         else:
             app.time_resolution = tk.DoubleVar(value=time_resolution)
             
-        print(f"Using time resolution: {time_resolution}")
+        profiling_log(f"Using time resolution: {time_resolution}")
         
         # Set data_loaded flag
         app.data_loaded = bool(data is not None)

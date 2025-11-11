@@ -11,6 +11,7 @@ from tkinter import ttk
 from matplotlib.lines import Line2D
 from scipy.signal import find_peaks
 from core.peak_analysis_utils import apply_butterworth_filter, adjust_lowpass_cutoff, calculate_lowpass_cutoff
+from core.performance import profiling_log
 
 def start_analysis(app, profile_function=None):
     """Optimized analysis and plotting of filtered data"""
@@ -34,9 +35,9 @@ def start_analysis(app, profile_function=None):
         rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution  # Time between samples in seconds
         app.fs = 1 / rate
         
-        print(f"Time samples range: {t.min():.6f} to {t.max():.6f} seconds")
-        print(f"Time resolution: {rate:.6f} seconds")
-        print(f"Calculated sampling frequency (fs): {app.fs:.2f} Hz")
+        profiling_log(f"Time samples range: {t.min():.6f} to {t.max():.6f} seconds")
+        profiling_log(f"Time resolution: {rate:.6f} seconds")
+        profiling_log(f"Calculated sampling frequency (fs): {app.fs:.2f} Hz")
 
         # Update progress
         app.update_progress_bar(1)
@@ -49,20 +50,20 @@ def start_analysis(app, profile_function=None):
             app.applied_filter_settings = {} # To store what was actually applied
 
             if filter_type == 'butterworth':
-                print(f"\n--> Applying Butterworth filter")
+                profiling_log(f"\n--> Applying Butterworth filter")
                 try:
                     # Use new variable app.filter_cutoff_freq for cutoff
                     manual_cutoff_str = app.filter_cutoff_freq.get()
                     manual_cutoff = float(manual_cutoff_str) if manual_cutoff_str else 0.0
                 except ValueError:
                     manual_cutoff = 0.0 # Default to auto if invalid
-                    print(f"Warning: Invalid Butterworth cutoff frequency '{manual_cutoff_str}'. Defaulting to auto-calculation.")
+                    profiling_log(f"Warning: Invalid Butterworth cutoff frequency '{manual_cutoff_str}'. Defaulting to auto-calculation.")
                 
                 try:
                     butter_order = int(app.butter_order_var.get())
                 except ValueError:
                     butter_order = 2 # Default order if invalid
-                    print(f"Warning: Invalid Butterworth order '{app.butter_order_var.get()}'. Defaulting to order {butter_order}.")
+                    profiling_log(f"Warning: Invalid Butterworth order '{app.butter_order_var.get()}'. Defaulting to order {butter_order}.")
 
                 # If manual_cutoff is 0, adjust_lowpass_cutoff will auto-calculate it.
                 # The prominence_threshold_butter_cutoff_calc inside adjust_lowpass_cutoff will be used.
@@ -84,13 +85,13 @@ def start_analysis(app, profile_function=None):
                     auto_calculated_val = app.applied_filter_settings['cutoff_hz']
                     if hasattr(app, 'filter_cutoff_freq'):
                         app.filter_cutoff_freq.set(f"{auto_calculated_val:.2f}")
-                        print(f"DEBUG: Auto-calculated Butterworth cutoff {auto_calculated_val:.2f} Hz updated in UI.")
+                        profiling_log(f"DEBUG: Auto-calculated Butterworth cutoff {auto_calculated_val:.2f} Hz updated in UI.")
 
                 calculated_cutoff_display = f"{app.applied_filter_settings.get('cutoff_hz', 'N/A'):.1f} Hz (Order: {app.applied_filter_settings.get('order', 'N/A')})"
                 app.filter_bandwidth.set(f"{app.applied_filter_settings.get('cutoff_hz', 0.0):.2f}")
 
             elif filter_type == 'savgol':
-                print(f"\n--> Applying Savitzky-Golay filter")
+                profiling_log(f"\n--> Applying Savitzky-Golay filter")
                 savgol_window_str = app.savgol_window_var.get()
                 savgol_poly_str = app.savgol_polyorder_var.get()
 
@@ -99,14 +100,14 @@ def start_analysis(app, profile_function=None):
                     try:
                         savgol_window = int(savgol_window_str)
                     except ValueError:
-                        print(f"Warning: Invalid Sav-Gol window length '{savgol_window_str}'. Will attempt auto-estimation.")
+                        profiling_log(f"Warning: Invalid Sav-Gol window length '{savgol_window_str}'. Will attempt auto-estimation.")
                 
                 savgol_polyorder = None
                 if savgol_poly_str:
                     try:
                         savgol_polyorder = int(savgol_poly_str)
                     except ValueError:
-                        print(f"Warning: Invalid Sav-Gol polynomial order '{savgol_poly_str}'. Will attempt default/auto.")
+                        profiling_log(f"Warning: Invalid Sav-Gol polynomial order '{savgol_poly_str}'. Will attempt default/auto.")
 
                 # prominence_threshold_savgol_window_est can be made configurable if needed
                 app.filtered_signal, app.applied_filter_settings = adjust_lowpass_cutoff(
@@ -124,14 +125,14 @@ def start_analysis(app, profile_function=None):
                 app.filter_bandwidth.set(f"SavGol W{win} P{poly}") # For display consistency
             
             else:
-                print(f"Warning: Unknown filter_type '{filter_type}'. Defaulting to raw signal.")
+                profiling_log(f"Warning: Unknown filter_type '{filter_type}'. Defaulting to raw signal.")
                 app.filtered_signal = x
                 app.applied_filter_settings = {'type': 'unknown', 'error': f'Unknown type: {filter_type}'}
                 app.filter_bandwidth.set("Unknown Filter")
 
         else:
             # Filtering disabled
-            print("\n--> Filtering disabled, using raw signal.")
+            profiling_log("\n--> Filtering disabled, using raw signal.")
             app.filtered_signal = x
             app.applied_filter_settings = {'type': 'none'}
             calculated_cutoff_display = "Disabled"

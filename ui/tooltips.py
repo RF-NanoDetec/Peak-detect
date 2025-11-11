@@ -48,11 +48,18 @@ class EnhancedTooltip:
         try:
             app = widget.winfo_toplevel()
             theme = getattr(app, 'theme_manager', None)
-            default_bg = theme.get_color('card_bg') if theme else '#505a64'
-            default_fg = theme.get_color('text') if theme else 'white'
+            if theme and theme.current_theme == 'dark':
+                default_bg = theme.get_color('panel_bg')  # dark surface
+                default_fg = '#ffffff'  # force bright text for contrast
+            elif theme:  # light
+                default_bg = theme.get_color('card_bg')
+                default_fg = theme.get_color('text')
+            else:
+                default_bg = '#333333'
+                default_fg = '#ffffff'
         except Exception:
-            default_bg = '#505a64'
-            default_fg = 'white'
+            default_bg = '#333333'
+            default_fg = '#ffffff'
         self.bg = bg or default_bg
         self.fg = fg or default_fg
         self.font = font or ("Segoe UI", 9)
@@ -204,6 +211,19 @@ class EnhancedTooltip:
         if self.tooltip_window:
             self.tooltip_window.destroy()
             self.tooltip_window = None
+
+    def retheme(self, theme_manager):
+        """Update tooltip colors when theme changes."""
+        if theme_manager.current_theme == 'dark':
+            self.bg = theme_manager.get_color('panel_bg')
+            self.fg = '#ffffff'
+        else:
+            self.bg = theme_manager.get_color('card_bg')
+            self.fg = theme_manager.get_color('text')
+        # If visible, re-render
+        if self.tooltip_window:
+            self.hide_tooltip()
+            self.show_tooltip()
     
     def update_text(self, text):
         """Update the tooltip text."""

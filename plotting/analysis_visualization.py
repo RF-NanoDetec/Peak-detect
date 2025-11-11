@@ -17,6 +17,7 @@ from core.peak_analysis_utils import (
     compute_noise_stats,
     compute_snr_values,
 )
+from core.performance import profiling_log
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -53,11 +54,11 @@ def plot_data(app, profile_function=None):
         # Get time resolution
         rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
         if rate <= 0:
-            print(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
+            profiling_log(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
             rate = 0.0001  # Default to 0.1ms sampling if invalid value
         
         sampling_rate = 1 / rate
-        print(f"DEBUG - plot_data sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
+        profiling_log(f"DEBUG - plot_data sampling rate: {sampling_rate:.1f} Hz (from time resolution {rate})")
         
         # Convert width from ms to samples
         from core.data_utils import convert_width_ms_to_samples
@@ -386,7 +387,7 @@ def plot_scatter(app, profile_function=None):
         # Get time resolution for converting widths from samples to seconds
         rate = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
         if rate <= 0:
-            print(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
+            profiling_log(f"WARNING: Invalid time resolution ({rate}), using default of 0.0001")
             rate = 0.0001  # Default to 0.1ms sampling if invalid value
         
         # Convert width parameter to samples
@@ -395,10 +396,10 @@ def plot_scatter(app, profile_function=None):
         width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
         
         # Debug output
-        print(f"\nDEBUG - Width parameter information in plot_scatter:")
-        print(f"Original width values: {app.width_p.get()} (ms)")
-        print(f"Sampling rate: {sampling_rate:.1f} Hz")
-        print(f"Converted width_p (in samples): {width_p}")
+        profiling_log(f"\nDEBUG - Width parameter information in plot_scatter:")
+        profiling_log(f"Original width values: {app.width_p.get()} (ms)")
+        profiling_log(f"Sampling rate: {sampling_rate:.1f} Hz")
+        profiling_log(f"Converted width_p (in samples): {width_p}")
 
         # Check if we should show filtered peaks
         show_filtered_peaks = hasattr(app, 'show_filtered_peaks') and app.show_filtered_peaks.get()
@@ -463,7 +464,7 @@ def plot_scatter(app, profile_function=None):
                         if key not in filtered_out_properties:
                             filtered_out_properties[key] = values[filtered_mask]
             
-            print(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
+            profiling_log(f"DEBUG - Found {len(filtered_out_peaks)} peaks that would be filtered out")
         
         # Calculate peak properties
         prominences = properties['prominences']
@@ -515,7 +516,10 @@ def plot_scatter(app, profile_function=None):
             left_indices=(properties['left_ips'] if 'left_ips' in properties else None),
             right_indices=(properties['right_ips'] if 'right_ips' in properties else None),
         )
-        baseline_signal = app.filtered_signal[baseline_mask]
+        # Use RAW signal for baseline noise estimation while masking around peaks
+        # detected from the filtered signal
+        signal_array = app.x_value if hasattr(app, 'x_value') and app.x_value is not None else app.filtered_signal
+        baseline_signal = signal_array[baseline_mask]
         noise_std, noise_mad_std, baseline_mean = compute_noise_stats(baseline_signal)
         snr_values = compute_snr_values(prominences, noise_std)
 
@@ -689,7 +693,7 @@ def plot_scatter(app, profile_function=None):
 
     except Exception as e:
         import traceback
-        print(f"Error in plot_scatter: {str(e)}")
+        profiling_log(f"Error in plot_scatter: {str(e)}")
         traceback.print_exc()
         app.preview_label.config(
             text=f"Error creating scatter plot: {str(e)}",

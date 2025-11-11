@@ -24,7 +24,6 @@ from scipy.signal import savgol_filter, find_peaks, butter, filtfilt, peak_width
 from scipy import stats
 import seaborn as sns
 import psutil
-from numba import njit
 # Tkinter
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, Tcl
@@ -41,9 +40,14 @@ from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 # Local imports
 from config.settings import Config
 from config import resource_path, APP_VERSION
-from config.environment import load_user_preferences, save_user_preferences
+from config.environment import load_user_preferences, save_user_preferences, PERFORMANCE_LOG_FILE
 # Import performance utilities
-from core.performance import profile_function, get_memory_usage
+from core.performance import (
+    profile_function,
+    get_memory_usage,
+    profiling_log,
+    set_profiling_enabled,
+)
 # Import UI utilities
 from ui import ThemeManager, StatusIndicator, ui_action
 from ui.ui_utils import (
@@ -77,7 +81,19 @@ from core.data_utils import (
     timestamps_to_seconds,  # For single timestamp conversion
     convert_width_ms_to_samples,
 )
-from core.peak_analysis_utils import timestamps_array_to_seconds, adjust_lowpass_cutoff, calculate_lowpass_cutoff, find_peaks_with_window
+try:
+    from core.peak_analysis_utils import (
+        timestamps_array_to_seconds,
+        adjust_lowpass_cutoff,
+        calculate_lowpass_cutoff,
+        find_peaks_with_window,
+    )
+except ModuleNotFoundError as exc:
+    if getattr(exc, "name", "") == "numba":
+        raise RuntimeError(
+            "Numba is required for the Peak Analysis Tool. Please install it via 'pip install numba'."
+        ) from exc
+    raise
 from core.file_export import (
     export_plot as export_plot_function,
     save_peak_information_to_csv as save_peak_information_to_csv_function,
@@ -141,8 +157,6 @@ class Application(tk.Tk):
         5. Sets up internal state variables
         """
         super().__init__()
-        # Initialize logger before other components
-        self.setup_performance_logging()
         
         # Application title and window setup
         self.title("Peak Analysis Tool")
@@ -157,6 +171,11 @@ class Application(tk.Tk):
         
         # Load preferences
         self.prefs = load_user_preferences()
+        self.profiling_enabled_var = tk.BooleanVar(
+            value=bool(self.prefs.get('enable_profiling', False))
+        )
+        # Initialize logger before other components
+        self.setup_performance_logging()
 
         # Initialize theme manager using saved preference if available
         theme_name = self.prefs.get('theme', 'dark')
@@ -170,16 +189,17 @@ class Application(tk.Tk):
             self.theme_manager.apply_matplotlib_theme()
         except Exception:
             pass
+        # Normalize tk widget backgrounds after applying ttk styles
+        try:
+            self.theme_manager.refresh_tk_widget_backgrounds(self)
+            self.theme_manager.update_radio_check_widgets(self)
+        except Exception:
+            pass
         
         # Store the StatusIndicator class for use in create_control_panel
         self.status_indicator_class = StatusIndicator
         
-        # Top toolbar
-        try:
-            from ui.components import create_toolbar
-            self.toolbar = create_toolbar(self, self)
-        except Exception:
-            pass
+        # Top toolbar is created inside create_widgets via main toolbar; remove any duplicates
 
         # Initialize high-resolution figure
         self.figure = Figure(
@@ -216,8 +236,16 @@ class Application(tk.Tk):
         self.time_resolution = tk.DoubleVar(value=1e-4)  # Time resolution factor (default: 0.1ms)
         self.cutoff_value = tk.DoubleVar(value=float(self.prefs.get('cutoff_value', 0)))  # 0 means auto-detect
         self.filter_enabled = tk.BooleanVar(value=True)  # Toggle for filtering (True=enabled)
+
+        # Photon counter dead-time correction (applied at data loading)
+        # Users can enable a correction for detector non-linearity due to dead time
+        # Default dead time is 43 ns, configurable in the Data tab
+        self.apply_dead_time_correction = tk.BooleanVar(value=False)
+        self.photon_dead_time_ns = tk.DoubleVar(value=float(self.prefs.get('photon_dead_time_ns', 43.0)))
         self.sigma_multiplier = tk.DoubleVar(value=float(self.prefs.get('sigma_multiplier', 5.0)))  # Sigma multiplier for auto threshold detection (1-10)
-        self.filter_bandwidth = tk.DoubleVar(value=0)  # Store the current filter bandwidth
+        # Store current filter setting/bandwidth as a string to allow values like
+        # "Disabled", "SavGol W.. P..", or a numeric value formatted as text
+        self.filter_bandwidth = tk.StringVar(value="Disabled")
         self.filtered_signal = None
         self.rect_selector = None
 
@@ -300,7 +328,7 @@ class Application(tk.Tk):
             try:
                 self.iconbitmap(icon_path)
             except Exception:
-                print(f"Warning: Unable to set window icon from {icon_path}")
+                profiling_log(f"Warning: Unable to set window icon from {icon_path}")
         self.setup_window_title()
 
     def toggle_guided_mode(self):
@@ -335,7 +363,7 @@ class Application(tk.Tk):
              return icon_path
         else:
              # Add a print statement for debugging if the icon isn't found
-             print(f"Warning: Icon file not found at expected location: {icon_path}")
+             profiling_log(f"Warning: Icon file not found at expected location: {icon_path}")
              return "" # Return empty string if not found
 
     def setup_window_title(self):
@@ -408,12 +436,27 @@ class Application(tk.Tk):
         Returns:
             None - The logger is stored as self.logger for use throughout the application
         """
-        logging.basicConfig(
-            filename='performance.log',
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
         self.logger = logging.getLogger('PeakAnalysis')
+        self.logger.setLevel(logging.INFO)
+        self.update_profiling_state(self.profiling_enabled_var.get(), persist=False)
+
+    def update_profiling_state(self, enabled: bool, persist: bool = True):
+        """
+        Enable or disable profiling/logging based on user preference.
+        """
+        set_profiling_enabled(enabled, log_file=str(PERFORMANCE_LOG_FILE))
+        if persist:
+            self.prefs['enable_profiling'] = enabled
+            save_user_preferences(self.prefs)
+        if hasattr(self, 'status_indicator'):
+            state = 'success' if enabled else 'idle'
+            self.status_indicator.set_state(state)
+            status_text = "Diagnostics logging enabled" if enabled else "Diagnostics logging disabled"
+            self.status_indicator.set_text(status_text)
+
+    def on_profiling_toggle(self):
+        """Handle toolbar toggle for profiling/logging."""
+        self.update_profiling_state(bool(self.profiling_enabled_var.get()))
 
     @ui_action(
         processing_message="Calculating threshold...",
@@ -475,35 +518,35 @@ class Application(tk.Tk):
             return None
         
         try:
-            print("DEBUG: Starting calculate_auto_cutoff_frequency")
+            profiling_log("Starting calculate_auto_cutoff_frequency")
             
             # Get time resolution
             try:
                 time_res = self.time_resolution.get() if hasattr(self.time_resolution, 'get') else self.time_resolution
-                print(f"DEBUG: Successfully retrieved time_resolution: {time_res}")
+                profiling_log(f"time_resolution retrieved: {time_res}")
             except Exception as e:
-                print(f"DEBUG: Error getting time_resolution: {str(e)}")
-                print(f"DEBUG: Falling back to default value 0.0001")
+                profiling_log(f"Error getting time_resolution: {str(e)}")
+                profiling_log("Falling back to default value 0.0001")
                 time_res = 0.0001  # Default fallback value
             
             # Calculate sampling rate
             fs = 1 / time_res
-            print(f"DEBUG: Calculated sampling rate (fs): {fs} Hz from time_res: {time_res}")
+            profiling_log(f"Calculated sampling rate (fs): {fs} Hz from time_res: {time_res}")
             
             # Find the highest signal value and calculate 70% threshold
             signal_max = np.max(self.x_value)
             threshold = signal_max * 0.7  # 70% of max value (30% below max)
-            print(f"DEBUG: Maximum signal value: {signal_max}")
-            print(f"DEBUG: Using 70% threshold: {threshold}")
+            profiling_log(f"Maximum signal value: {signal_max}")
+            profiling_log(f"Using 70% threshold: {threshold}")
             
             # Detect peaks above the 70% threshold to measure their widths
             peaks, _ = find_peaks(self.x_value, height=threshold)
             
             if len(peaks) == 0:
-                print("DEBUG: No peaks found above 70% threshold, using default cutoff")
+                profiling_log("No peaks found above 70% threshold, using default cutoff")
                 suggested_cutoff = 10.0  # Default cutoff if no peaks found
             else:
-                print(f"DEBUG: Found {len(peaks)} peaks above 70% threshold")
+                profiling_log(f"Found {len(peaks)} peaks above 70% threshold")
                 
                 # Use the existing core functions but with our calculated threshold
                 # instead of the big_counts and normalization_factor parameters
@@ -511,14 +554,14 @@ class Application(tk.Tk):
                     self.x_value, fs, threshold, 1.0, time_resolution=time_res
                 )
             
-            print(f"DEBUG: Calculated cutoff frequency: {suggested_cutoff} Hz")
+            profiling_log(f"Calculated cutoff frequency: {suggested_cutoff} Hz")
             
             # Update the cutoff value in GUI - use the new variable
             if hasattr(self, 'filter_cutoff_freq'):
                 self.filter_cutoff_freq.set(f"{suggested_cutoff:.2f}")
             else:
                 # Fallback or log if the new variable doesn't exist for some reason
-                print("Warning: app.filter_cutoff_freq not found, falling back to app.cutoff_value")
+                profiling_log("Warning: app.filter_cutoff_freq not found, falling back to app.cutoff_value")
                 self.cutoff_value.set(suggested_cutoff) 
             
             # Custom success message with the calculated value
@@ -530,9 +573,7 @@ class Application(tk.Tk):
             return suggested_cutoff
             
         except Exception as e:
-            print(f"DEBUG: Exception in calculate_auto_cutoff_frequency: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            profiling_log(f"Exception in calculate_auto_cutoff_frequency: {str(e)}")
             self.show_error("Error calculating cutoff frequency", str(e))
             return None
 
@@ -541,40 +582,12 @@ class Application(tk.Tk):
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Top toolbar
-        toolbar = ttk.Frame(main_frame, style='Toolbar.TFrame')
-        toolbar.pack(fill=tk.X, side=tk.TOP, padx=6, pady=6)
-
-        self.btn_load = ttk.Button(toolbar, text="Load", command=self.browse_file, style='Tool.TButton')
-        self.btn_load.pack(side=tk.LEFT, padx=3)
-        from ui.ui_utils import add_tooltip as _add_tt
-        _add_tt(self.btn_load, "Load data file(s)")
-
-        self.btn_analyze = ttk.Button(toolbar, text="Analyze", command=self.start_analysis, style='Tool.TButton')
-        self.btn_analyze.pack(side=tk.LEFT, padx=3)
-        _add_tt(self.btn_analyze, "Filter and process the loaded data")
-
-        self.btn_detect = ttk.Button(toolbar, text="Detect Peaks", command=self.run_peak_detection, style='Tool.TButton')
-        self.btn_detect.pack(side=tk.LEFT, padx=3)
-        _add_tt(self.btn_detect, "Detect peaks with current parameters")
-
-        self.btn_plot = ttk.Button(toolbar, text="Plot Analysis", command=self.plot_data, style='Tool.TButton')
-        self.btn_plot.pack(side=tk.LEFT, padx=3)
-        _add_tt(self.btn_plot, "Show peak statistics and throughput plots")
-
-        self.btn_export = ttk.Button(toolbar, text="Export Plot", command=self.export_plot, style='Tool.TButton')
-        self.btn_export.pack(side=tk.LEFT, padx=3)
-        _add_tt(self.btn_export, "Export current plot as image")
-
-        # Run All button
-        self.btn_run_all = ttk.Button(toolbar, text="Run All", command=self.run_all_pipeline, style='Tool.TButton')
-        self.btn_run_all.pack(side=tk.LEFT, padx=3)
-        _add_tt(self.btn_run_all, "Run Load → Preprocess → Detect → Analyze")
-
-        # Theme toggle button on toolbar (right side)
-        self.btn_theme_toggle = ttk.Button(toolbar, text="Theme", command=self.toggle_theme, style='Tool.TButton')
-        self.btn_theme_toggle.pack(side=tk.RIGHT, padx=3)
-        _add_tt(self.btn_theme_toggle, "Toggle between Light and Dark themes")
+        # Use the single shared toolbar from ui.components
+        try:
+            from ui.components import create_toolbar
+            create_toolbar(self, main_frame)
+        except Exception:
+            pass
 
         # Paned layout: left (controls), center (plots), right (summary)
         self.paned_window = ttk.Panedwindow(main_frame, orient=tk.HORIZONTAL)
@@ -1674,6 +1687,26 @@ class Application(tk.Tk):
         
         # Call our new method to update all sliders with the new theme colors
         self.theme_manager.update_sliders(self)
+        # Normalize tk widget backgrounds after applying ttk styles
+        try:
+            self.theme_manager.refresh_tk_widget_backgrounds(self)
+            self.theme_manager.update_radio_check_widgets(self)
+            # Refresh tooltip visuals created before toggle
+            if hasattr(self.theme_manager, 'retheme_tooltips'):
+                self.theme_manager.retheme_tooltips(self)
+        except Exception:
+            pass
+        # Force refresh of welcome screen/section containers if present
+        try:
+            if hasattr(self, 'plot_tab_control'):
+                for tab in self.plot_tab_control.tabs():
+                    w = self.nametowidget(tab)
+                    self.theme_manager.refresh_tk_widget_backgrounds(w)
+                    self.theme_manager.update_radio_check_widgets(w)
+                    if hasattr(self.theme_manager, 'retheme_tooltips'):
+                        self.theme_manager.retheme_tooltips(w)
+        except Exception:
+            pass
 
         # 2. Update specific UI Elements (Existing Code - Keep this)
         # 2. Update specific UI Elements (Existing Code - Keep this)
@@ -1695,6 +1728,21 @@ class Application(tk.Tk):
                     troughcolor=self.theme_manager.get_color('background'),
                     activebackground=self.theme_manager.get_color('primary')
                 )
+
+        # Retheme visible tooltips if any
+        try:
+            def retheme_tooltips(widget):
+                try:
+                    t = getattr(widget, '_enhanced_tooltip', None)
+                    if t:
+                        t.retheme(self.theme_manager)
+                except Exception:
+                    pass
+                for child in widget.winfo_children():
+                    retheme_tooltips(child)
+            retheme_tooltips(self)
+        except Exception:
+            pass
 
         # Update welcome label if it exists
         if hasattr(self, 'blank_tab'):
@@ -1885,7 +1933,7 @@ class Application(tk.Tk):
         # 3. Regenerate Existing Plots to Apply Full Theme
         # Get a copy of figure keys (tab names) *before* potentially modifying the dict
         existing_plot_tabs = list(self.tab_figures.keys())
-        print(f"Theme toggled to '{new_theme}'. Regenerating plots for tabs: {existing_plot_tabs}")
+        profiling_log(f"Theme toggled to '{new_theme}'. Regenerating plots for tabs: {existing_plot_tabs}")
 
         # Store the currently selected plot tab to re-select it later
         selected_tab_id = None
@@ -1903,10 +1951,10 @@ class Application(tk.Tk):
              if tab_name in regenerated_tabs:
                  continue
 
-             print(f"Attempting regeneration for plot tab: {tab_name}")
+             profiling_log(f"Attempting regeneration for plot tab: {tab_name}")
              # Ensure figure exists for this tab before trying to clear/replot
              if tab_name not in self.tab_figures or not isinstance(self.tab_figures[tab_name], Figure):
-                  print(f"  Skipping regeneration for '{tab_name}', no valid figure found.")
+                  profiling_log(f"  Skipping regeneration for '{tab_name}', no valid figure found.")
                   continue
 
              try:
@@ -1955,10 +2003,10 @@ class Application(tk.Tk):
                           self.analyze_double_peaks()
                           regenerated_tabs.add("Double Peak Selection")
                           regenerated_tabs.add("Double Peak Grid")
-                          print(f"  Regenerated Double Peak plots.")
+                          profiling_log(f"  Regenerated Double Peak plots.")
                      else:
                           # Clear both potential tabs if prerequisites aren't met
-                          print(f"  Clearing Double Peak plots as prerequisites not met.")
+                          profiling_log(f"  Clearing Double Peak plots as prerequisites not met.")
                           self._clear_plot_tab("Double Peak Selection")
                           self._clear_plot_tab("Double Peak Grid")
                           regenerated_tabs.add("Double Peak Selection") # Mark as handled
@@ -1967,13 +2015,13 @@ class Application(tk.Tk):
                 # Add elif clauses here for any other plot tabs you might have
 
                 else:
-                     print(f"  No regeneration logic defined for tab: {tab_name}")
+                     profiling_log(f"  No regeneration logic defined for tab: {tab_name}")
                      # Optionally, try a generic redraw for unknown tabs
                      # self._redraw_canvas_for_tab(tab_name)
 
 
              except Exception as e:
-                 print(f"ERROR regenerating plot for tab '{tab_name}' during theme switch:")
+                 profiling_log(f"ERROR regenerating plot for tab '{tab_name}' during theme switch:")
                  traceback.print_exc() # Print detailed error
 
         # 4. Re-select the previously selected tab if possible
@@ -1982,11 +2030,11 @@ class Application(tk.Tk):
                   # Check if the tab still exists before selecting
                   if selected_tab_id in self.plot_tab_control.tabs():
                        self.plot_tab_control.select(selected_tab_id)
-                       print(f"Re-selected tab ID: {selected_tab_id}")
+                       profiling_log(f"Re-selected tab ID: {selected_tab_id}")
                   else:
-                       print(f"Tab ID {selected_tab_id} no longer exists after regeneration.")
+                       profiling_log(f"Tab ID {selected_tab_id} no longer exists after regeneration.")
              except tk.TclError as e:
-                  print(f"Could not re-select tab ID {selected_tab_id} after theme change: {e}")
+                  profiling_log(f"Could not re-select tab ID {selected_tab_id} after theme change: {e}")
 
 
         # 5. Recreate the menu bar to update the theme toggle label
@@ -2005,11 +2053,11 @@ class Application(tk.Tk):
     def _clear_plot_tab(self, tab_name):
         """Clears the figure associated with a tab and redraws its canvas."""
         if tab_name in self.tab_figures and isinstance(self.tab_figures[tab_name], Figure):
-            print(f"Clearing figure for tab: {tab_name}")
+            profiling_log(f"Clearing figure for tab: {tab_name}")
             self.tab_figures[tab_name].clear() # Clear the figure object
             self._redraw_canvas_for_tab(tab_name) # Redraw the canvas to show blank state
         else:
-             print(f"No figure found to clear for tab: {tab_name}")
+             profiling_log(f"No figure found to clear for tab: {tab_name}")
 
 
     def _redraw_canvas_for_tab(self, tab_name):
@@ -2023,16 +2071,16 @@ class Application(tk.Tk):
                     tab_frame = self.plot_tab_control.nametowidget(tab_id)
                     for widget in tab_frame.winfo_children():
                         if isinstance(widget, FigureCanvasTkAgg):
-                            print(f"Redrawing canvas for tab: {tab_name}")
+                            profiling_log(f"Redrawing canvas for tab: {tab_name}")
                             widget.draw()
                             return # Found and drew the canvas
-                    print(f"No canvas found in tab frame for: {tab_name}")
+                    profiling_log(f"No canvas found in tab frame for: {tab_name}")
                     return # No canvas found in this tab
-            # print(f"Tab '{tab_name}' not found in plot_tab_control.")
+            # profiling_log(f"Tab '{tab_name}' not found in plot_tab_control.")
         except tk.TclError as e:
-            print(f"TclError finding/redrawing canvas for tab '{tab_name}': {e}")
+            profiling_log(f"TclError finding/redrawing canvas for tab '{tab_name}': {e}")
         except Exception as e:
-             print(f"Unexpected error redrawing canvas for tab '{tab_name}': {e}")
+             profiling_log(f"Unexpected error redrawing canvas for tab '{tab_name}': {e}")
 
 
     def _update_frame_theme_elements(self, frame):
@@ -2519,7 +2567,9 @@ class Application(tk.Tk):
             rate = 0.0001
         sampling_rate = 1 / rate
         width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
-        print(f"[DEBUG][get_peak_filter_stats] width_p (ms): {width_values}, width_p (samples): {width_p}, sampling_rate: {sampling_rate}")
+        profiling_log(
+            f"[get_peak_filter_stats] width_p (ms): {width_values}, width_p (samples): {width_p}, sampling_rate: {sampling_rate}"
+        )
         # Only use the current prominence ratio value, don't fall back to a default value
         prominence_ratio = self.prominence_ratio.get()
         all_peaks, all_properties = find_peaks_with_window(
@@ -2578,7 +2628,7 @@ class Application(tk.Tk):
                 if hasattr(self, 'peak_detector'):
                     self.peak_detector.all_peaks_count = total_peaks
                 else:
-                    print("Warning: peak_detector not found when setting all_peaks_count in on_apply_prominence_ratio")
+                    profiling_log("Warning: peak_detector not found when setting all_peaks_count in on_apply_prominence_ratio")
             else:
                 self.filtered_peaks_feedback.config(text="No peaks detected.", foreground="red")
                 if hasattr(self, 'peak_detector'):

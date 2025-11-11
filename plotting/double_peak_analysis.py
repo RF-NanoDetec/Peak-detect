@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.lines import Line2D
 from core.peak_analysis_utils import find_peaks_with_window
+from core.performance import profiling_log
 import matplotlib.pyplot as plt
 
 def find_double_peaks(peaks, properties, parameters, time_resolution):
@@ -48,10 +49,10 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
         - 'width_ratios': width ratios (next/current)
         - 'is_double_peak': boolean array indicating which peaks meet criteria
     """
-    print("Calculating distances between all consecutive peaks...")
+    profiling_log("Calculating distances between all consecutive peaks...")
     
     if len(peaks) < 2:
-        print("Not enough peaks to calculate distances")
+        profiling_log("Not enough peaks to calculate distances")
         return {
             'peak_indices': np.array([]),
             'next_peak_indices': np.array([]),
@@ -70,10 +71,10 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
     min_width_ratio = parameters.get('min_width_ratio', 0.1)  # Default: 0.1 (10%)
     max_width_ratio = parameters.get('max_width_ratio', 2.0)  # Default: 2.0 (200%)
     
-    print(f"Double peak detection parameters:")
-    print(f"  Distance range: {min_distance*1000:.1f} - {max_distance*1000:.1f} ms")
-    print(f"  Amplitude ratio range: {min_amp_ratio:.2f} - {max_amp_ratio:.2f}")
-    print(f"  Width ratio range: {min_width_ratio:.2f} - {max_width_ratio:.2f}")
+    profiling_log(f"Double peak detection parameters:")
+    profiling_log(f"  Distance range: {min_distance*1000:.1f} - {max_distance*1000:.1f} ms")
+    profiling_log(f"  Amplitude ratio range: {min_amp_ratio:.2f} - {max_amp_ratio:.2f}")
+    profiling_log(f"  Width ratio range: {min_width_ratio:.2f} - {max_width_ratio:.2f}")
     
     # Arrays to store results for all peaks except the last one (which has no next peak)
     peak_indices = []
@@ -100,16 +101,16 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
         
         # Print debug information for the first few peaks
         if i < 3:  # Only print first 3 peaks to avoid cluttering
-            print(f"\nPeak {i} detailed analysis:")
-            print(f"  Peak positions: current={current_peak}, next={next_peak}")
-            print(f"  Left IPs (raw): current={properties['left_ips'][i]:.6f}, next={properties['left_ips'][i+1]:.6f}")
-            print(f"  Left IPs (samples): current={int(properties['left_ips'][i])}, next={int(properties['left_ips'][i+1])}")
-            print(f"  Left IPs (ms): current={properties['left_ips'][i]*time_resolution*1000:.3f}, next={properties['left_ips'][i+1]*time_resolution*1000:.3f}")
-            print(f"  Start positions: current={current_start:.3f}, next={next_start:.3f}")
-            print(f"  Peak-to-peak = {peak_distance*1000:.2f}ms")
-            print(f"  Start-to-start = {start_distance*1000:.2f}ms")
-            print(f"  Difference = {(start_distance - peak_distance)*1000:.2f}ms")
-            print(f"  Peak widths: current={properties['widths'][i]:.3f}, next={properties['widths'][i+1]:.3f}")
+            profiling_log(f"\nPeak {i} detailed analysis:")
+            profiling_log(f"  Peak positions: current={current_peak}, next={next_peak}")
+            profiling_log(f"  Left IPs (raw): current={properties['left_ips'][i]:.6f}, next={properties['left_ips'][i+1]:.6f}")
+            profiling_log(f"  Left IPs (samples): current={int(properties['left_ips'][i])}, next={int(properties['left_ips'][i+1])}")
+            profiling_log(f"  Left IPs (ms): current={properties['left_ips'][i]*time_resolution*1000:.3f}, next={properties['left_ips'][i+1]*time_resolution*1000:.3f}")
+            profiling_log(f"  Start positions: current={current_start:.3f}, next={next_start:.3f}")
+            profiling_log(f"  Peak-to-peak = {peak_distance*1000:.2f}ms")
+            profiling_log(f"  Start-to-start = {start_distance*1000:.2f}ms")
+            profiling_log(f"  Difference = {(start_distance - peak_distance)*1000:.2f}ms")
+            profiling_log(f"  Peak widths: current={properties['widths'][i]:.3f}, next={properties['widths'][i+1]:.3f}")
         
         # Get peak properties
         current_amp = properties['prominences'][i]
@@ -148,8 +149,8 @@ def find_double_peaks(peaks, properties, parameters, time_resolution):
     
     # Count the number of peaks that meet criteria
     double_peak_count = np.sum(is_double_peak)
-    print(f"Analyzed {len(peaks)-1} peak pairs")
-    print(f"Found {double_peak_count} peak pairs ({double_peak_count/(len(peaks)-1)*100:.1f}%) that meet double peak criteria")
+    profiling_log(f"Analyzed {len(peaks)-1} peak pairs")
+    profiling_log(f"Found {double_peak_count} peak pairs ({double_peak_count/(len(peaks)-1)*100:.1f}%) that meet double peak criteria")
     
     return {
         'peak_indices': peak_indices,
@@ -200,7 +201,7 @@ def plot_double_peak_selection(app, figure, all_peaks, double_peak_data):
     min_distance_ms = app.double_peak_min_distance.get() * 1000
     max_distance_ms = app.double_peak_max_distance.get() * 1000
     
-    print(f"DEBUG - Distance range: min={min_distance_ms:.2f}ms, max={max_distance_ms:.2f}ms")
+    profiling_log(f"DEBUG - Distance range: min={min_distance_ms:.2f}ms, max={max_distance_ms:.2f}ms")
     
     # Plot horizontal lines for distance range with labels on both plots
     for ax in [ax1, ax2]:
@@ -354,7 +355,7 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
     matplotlib.figure.Figure
         Figure containing the grid of double peak plots
     """
-    print(f"Creating double peak grid, page {page+1}")
+    profiling_log(f"Creating double peak grid, page {page+1}")
     
     # Get the background colors from the theme
     fig_bg_color = app.theme_manager.get_color('background')
@@ -384,12 +385,12 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
     end_idx = min(start_idx + peaks_per_page, len(double_peaks))
     
     if start_idx >= len(double_peaks):
-        print("No pairs to display on this page")
+        profiling_log("No pairs to display on this page")
         # Apply theme even to empty figure before returning
         app.theme_manager.apply_plot_theme(fig, axs_flat)
         return fig
     
-    print(f"Displaying pairs {start_idx+1} to {end_idx} of {len(double_peaks)}")
+    profiling_log(f"Displaying pairs {start_idx+1} to {end_idx} of {len(double_peaks)}")
     
     # Get SEMANTIC theme colors
     signal_color = app.theme_manager.get_plot_color('line_filtered')
@@ -481,7 +482,7 @@ def plot_double_peaks_grid(app, double_peaks, peaks, t_value, filtered_signal, p
                           color=secondary_width_color, linestyle='--', linewidth=0.8)
         except (KeyError, IndexError) as e:
             # If width data is not available, just continue
-            print(f"Width data not available for peak pair {i}: {e}")
+            profiling_log(f"Width data not available for peak pair {i}: {e}")
         
         # Add ultra-compact peak information at the top of the plot
         # Using shorter format to avoid overlap: "#1: 3.4ms 0.8A 1.0W"
@@ -773,7 +774,7 @@ def show_next_double_peaks_page(app):
             
         # Increment page number, wrapping around if needed
         app.current_double_peak_page = (app.current_double_peak_page + 1) % total_pages
-        print(f"Moving to double peak page {app.current_double_peak_page + 1} of {total_pages}")
+        profiling_log(f"Moving to double peak page {app.current_double_peak_page + 1} of {total_pages}")
         
         # Ensure we have all required peak properties
         if not hasattr(app, 'peak_heights') or app.peak_heights is None:
@@ -846,7 +847,7 @@ def show_prev_double_peaks_page(app):
             
         # Decrement page number, wrapping around if needed
         app.current_double_peak_page = (app.current_double_peak_page - 1) % total_pages
-        print(f"Moving to double peak page {app.current_double_peak_page + 1} of {total_pages}")
+        profiling_log(f"Moving to double peak page {app.current_double_peak_page + 1} of {total_pages}")
         
         # Ensure we have all required peak properties
         if not hasattr(app, 'peak_heights') or app.peak_heights is None:

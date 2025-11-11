@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.lines import Line2D
 from core.peak_analysis_utils import find_peaks_with_window
+from core.performance import profiling_log
 import matplotlib.pyplot as plt
 
 def run_peak_detection(app, profile_function=None):
@@ -414,7 +415,7 @@ def show_next_peaks(app, profile_function=None):
     app.segment_offset = (app.segment_offset + 1) % total_peaks
     
     # Debug print
-    print(f"Next peaks: Offset changed to {app.segment_offset}")
+    profiling_log(f"Next peaks: Offset changed to {app.segment_offset}")
 
     # Trigger redraw
     success = plot_filtered_peaks(app, profile_function)
@@ -442,7 +443,7 @@ def show_prev_peaks(app, profile_function=None):
     app.segment_offset = (app.segment_offset - 1 + total_peaks) % total_peaks
     
     # Debug print
-    print(f"Prev peaks: Offset changed to {app.segment_offset}")
+    profiling_log(f"Prev peaks: Offset changed to {app.segment_offset}")
 
     # Trigger redraw
     success = plot_filtered_peaks(app, profile_function)

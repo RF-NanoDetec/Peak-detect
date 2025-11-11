@@ -14,6 +14,12 @@ from tkinter import filedialog, messagebox
 from datetime import datetime
 from config.settings import Config
 import numpy as np
+from core.peak_analysis_utils import (
+    compute_baseline_mask,
+    compute_noise_stats,
+    compute_snr_values,
+)
+from core.performance import profiling_log
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -56,8 +62,12 @@ def create_metadata_header(app):
     width_values = app.width_p.get().strip().split(',')
     time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
     
-    # Get filter information
-    filter_bandwidth = app.filter_bandwidth.get() if hasattr(app, 'filter_bandwidth') else "Not set"
+    # Get filter information (string-safe)
+    try:
+        filter_bandwidth = app.filter_bandwidth.get() if hasattr(app, 'filter_bandwidth') else "Not set"
+    except Exception:
+        # In case it's not a Tk variable
+        filter_bandwidth = getattr(app, 'filter_bandwidth', "Not set")
     
     # Create metadata header
     metadata = [
@@ -85,7 +95,12 @@ def create_metadata_header(app):
         f"#   - Relative Height: {rel_height}",
         f"#   - Width Range: {width_values}",
         f"#   - Time Resolution: {time_res} seconds",
-        f"#   - Filter Bandwidth: {filter_bandwidth} Hz",
+        f"#   - Filter: {filter_bandwidth}",
+        f"#",
+        f"# Noise Statistics:",
+        f"#   - Noise Std (baseline): {getattr(app, 'noise_std', 'N/A')}",
+        f"#   - Noise Robust (MAD*1.4826): {getattr(app, 'noise_mad_std', 'N/A')}",
+        f"#   - Baseline Mean: {getattr(app, 'baseline_mean', 'N/A')}",
         f"#",
         f"# Data Columns:",
         f"#   1. Time (s) - Peak occurrence time in seconds",
@@ -96,6 +111,7 @@ def create_metadata_header(app):
         f"#   6. Start Time (s) - Peak start time",
         f"#   7. End Time (s) - Peak end time",
         f"#   8. Interval (s) - Time between consecutive peaks",
+        f"#   9. SNR - Peak height divided by baseline noise standard deviation",
         f"#"
     ]
     
@@ -139,8 +155,11 @@ def create_double_peak_metadata_header(app):
     width_values = app.width_p.get().strip().split(',')
     time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
     
-    # Get filter information
-    filter_bandwidth = app.filter_bandwidth.get() if hasattr(app, 'filter_bandwidth') else "Not set"
+    # Get filter information (string-safe)
+    try:
+        filter_bandwidth = app.filter_bandwidth.get() if hasattr(app, 'filter_bandwidth') else "Not set"
+    except Exception:
+        filter_bandwidth = getattr(app, 'filter_bandwidth', "Not set")
     
     # Get double peak parameters
     double_peak_min_distance = app.double_peak_min_distance.get() * 1000  # Convert to ms
@@ -176,12 +195,17 @@ def create_double_peak_metadata_header(app):
         f"#   - Relative Height: {rel_height}",
         f"#   - Width Range: {width_values}",
         f"#   - Time Resolution: {time_res} seconds",
-        f"#   - Filter Bandwidth: {filter_bandwidth} Hz",
+        f"#   - Filter: {filter_bandwidth}",
         f"#",
         f"# Double Peak Parameters:",
         f"#   - Distance Range: {double_peak_min_distance:.1f} - {double_peak_max_distance:.1f} ms",
         f"#   - Amplitude Ratio Range: {double_peak_min_amp_ratio:.2f} - {double_peak_max_amp_ratio:.2f}",
         f"#   - Width Ratio Range: {double_peak_min_width_ratio:.2f} - {double_peak_max_width_ratio:.2f}",
+        f"#",
+        f"# Noise Statistics:",
+        f"#   - Noise Std (baseline): {getattr(app, 'noise_std', 'N/A')}",
+        f"#   - Noise Robust (MAD*1.4826): {getattr(app, 'noise_mad_std', 'N/A')}",
+        f"#   - Baseline Mean: {getattr(app, 'baseline_mean', 'N/A')}",
         f"#",
         f"# Data Columns:",
         f"#   1. Primary Peak Time (s) - First peak occurrence time in seconds",
@@ -290,13 +314,13 @@ def save_peak_information_to_csv(app):
     app : Application
         The main application instance
     """
-    print("DEBUG: Starting save_peak_information_to_csv")
-    print(f"DEBUG: filtered_signal exists: {app.filtered_signal is not None}")
-    print(f"DEBUG: peak_detector exists: {hasattr(app, 'peak_detector')}")
-    print(f"DEBUG: t_value exists: {hasattr(app, 't_value')}")
+    profiling_log("DEBUG: Starting save_peak_information_to_csv")
+    profiling_log(f"DEBUG: filtered_signal exists: {app.filtered_signal is not None}")
+    profiling_log(f"DEBUG: peak_detector exists: {hasattr(app, 'peak_detector')}")
+    profiling_log(f"DEBUG: t_value exists: {hasattr(app, 't_value')}")
     
     if app.filtered_signal is None or not hasattr(app, 'peak_detector') or not hasattr(app, 't_value'):
-        print("DEBUG: Missing required data")
+        profiling_log("DEBUG: Missing required data")
         app.preview_label.config(
             text="No peak data available. Please run peak detection first.", 
             foreground=app.theme_manager.get_color('error')
@@ -310,10 +334,10 @@ def save_peak_information_to_csv(app):
         app.status_indicator.set_state('processing')
         app.status_indicator.set_text("Saving peak information...")
         
-        print("DEBUG: Getting export format and options")
+        profiling_log("DEBUG: Getting export format and options")
         # Get export format and options
         file_format, delimiter, include_metadata = get_export_format(app)
-        print(f"DEBUG: Export options - format: {file_format}, delimiter: {delimiter}, metadata: {include_metadata}")
+        profiling_log(f"DEBUG: Export options - format: {file_format}, delimiter: {delimiter}, metadata: {include_metadata}")
         
         # Get current parameters
         height_lim_factor = app.height_lim.get()
@@ -321,10 +345,10 @@ def save_peak_information_to_csv(app):
         rel_height = app.rel_height.get()
         width_values = app.width_p.get().strip().split(',')
         
-        print("DEBUG: Checking if peaks are already detected")
+        profiling_log("DEBUG: Checking if peaks are already detected")
         # Check if peaks are already detected
         if not hasattr(app.peak_detector, 'peaks_indices') or app.peak_detector.peaks_indices is None:
-            print("DEBUG: No peaks detected, running peak detection")
+            profiling_log("DEBUG: No peaks detected, running peak detection")
             # Get time resolution - handle both Tkinter variable and float value
             time_res = app.time_resolution.get() if hasattr(app.time_resolution, 'get') else app.time_resolution
             
@@ -343,24 +367,24 @@ def save_peak_information_to_csv(app):
                 time_resolution=time_res
             )
         
-        print("DEBUG: Checking if areas are calculated")
+        profiling_log("DEBUG: Checking if areas are calculated")
         # Calculate areas if not already calculated
         if not hasattr(app.peak_detector, 'peaks_properties') or 'areas' not in app.peak_detector.peaks_properties:
-            print("DEBUG: Calculating peak areas")
+            profiling_log("DEBUG: Calculating peak areas")
             peak_areas, start_times, end_times = app.peak_detector.calculate_peak_areas(app.filtered_signal)
         else:
-            print("DEBUG: Using existing peak areas")
+            profiling_log("DEBUG: Using existing peak areas")
             peak_areas = app.peak_detector.peaks_properties['areas']
             start_times = app.peak_detector.peaks_properties['start_indices']
             end_times = app.peak_detector.peaks_properties['end_indices']
         
         # Get peak properties
         peak_indices = app.peak_detector.peaks_indices
-        print(f"DEBUG: Number of peaks found: {len(peak_indices) if peak_indices is not None else 0}")
+        profiling_log(f"DEBUG: Number of peaks found: {len(peak_indices) if peak_indices is not None else 0}")
         
         # Check if peaks were detected
         if peak_indices is None or len(peak_indices) == 0:
-            print("DEBUG: No peaks to save")
+            profiling_log("DEBUG: No peaks to save")
             app.status_indicator.set_state('warning')
             app.status_indicator.set_text("No peaks detected to save")
             app.preview_label.config(
@@ -372,6 +396,8 @@ def save_peak_information_to_csv(app):
         # Get peak heights and widths
         peak_heights = app.peak_detector.peaks_properties.get('prominences', [])
         peak_widths = app.peak_detector.peaks_properties.get('widths', [])
+        left_ips = app.peak_detector.peaks_properties.get('left_ips', None)
+        right_ips = app.peak_detector.peaks_properties.get('right_ips', None)
         
         # Time values at peaks
         peak_times = app.t_value[peak_indices]
@@ -382,7 +408,31 @@ def save_peak_information_to_csv(app):
         # Convert widths from samples to milliseconds
         peak_widths_ms = peak_widths * rate * 1000  # Convert samples to ms
         
-        print("DEBUG: Creating DataFrame")
+        # Ensure noise statistics are available (compute if missing)
+        noise_std = getattr(app, 'noise_std', 0.0)
+        if noise_std is None or noise_std <= 0:
+            try:
+                signal_array = app.x_value if hasattr(app, 'x_value') and app.x_value is not None else app.filtered_signal
+                baseline_mask = compute_baseline_mask(
+                    signal_length=len(signal_array),
+                    peak_indices=peak_indices,
+                    widths_in_samples=peak_widths,
+                    multiplier=2.0,
+                    left_indices=left_ips,
+                    right_indices=right_ips,
+                )
+                baseline_signal = signal_array[baseline_mask]
+                noise_std, noise_mad_std, baseline_mean = compute_noise_stats(baseline_signal)
+                app.noise_std = noise_std
+                app.noise_mad_std = noise_mad_std
+                app.baseline_mean = baseline_mean
+            except Exception:
+                noise_std = 0.0
+
+        # Compute SNR values if possible
+        snr_values = compute_snr_values(peak_heights, noise_std) if noise_std and noise_std > 0 else np.array([])
+
+        profiling_log("DEBUG: Creating DataFrame")
         # Create the DataFrame
         data = {
             'Time (s)': peak_times,
@@ -390,6 +440,10 @@ def save_peak_information_to_csv(app):
             'Width (ms)': peak_widths_ms,
             'Width (samples)': peak_widths  # Keep original width in samples for reference
         }
+
+        # Add SNR if available
+        if snr_values is not None and len(snr_values) == len(peak_times):
+            data['SNR'] = snr_values
         
         # Add areas if available
         if peak_areas is not None and len(peak_areas) == len(peak_times):
@@ -406,7 +460,7 @@ def save_peak_information_to_csv(app):
         
         # Create DataFrame
         df = pd.DataFrame(data)
-        print(f"DEBUG: DataFrame created with {len(df)} rows")
+        profiling_log(f"DEBUG: DataFrame created with {len(df)} rows")
         
         # Calculate intervals if there are at least 2 peaks
         if len(peak_times) >= 2:
@@ -414,7 +468,7 @@ def save_peak_information_to_csv(app):
             intervals.extend(peak_times[1:] - peak_times[:-1])
             df['Interval (s)'] = intervals
         
-        print("DEBUG: Showing file save dialog")
+        profiling_log("DEBUG: Showing file save dialog")
         # Ask user for save location
         file_path = filedialog.asksaveasfilename(
             defaultextension=f".{file_format}",
@@ -427,7 +481,7 @@ def save_peak_information_to_csv(app):
         )
         
         if file_path:
-            print(f"DEBUG: Saving to file: {file_path}")
+            profiling_log(f"DEBUG: Saving to file: {file_path}")
             # Create metadata header if requested
             if include_metadata:
                 metadata = create_metadata_header(app)
@@ -451,18 +505,18 @@ def save_peak_information_to_csv(app):
                 foreground=app.theme_manager.get_color('success')
             )
             
-            print("DEBUG: File saved successfully")
+            profiling_log("DEBUG: File saved successfully")
             return file_path
         else:
-            print("DEBUG: Save cancelled by user")
+            profiling_log("DEBUG: Save cancelled by user")
             # Save cancelled
             app.status_indicator.set_state('idle')
             app.status_indicator.set_text("Save cancelled")
             return None
             
     except Exception as e:
-        print(f"DEBUG: Error saving peak information: {str(e)}")
-        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+        profiling_log(f"DEBUG: Error saving peak information: {str(e)}")
+        profiling_log(f"DEBUG: Traceback: {traceback.format_exc()}")
         # Update status
         app.status_indicator.set_state('error')
         app.status_indicator.set_text("Error saving peak information")
@@ -484,10 +538,10 @@ def save_double_peak_information_to_csv(app):
     app : Application
         The main application instance
     """
-    print("DEBUG: Starting save_double_peak_information_to_csv")
+    profiling_log("DEBUG: Starting save_double_peak_information_to_csv")
     
     if not hasattr(app, 'double_peak_data') or app.double_peak_data is None:
-        print("DEBUG: No double peak data available")
+        profiling_log("DEBUG: No double peak data available")
         app.preview_label.config(
             text="No double peak data available. Please run double peak analysis first.", 
             foreground=app.theme_manager.get_color('error')
@@ -501,10 +555,10 @@ def save_double_peak_information_to_csv(app):
         app.status_indicator.set_state('processing')
         app.status_indicator.set_text("Saving double peak information...")
         
-        print("DEBUG: Getting export format and options")
+        profiling_log("DEBUG: Getting export format and options")
         # Get export format and options
         file_format, delimiter, include_metadata = get_export_format(app)
-        print(f"DEBUG: Export options - format: {file_format}, delimiter: {delimiter}, metadata: {include_metadata}")
+        profiling_log(f"DEBUG: Export options - format: {file_format}, delimiter: {delimiter}, metadata: {include_metadata}")
         
         # Get double peak data
         double_peak_data = app.double_peak_data
@@ -535,6 +589,27 @@ def save_double_peak_information_to_csv(app):
         # Calculate start-to-start distances in milliseconds
         start_to_start_distances = (next_peak_left_ips - peak_left_ips) * time_res * 1000
         
+        # Ensure noise statistics are available (compute if missing)
+        noise_std = getattr(app, 'noise_std', 0.0)
+        if noise_std is None or noise_std <= 0:
+            try:
+                signal_array = app.x_value if hasattr(app, 'x_value') and app.x_value is not None else app.filtered_signal
+                baseline_mask = compute_baseline_mask(
+                    signal_length=len(signal_array),
+                    peak_indices=app.peaks if hasattr(app, 'peaks') else peak_indices,
+                    widths_in_samples=app.peak_widths if hasattr(app, 'peak_widths') else np.array([]),
+                    multiplier=2.0,
+                    left_indices=app.peak_left_ips if hasattr(app, 'peak_left_ips') else None,
+                    right_indices=app.peak_right_ips if hasattr(app, 'peak_right_ips') else None,
+                )
+                baseline_signal = signal_array[baseline_mask]
+                noise_std, noise_mad_std, baseline_mean = compute_noise_stats(baseline_signal)
+                app.noise_std = noise_std
+                app.noise_mad_std = noise_mad_std
+                app.baseline_mean = baseline_mean
+            except Exception:
+                pass
+
         # Create the DataFrame
         data = {
             'Primary Peak Time (s)': peak_times,
@@ -550,9 +625,9 @@ def save_double_peak_information_to_csv(app):
         
         # Create DataFrame
         df = pd.DataFrame(data)
-        print(f"DEBUG: DataFrame created with {len(df)} rows")
+        profiling_log(f"DEBUG: DataFrame created with {len(df)} rows")
         
-        print("DEBUG: Showing file save dialog")
+        profiling_log("DEBUG: Showing file save dialog")
         # Ask user for save location
         file_path = filedialog.asksaveasfilename(
             defaultextension=f".{file_format}",
@@ -565,7 +640,7 @@ def save_double_peak_information_to_csv(app):
         )
         
         if file_path:
-            print(f"DEBUG: Saving to file: {file_path}")
+            profiling_log(f"DEBUG: Saving to file: {file_path}")
             # Create metadata header if requested
             if include_metadata:
                 metadata = create_double_peak_metadata_header(app)
@@ -589,18 +664,18 @@ def save_double_peak_information_to_csv(app):
                 foreground=app.theme_manager.get_color('success')
             )
             
-            print("DEBUG: File saved successfully")
+            profiling_log("DEBUG: File saved successfully")
             return file_path
         else:
-            print("DEBUG: Save cancelled by user")
+            profiling_log("DEBUG: Save cancelled by user")
             # Save cancelled
             app.status_indicator.set_state('idle')
             app.status_indicator.set_text("Save cancelled")
             return None
             
     except Exception as e:
-        print(f"DEBUG: Error saving double peak information: {str(e)}")
-        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+        profiling_log(f"DEBUG: Error saving double peak information: {str(e)}")
+        profiling_log(f"DEBUG: Traceback: {traceback.format_exc()}")
         # Update status
         app.status_indicator.set_state('error')
         app.status_indicator.set_text("Error saving double peak information")
