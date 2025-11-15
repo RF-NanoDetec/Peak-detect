@@ -1,17 +1,20 @@
 # Peak Analysis Tool
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-Proprietary-red.svg)
 
-A robust Python application for scientific peak analysis in time series data. Designed for researchers and analysts who need to detect, measure, and characterize signal peaks with precision.
+A robust web-based application for scientific peak analysis in time series data. Designed for researchers and analysts who need to detect, measure, and characterize signal peaks with precision.
 
 ![Application Screenshot](resources/images/screenshot.png)
 
 ## 🚀 Features
 
+- **Modern Web Interface**: Browser-based UI with responsive design
 - **Flexible Data Import**: Load single files or process batch datasets
 - **Advanced Signal Processing**: Apply customizable filters to reduce noise
+- **Photon Counter Correction**: Dead-time correction for accurate photon counting measurements
+- **Protocol Metadata**: Capture and store experiment conditions for reproducibility
 - **Intelligent Peak Detection**: Automatic and manual peak detection with configurable parameters
 - **Comprehensive Analysis**: Calculate and visualize key peak metrics:
   - Peak height and prominence
@@ -19,9 +22,10 @@ A robust Python application for scientific peak analysis in time series data. De
   - Area under the curve
   - Inter-peak intervals
 - **Interactive Visualization**: Explore results with interactive plots and detailed peak views
-- **Data Export**: Save results as CSV files or high-resolution plots
-- **Performance Optimized**: Efficient processing of large datasets with multi-threading support
-- **Modern UI**: Clean and responsive interface with light/dark theme support
+- **Real-time Progress Tracking**: WebSocket-based progress updates
+- **Data Export**: Save results as CSV files or high-resolution plots (includes protocol metadata)
+- **Performance Optimized**: Efficient processing of large datasets with async processing
+- **Standalone Deployment**: Single executable with embedded web UI
 
 ## 📋 Requirements
 
@@ -31,13 +35,26 @@ A robust Python application for scientific peak analysis in time series data. De
   - Pandas (1.3+)
   - Matplotlib (3.4+)
   - SciPy (1.7+)
-  - Tkinter (8.6+)
+  - FastAPI (0.115+)
+  - Uvicorn (0.30+)
   - Seaborn (0.11+)
   - Numba (required for optimized peak math)
+- **Web UI**:
+  - Node.js 16+ (for building the UI)
+  - Next.js 14+ (React framework)
 
 ## 🔧 Installation
 
-### Standard Installation
+### For End Users
+
+#### Option 1: Run Standalone Executable (Recommended)
+
+1. Download `PeakService.exe` from the releases
+2. Double-click `PeakService.exe`
+3. Your browser will automatically open to `http://127.0.0.1:8765`
+4. Begin your analysis!
+
+#### Option 2: Run from Source
 
 1. Clone the repository:
    ```bash
@@ -61,65 +78,111 @@ A robust Python application for scientific peak analysis in time series data. De
    pip install -r requirements.txt
    ```
 
-4. Run the application:
+4. Run the service:
    ```bash
-   python main.py
+   python -m service.app
    ```
 
-### Installation for Development
+5. Open your browser to `http://127.0.0.1:8765`
 
-For those who want to contribute to development:
+### For Developers
+
+#### Development Setup
 
 ```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
+# 1. Install Python dependencies
+pip install -r requirements.txt
 
-# Run tests
-pytest
+# 2. Install Node.js dependencies for the web UI
+cd ui-web
+npm install
 ```
 
-## 📊 Project Structure
+#### Running in Development Mode
+
+```bash
+# Terminal 1: Start the backend
+python -m service.app
+
+# Terminal 2: Start the frontend dev server
+cd ui-web
+npm run dev
+```
+
+Navigate to `http://localhost:3000` for hot-reload development.
+
+#### Building from Source
+
+```bash
+# Complete build process (Windows)
+tools\build_all.bat
+```
+
+This creates a standalone executable in the `dist/` directory.
+
+#### Running Tests
+
+```bash
+# Backend tests
+pytest
+
+# Frontend tests (if available)
+cd ui-web
+npm test
+```
+
+
+## Project Structure
 
 ```
 peak_analysis_tool/
-│
-├── core/                  # Core analysis functionality
-│   ├── __init__.py        # Package initialization
-│   ├── peak_detection.py  # Peak detection algorithms and classes
-│   └── peak_analysis_utils.py  # Signal processing utilities
-│
-├── plotting/              # Data visualization components
-│   ├── __init__.py
-│   ├── raw_data.py        # Raw data visualization
-│   ├── data_processing.py # Data processing visualization
-│   ├── peak_visualization.py # Peak visualization functions
-│   └── analysis_visualization.py # Statistical visualization
-│
-├── ui/                    # User interface components
-│   ├── __init__.py
-│   ├── theme.py           # Theme management (light/dark)
-│   ├── tooltips.py        # Enhanced tooltips functionality
-│   └── status_indicator.py # Status indicator widget
-│
-├── config/                # Application configuration
-│   ├── __init__.py
-│   ├── environment.py     # Environment settings
-│   └── settings.py        # Application settings
-│
-├── utils/                 # General utilities
-│   ├── __init__.py
-│   └── performance.py     # Performance monitoring and optimization
-│
-├── resources/             # Static resources
-│   └── images/            # Application images and icons
-│
-├── main.py                # Main application entry point
-├── app.py                 # Application initialization
-├── requirements.txt       # Production dependencies
-├── requirements-dev.txt   # Development dependencies
-├── CHANGES.md             # Changelog
-├── INSTALL.md             # Detailed installation instructions
-└── README.md              # This file
+|-- config/                # Environment + settings helpers
+|   |-- __init__.py
+|   `-- environment.py
+|-- core/                  # Pure analysis + data utilities
+|   |-- data_analysis.py
+|   |-- data_utils.py
+|   |-- file_handler.py
+|   |-- peak_analysis_utils.py
+|   |-- peak_detection.py
+|   |-- performance.py
+|   |-- photon_correction.py
+|   |-- service_functions.py
+|   `-- timing.py
+|-- service/               # FastAPI backend + plotting/export glue
+|   |-- app.py
+|   |-- handlers.py
+|   |-- jobs.py
+|   |-- events.py
+|   |-- models.py
+|   |-- plotting.py
+|   |-- cache.py
+|   `-- storage.py
+|-- ui-web/                # Next.js front-end
+|   |-- app/
+|   |-- components/
+|   |-- hooks/
+|   |-- lib/
+|   `-- public/
+|-- tests/
+|   |-- unit/
+|   |-- integration/
+|   `-- data fixtures (.txt)
+|-- docs/                  # Documentation hub (see docs/README.md)
+|   |-- figures/
+|   |-- guides/
+|   |-- legacy/
+|   |-- references/
+|   `-- reports/
+|-- tools/                 # Build/test helpers
+|-- installer/             # Inno Setup scripts
+|-- launcher/              # Convenience launch scripts
+|-- resources/             # Static imagery/icons
+|-- scripts/               # Documentation tooling
+|-- data/                  # Sample datasets (git-ignored by default)
+|-- requirements.txt
+|-- PeakService.spec
+`-- README.md
 ```
 
 ## 📖 Usage Guide
@@ -127,60 +190,76 @@ peak_analysis_tool/
 ### Basic Usage
 
 1. **Launch the Application**:
-   ```bash
-   python main.py
-   ```
+   - Run `PeakService.exe` (standalone)
+   - Or `python -m service.app` (from source)
+   - Your browser will open to `http://127.0.0.1:8765`
 
 2. **Load Data**:
-   - Click "Load File" to import a single data file
-   - Or use "Batch Mode" to process multiple files
+   - Click "Load" in the sidebar
+   - Select your data files or upload via drag-and-drop
+   - View the loaded data in the interactive plot
 
 3. **Preprocess Data**:
-   - Apply filters to reduce noise (Low-pass, High-pass)
-   - Use the auto-cutoff feature for optimal filtering
+   - Choose a filter type (Butterworth, Savitzky-Golay, or none)
+   - Set filter parameters or use auto-cutoff
+   - Apply preprocessing and view results in real-time
 
 4. **Detect Peaks**:
-   - Set the detection threshold or use auto-threshold
-   - Adjust minimum peak distance and width parameters
+   - Configure detection parameters (threshold, minimum distance, minimum width)
+   - Use auto-threshold for automatic threshold calculation
    - Run peak detection
+   - View detected peaks highlighted on the plot
 
 5. **Analyze Results**:
-   - Review the detected peaks in the grid view
-   - Examine peak characteristics in the data table
-   - View statistical summaries and distributions
+   - Review detected peaks in the interactive table
+   - Explore peak statistics and distributions
+   - Use the peak inspector to examine individual peaks
+   - Analyze double peak patterns if present
 
 6. **Export Results**:
-   - Save peak data to CSV
-   - Export plots as high-resolution images
-   - Take screenshots of specific views
+   - Export peak data to CSV
+   - Save plots as PNG, SVG, or PDF
+   - Download analysis results for further processing
 
-### Advanced Usage
+### Advanced Features
 
-#### Custom Filters
+#### Real-time Progress Tracking
 
-Customize the filter parameters for specific signal types:
+Long-running operations show real-time progress through WebSocket connections, allowing you to monitor:
+- Preprocessing progress
+- Peak detection status
+- Analysis completion
+
+#### API Access
+
+The backend provides a REST API accessible at `http://127.0.0.1:8765/api/docs` for:
+- Programmatic data loading
+- Automated analysis workflows
+- Custom integrations
+
+#### Custom Analysis Scripts
+
+You can use the core analysis modules directly in your Python scripts:
 
 ```python
-# Example for optimizing filter settings
-cutoff = adjust_lowpass_cutoff(signal, sampling_rate, peak_count=20, normalization=0.5)
-filtered_signal = apply_butterworth_filter(4, cutoff, 'lowpass', sampling_rate, raw_signal)
+from core.peak_detection import PeakDetector
+from core.data_analysis import analyze_peaks
+
+# Your custom analysis code here
+detector = PeakDetector(data, time)
+peaks = detector.detect_peaks(threshold=0.5)
+results = analyze_peaks(data, time, peaks)
 ```
-
-#### Batch Processing
-
-For processing multiple files:
-
-1. Enable Batch Mode in the interface
-2. Select a directory containing data files
-3. Configure common parameters for all files
-4. Start batch processing
-5. Review aggregated results
 
 ## 🔄 Performance Considerations
 
-- For large datasets (>1M points), consider using decimation options
-- Enable multi-threading for batch processing by increasing MAX_WORKERS in config/settings.py
-- Monitor memory usage through the app's status bar
+- Large datasets (>1M points) are automatically decimated for visualization
+- The web UI now uses a dedicated data worker that owns typed-array buffers, streams parsed data off the main thread, and serves zoom windows without blocking React
+- Full-resolution time/amplitude arrays are delivered through a binary `/api/results/{id}/binary` endpoint so the frontend can stream typed arrays directly into workers without JSON overhead
+- Original precision is maintained for all calculations
+- Async processing prevents UI blocking during long operations
+- Caching optimizes repeated operations
+- WebSocket progress updates provide real-time feedback
 
 ## 🤝 Contributing
 

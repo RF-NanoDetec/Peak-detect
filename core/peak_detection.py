@@ -121,19 +121,7 @@ class PeakDetector:
             else:
                 width_p = None
             
-            # First find all peaks without prominence ratio filtering to get total count
-            all_peaks, all_properties = find_peaks(
-                signal, 
-                width=width_p,
-                prominence=height_lim,
-                distance=distance, 
-                rel_height=rel_height
-            )
-            
-            # Store the total number of peaks before prominence ratio filtering
-            self.all_peaks_count = len(all_peaks)
-            
-            # Now find peaks with all filters including prominence ratio
+            # Find peaks with all filters including prominence ratio (single scan)
             peaks, properties = find_peaks_with_window(
                 signal, 
                 width=width_p,
@@ -143,12 +131,15 @@ class PeakDetector:
                 prominence_ratio=prominence_ratio
             )
             
+            # Store the total number of peaks before prominence ratio filtering (from properties)
+            self.all_peaks_count = properties.get('unfiltered_count', len(peaks))
+            
             # Store results
             self.peaks_indices = peaks
             self.peaks_properties = properties
             
             # Log results
-            self.logger.info(f"Detected {len(peaks)} peaks out of {self.all_peaks_count} total peaks")
+            self.logger.info(f"Detected {len(peaks)} peaks out of {self.all_peaks_count} unfiltered peaks")
             self.logger.info(f"Peak indices: {peaks[:10]}...")
             
             return peaks, properties
@@ -368,22 +359,27 @@ class PeakDetector:
 # Function to calculate auto threshold
 def calculate_auto_threshold(signal, sigma_multiplier=5):
     """
-    Automatically calculate a threshold for peak detection based on signal statistics.
+    Automatically calculate a threshold for peak detection based on signal statistics (OPTIMIZED).
     
-    This function calculates a threshold by finding the mean and standard deviation
-    of the signal, then setting the threshold at mean + (sigma_multiplier * std_dev).
+    This function uses Median Absolute Deviation (MAD) for robust, fast threshold estimation.
+    MAD is more resistant to outliers and requires fewer passes through the data.
+    
+    OPTIMIZATION: Uses MAD instead of std for robustness and speed:
+    - MAD = median(|x - median(x)|)
+    - sigma_estimate = 1.4826 * MAD (converts MAD to equivalent std)
     
     Parameters:
         signal (numpy.ndarray): The signal data to analyze
         sigma_multiplier (float, optional): Number of standard deviations above
-            the mean to set the threshold. Defaults to 5.
+            the baseline to set the threshold. Defaults to 5.
             
     Returns:
         float: The calculated threshold value
         
     Notes:
         This method is useful for automated peak detection when the appropriate
-        threshold is not known in advance.
+        threshold is not known in advance. MAD-based estimation is faster and
+        more robust than traditional std-based methods.
         
     Example:
         >>> threshold = calculate_auto_threshold(signal, sigma_multiplier=3)
@@ -391,11 +387,17 @@ def calculate_auto_threshold(signal, sigma_multiplier=5):
     """
     if signal is None or len(signal) == 0:
         raise ValueError("Signal is empty or None")
-        
-    # Calculate standard deviation
-    signal_std = np.std(signal)
     
-    # Calculate threshold as sigma_multiplier times standard deviation
-    suggested_threshold = sigma_multiplier * signal_std
+    # OPTIMIZATION: Use Median Absolute Deviation (MAD) for robust, fast estimation
+    # MAD is more resistant to outliers and can be computed efficiently
+    median_val = np.median(signal)
+    mad = np.median(np.abs(signal - median_val))
+    
+    # Convert MAD to equivalent standard deviation (assumes normal distribution)
+    # Factor 1.4826 comes from the relationship: σ ≈ 1.4826 × MAD
+    sigma_estimate = 1.4826 * mad
+    
+    # Calculate threshold as sigma_multiplier times estimated sigma
+    suggested_threshold = sigma_multiplier * sigma_estimate
     
     return suggested_threshold 

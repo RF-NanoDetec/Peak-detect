@@ -17,10 +17,63 @@ from core.peak_analysis_utils import find_nearest as optimized_find_nearest
 # Configure logging
 logger = logging.getLogger(__name__)
 
+def decimate_min_max(x, y, max_points=10000):
+    """
+    Downsample signal using min-max decimation to preserve visual peaks and valleys.
+    
+    OPTIMIZATION: This method ensures that both the minimum and maximum values
+    in each bin are included, preserving the visual appearance of peaks.
+    
+    Args:
+        x: time array
+        y: signal array
+        max_points: maximum number of points (will return ~2x this due to min/max pairs)
+    
+    Returns:
+        x_decimated, y_decimated: decimated arrays for plotting
+    """
+    if len(x) <= max_points:
+        return x, y
+    
+    # Calculate bin size
+    n_bins = max_points // 2  # Each bin contributes 2 points (min and max)
+    bin_size = len(x) // n_bins
+    
+    if bin_size <= 1:
+        return x, y
+    
+    # Pre-allocate output arrays
+    out_indices = []
+    
+    # Process each bin
+    for i in range(n_bins):
+        start = i * bin_size
+        end = start + bin_size if i < n_bins - 1 else len(y)
+        
+        if end > start:
+            bin_y = y[start:end]
+            # Find local min and max indices within bin
+            local_min_idx = np.argmin(bin_y)
+            local_max_idx = np.argmax(bin_y)
+            
+            # Add in time order
+            if local_min_idx < local_max_idx:
+                out_indices.extend([start + local_min_idx, start + local_max_idx])
+            else:
+                out_indices.extend([start + local_max_idx, start + local_min_idx])
+    
+    # Remove duplicates while preserving order
+    out_indices = sorted(set(out_indices))
+    
+    return x[out_indices], y[out_indices]
+
+
 @profile_function
 def decimate_for_plot(x, y, max_points=10000):
     """
-    Intelligently reduce number of points for plotting while preserving important features
+    Intelligently reduce number of points for plotting while preserving important features.
+    
+    OPTIMIZED: Uses min-max decimation for better visual preservation.
     
     Args:
         x: time array
@@ -34,45 +87,8 @@ def decimate_for_plot(x, y, max_points=10000):
         if len(x) <= max_points:
             return x, y
         
-        # More efficient decimation algorithm for very large datasets
-        n_points = len(x)
-        
-        # Use numpy operations instead of loops for better performance
-        # Calculate decimation factor
-        stride = max(1, n_points // max_points)
-        
-        # For extremely large datasets, use a more aggressive approach
-        if stride > 50:
-            # Initialize mask - avoid Python loops entirely
-            mask = np.zeros(n_points, dtype=bool)
-            
-            # Include regularly spaced points - efficient slicing
-            mask[::stride] = True
-            
-            # Find peaks efficiently using vectorized operations
-            # Use a simplified peak finding for speed - just look for local maxima
-            # This is much faster than scipy.signal.find_peaks for this purpose
-            if n_points > 3:  # Need at least 3 points for this method
-                # Create shifted arrays for comparison
-                y_left = np.empty_like(y)
-                y_left[0] = -np.inf
-                y_left[1:] = y[:-1]
-                
-                y_right = np.empty_like(y)
-                y_right[-1] = -np.inf
-                y_right[:-1] = y[1:]
-                
-                # Find points that are larger than both neighbors (local maxima)
-                peak_mask = (y > y_left) & (y > y_right)
-                
-                # Include all peaks in the decimated data
-                mask = mask | peak_mask
-                
-            # Apply mask for final decimation
-            return x[mask], y[mask]
-        else:
-            # Simple stride-based decimation for less aggressive reduction
-            return x[::stride], y[::stride]
+        # Use min-max decimation for better visual quality
+        return decimate_min_max(x, y, max_points)
             
     except Exception as e:
         logger.error(f"Error decimating data: {str(e)}\n{traceback.format_exc()}")

@@ -68,6 +68,13 @@ logs/
 temp/
 performance.log
 deprecated_files/
+.cursor/
+
+# Frontend artifacts
+ui-web/node_modules/
+ui-web/.next/
+ui-web/out/
+ui-web/.turbo/
 
 # OS specific
 .DS_Store

@@ -43,10 +43,25 @@ IS_MAC = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
 
 # Base directories
-BASE_DIR = Path(__file__).parent.parent.absolute()
+# When frozen (PyInstaller), __file__ points inside the temporary extraction dir (_MEIPASS).
+# Use that for resource lookup, but write logs/cache under a user-writable location.
+_SOURCE_BASE_DIR = Path(__file__).parent.parent.absolute()
+_IS_FROZEN = hasattr(sys, "frozen") and hasattr(sys, "_MEIPASS")
+
+if _IS_FROZEN:
+    # Resources live under the PyInstaller extraction directory
+    BASE_DIR = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    # Use user local app data for logs/temp to ensure write access
+    _local_appdata = Path(os.getenv("LOCALAPPDATA", os.path.expanduser("~")))
+    _app_root = _local_appdata / "PeakAnalysisTool"
+    LOG_DIR = _app_root / "logs"
+    TEMP_DIR = _app_root / "temp"
+else:
+    BASE_DIR = _SOURCE_BASE_DIR
+    LOG_DIR = BASE_DIR / "logs"
+    TEMP_DIR = BASE_DIR / "temp"
+
 RESOURCE_DIR = BASE_DIR / "resources"
-LOG_DIR = BASE_DIR / "logs"
-TEMP_DIR = BASE_DIR / "temp"
 
 # Ensure directories exist
 os.makedirs(LOG_DIR, exist_ok=True)

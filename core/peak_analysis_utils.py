@@ -265,8 +265,14 @@ def find_peaks_with_window(signal, width, prominence, distance, rel_height, prom
         properties['left_ips'] = np.array([])
         properties['right_ips'] = np.array([])
     
+    # Store unfiltered count before filtering
+    unfiltered_count = len(peaks)
+    
     # Filter out subpeaks (peaks that sit on top of larger peaks)
     peaks, properties = filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold=prominence_ratio)
+    
+    # Add unfiltered count to properties for tracking
+    properties['unfiltered_count'] = unfiltered_count
     
     return peaks, properties
 
@@ -348,11 +354,14 @@ def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold):
 # Estimate the average peak width
 def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=1e-4, big_counts=None, **kwargs):
     """
-    Estimate the average width of peaks in a signal.
+    Estimate the average width of peaks in a signal (optimized with downsampling).
     
     This function finds significant peaks above the specified threshold and calculates 
     their average width at half prominence, which is useful for determining an appropriate
     cutoff frequency for low-pass filtering.
+    
+    OPTIMIZATION: Downsamples large signals to max 100K points and stops after finding
+    30 peaks for faster estimation.
     
     Parameters:
         signal (numpy.ndarray): The signal to analyze
@@ -373,16 +382,41 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
     """
     import logging
     _logger = logging.getLogger(__name__)
-    _logger.debug("---- Starting estimate_peak_widths ----")
+    _logger.debug("---- Starting estimate_peak_widths (OPTIMIZED) ----")
     _logger.debug(f"Input signal shape: {signal.shape}")
     _logger.debug(f"Sampling frequency (fs): {fs} Hz")
-    # Determine threshold if not provided
-    if prominence_threshold is None or prominence_threshold <= 0:
-        prominence_threshold = max(5.0 * np.std(signal), 0.1)
-    _logger.debug(f"Prominence threshold: {prominence_threshold}")
     
-    # Find significant peaks for width estimation
-    peaks, _ = find_peaks(signal, width=[1, 20000], prominence=prominence_threshold, distance=1000)
+    # OPTIMIZATION: Downsample large signals
+    MAX_SAMPLES = 100000
+    downsample_factor = 1
+    working_signal = signal
+    
+    if len(signal) > MAX_SAMPLES:
+        downsample_factor = len(signal) // MAX_SAMPLES
+        working_signal = signal[::downsample_factor]
+        _logger.debug(f"OPTIMIZATION: Downsampled signal from {len(signal)} to {len(working_signal)} points (factor={downsample_factor})")
+    
+    # Determine threshold if not provided (use MAD for robustness on downsampled signal)
+    if prominence_threshold is None or prominence_threshold <= 0:
+        # Use Median Absolute Deviation for robust estimation
+        median_val = np.median(working_signal)
+        mad = np.median(np.abs(working_signal - median_val))
+        prominence_threshold = max(5.0 * 1.4826 * mad, 0.1)
+        _logger.debug(f"MAD-based prominence threshold: {prominence_threshold}")
+    else:
+        _logger.debug(f"Prominence threshold: {prominence_threshold}")
+    
+    # OPTIMIZATION: Find peaks with relaxed distance for faster search
+    # Early stopping after 30 peaks
+    TARGET_PEAKS = 30
+    peaks, _ = find_peaks(working_signal, width=[1, 20000], prominence=prominence_threshold, distance=500)
+    
+    # If we found more than TARGET_PEAKS, sample a subset
+    if len(peaks) > TARGET_PEAKS:
+        # Use evenly spaced peaks for representative sample
+        step = len(peaks) // TARGET_PEAKS
+        peaks = peaks[::step][:TARGET_PEAKS]
+        _logger.debug(f"OPTIMIZATION: Sampled {TARGET_PEAKS} peaks from {len(peaks) * step} found")
     
     # If no peaks found, use default width
     if len(peaks) == 0:
@@ -393,8 +427,11 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
         return default_width
     
     # Calculate widths at half-prominence
-    width_results = peak_widths(signal, peaks, rel_height=0.5)
+    width_results = peak_widths(working_signal, peaks, rel_height=0.5)
     widths = width_results[0]
+    
+    # Adjust widths for downsampling
+    widths = widths * downsample_factor
     
     # Calculate average width and convert to seconds using sampling frequency
     avg_samples = np.mean(widths)

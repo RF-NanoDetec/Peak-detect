@@ -226,7 +226,8 @@ def analyze_time_resolved_pure(
     Returns
     -------
     tuple | None
-        (peaks, areas, intervals) or None if no peaks
+        (peaks, areas, intervals, widths_samples) or None if no peaks
+        widths_samples are in sample units, convert with time_resolution
     """
     try:
         if signal is None or len(signal) == 0:
@@ -268,10 +269,13 @@ def analyze_time_resolved_pure(
                 areas.append(0)
         areas = np.array(areas)
 
+        # Extract widths in samples from properties
+        widths_samples = properties.get('widths', np.array([]))
+
         # Intervals between peaks
         intervals = calculate_peak_intervals(time_values, peaks)
 
-        return peaks, areas, intervals
+        return peaks, areas, intervals, widths_samples
 
     except Exception as e:
         logger.error(f"Error in analyze_time_resolved_pure: {str(e)}\n{traceback.format_exc()}")
