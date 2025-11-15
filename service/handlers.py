@@ -671,7 +671,7 @@ def auto_cutoff(payload: Dict[str, str], store: InMemoryStore = Depends(get_stor
     cached_cutoff = cache_module.get_auto_cutoff_result(result_id)
     if cached_cutoff is not None:
         logger.info(f"Auto-cutoff: using cached result={cached_cutoff} Hz")
-        return {"cutoff_freq": float(cached_cutoff)}
+        return {"cutoff_freq": int(round(cached_cutoff))}
     
     base = store.get_result(result_id)
     if not base:
@@ -704,12 +704,15 @@ def auto_cutoff(payload: Dict[str, str], store: InMemoryStore = Depends(get_stor
     cutoff_hz = min(cutoff_hz, nyquist_hz * 0.95)
     cutoff_hz = max(cutoff_hz, 0.01)
     
-    logger.info(f"Auto-cutoff: calculated cutoff={cutoff_hz} Hz")
+    # Round to integer
+    cutoff_hz_int = int(round(cutoff_hz))
     
-    # Cache the result
-    cache_module.cache_auto_cutoff_result(result_id, cutoff_hz)
+    logger.info(f"Auto-cutoff: calculated cutoff={cutoff_hz} Hz, rounded to {cutoff_hz_int} Hz")
     
-    return {"cutoff_freq": float(cutoff_hz)}
+    # Cache the result (store as integer)
+    cache_module.cache_auto_cutoff_result(result_id, float(cutoff_hz_int))
+    
+    return {"cutoff_freq": cutoff_hz_int}
 
 
 @router.post("/detect/auto-threshold")
@@ -753,9 +756,11 @@ def auto_threshold(payload: Dict[str, Any], store: InMemoryStore = Depends(get_s
     
     # Calculate threshold from the selected signal
     threshold = calculate_auto_threshold(signal, sigma_multiplier=sigma_multiplier)
-    logger.info(f"Auto-threshold: Calculated from {data_source} data - sigma={sigma_multiplier}, threshold={threshold:.2f}")
+    # Round to integer as requested
+    threshold_int = int(round(threshold))
+    logger.info(f"Auto-threshold: Calculated from {data_source} data - sigma={sigma_multiplier}, threshold={threshold:.2f}, rounded to integer: {threshold_int}")
     
-    return {"prominence_threshold": float(threshold)}
+    return {"prominence_threshold": float(threshold_int)}
 
 
 @router.post("/detect/inspect-peaks")

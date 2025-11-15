@@ -185,8 +185,9 @@ export default function PreprocessPage() {
                   <div className="flex gap-2">
                     <Input
                       type="number"
+                      step="1"
                       value={params.filter_cutoff_freq}
-                      onChange={(e) => updateParam('filter_cutoff_freq', parseFloat(e.target.value))}
+                      onChange={(e) => updateParam('filter_cutoff_freq', Math.round(parseFloat(e.target.value) || 0))}
                     />
                     <Button
                       variant="outline"
@@ -198,8 +199,9 @@ export default function PreprocessPage() {
                         }
                         try {
                           const response = await apiClient.autoCalculateCutoff(resultId)
-                          updateParam('filter_cutoff_freq', response.cutoff_freq)
-                          toast.success(`Cutoff set to ${response.cutoff_freq.toFixed(1)} Hz`)
+                          const cutoffInt = Math.round(response.cutoff_freq)
+                          updateParam('filter_cutoff_freq', cutoffInt)
+                          toast.success(`Cutoff set to ${cutoffInt} Hz`)
                         } catch (error) {
                           toast.error("Failed to calculate cutoff")
                         }
@@ -272,9 +274,6 @@ export default function PreprocessPage() {
                 <div className="space-y-1">
                   <label className="text-sm font-medium">
                     Prominence Threshold
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      (current: {params.prominence_threshold})
-                    </span>
                   </label>
                   <Input
                     type="number"
