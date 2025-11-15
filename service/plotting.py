@@ -346,3 +346,283 @@ def generate_peak_regions_plot(time_data, amplitude_data, filtered_amplitude, pe
         raise
 
 
+def calculate_histogram_bins(data, is_log=False):
+    """
+    Calculate histogram bins and counts for given data.
+    
+    Args:
+        data: Array of data values
+        is_log: Whether to use logarithmic binning
+    
+    Returns:
+        dict with 'bins' (bin edges) and 'counts' (counts per bin)
+    """
+    if len(data) == 0:
+        return {"bins": [], "counts": []}
+    
+    data = np.asarray(data)
+    
+    # Filter positive values for log scale
+    if is_log:
+        data_positive = data[data > 0]
+        if len(data_positive) == 0:
+            return {"bins": [], "counts": []}
+        data = data_positive
+    
+    # Calculate number of bins using Freedman-Diaconis rule
+    if is_log:
+        log_data = np.log10(data)
+        iqr = np.percentile(log_data, 75) - np.percentile(log_data, 25)
+        if iqr == 0:
+            num_bins = 20
+        else:
+            bin_width = 2 * iqr / (len(data) ** (1/3))
+            if bin_width == 0:
+                num_bins = 20
+            else:
+                num_bins = int((log_data.max() - log_data.min()) / bin_width)
+                num_bins = max(10, min(50, num_bins))
+        # Create log-spaced bins
+        log_min = np.log10(data.min())
+        log_max = np.log10(data.max())
+        bins = np.logspace(log_min, log_max, num_bins + 1)
+    else:
+        iqr = np.percentile(data, 75) - np.percentile(data, 25)
+        if iqr == 0:
+            num_bins = 20
+        else:
+            bin_width = 2 * iqr / (len(data) ** (1/3))
+            if bin_width == 0:
+                num_bins = 20
+            else:
+                num_bins = int((data.max() - data.min()) / bin_width)
+                num_bins = max(10, min(50, num_bins))
+        # Create linear bins
+        bins = np.linspace(data.min(), data.max(), num_bins + 1)
+    
+    # Calculate histogram counts
+    counts, _ = np.histogram(data, bins=bins)
+    
+    # Convert bin edges to centers for plotting
+    # For log scale, use geometric mean; for linear, use arithmetic mean
+    if is_log:
+        # Geometric mean for log scale: sqrt(bin_left * bin_right)
+        bin_centers = np.sqrt(bins[:-1] * bins[1:])
+    else:
+        # Arithmetic mean for linear scale
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+    
+    return {
+        "bins": bin_centers.tolist(),
+        "counts": counts.tolist(),
+        "bin_edges": bins.tolist()
+    }
+
+
+def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals_ms):
+    """
+    Calculate histogram data for peak statistics.
+    
+    Args:
+        peak_amplitudes: Array of peak amplitudes (logarithmic scale)
+        peak_widths_ms: Array of peak widths in milliseconds (linear scale)
+        peak_intervals_ms: Array of intervals between peaks in milliseconds (logarithmic scale)
+    
+    Returns:
+        dict with histogram data for each distribution
+    """
+    try:
+        if len(peak_amplitudes) == 0:
+            logger.warning("No peak data to calculate histograms")
+            return None
+        
+        # Calculate histogram for amplitudes (linear scale)
+        amplitudes_positive = [a for a in peak_amplitudes if a > 0]
+        amplitude_hist = calculate_histogram_bins(amplitudes_positive, is_log=False) if len(amplitudes_positive) > 0 else {"bins": [], "counts": []}
+        
+        # Calculate histogram for widths (linear scale)
+        widths_positive = [w for w in peak_widths_ms if w > 0]
+        width_hist = calculate_histogram_bins(widths_positive, is_log=False) if len(widths_positive) > 0 else {"bins": [], "counts": []}
+        
+        # Calculate histogram for intervals (linear scale)
+        intervals_positive = [i for i in peak_intervals_ms if i > 0]
+        interval_hist = calculate_histogram_bins(intervals_positive, is_log=False) if len(intervals_positive) > 0 else {"bins": [], "counts": []}
+        
+        return {
+            "amplitude": amplitude_hist,
+            "width": width_hist,
+            "interval": interval_hist
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating histogram data: {e}")
+        raise
+
+
+def generate_peak_histograms(peak_amplitudes, peak_widths_ms, peak_intervals_ms):
+    """
+    Generate three histograms side by side for peak statistics.
+    
+    DEPRECATED: Use generate_peak_histogram_data instead for uPlot integration.
+    
+    Args:
+        peak_amplitudes: Array of peak amplitudes (logarithmic scale)
+        peak_widths_ms: Array of peak widths in milliseconds (linear scale)
+        peak_intervals_ms: Array of intervals between peaks in milliseconds (logarithmic scale)
+    
+    Returns:
+        base64 encoded PNG image
+    """
+    try:
+        if len(peak_amplitudes) == 0:
+            logger.warning("No peak data to plot histograms")
+            return None
+        
+        # Create figure with three subplots side by side
+        fig = Figure(figsize=(18, 5), dpi=100)
+        fig.patch.set_facecolor('#2b2b2b')
+        
+        # Calculate reasonable binning using Freedman-Diaconis rule or Scott's rule
+        def calculate_bins(data, is_log=False):
+            if len(data) == 0:
+                return 20
+            # Convert to numpy array to ensure .max() and .min() work
+            data = np.asarray(data)
+            if is_log:
+                # For log scale, use log-transformed data
+                data_positive = data[data > 0]
+                if len(data_positive) == 0:
+                    return 20
+                log_data = np.log10(data_positive)
+                iqr = np.percentile(log_data, 75) - np.percentile(log_data, 25)
+                if iqr == 0:
+                    return 20
+                bin_width = 2 * iqr / (len(data_positive) ** (1/3))
+                if bin_width == 0:
+                    return 20
+                num_bins = int((log_data.max() - log_data.min()) / bin_width)
+                return max(10, min(50, num_bins))
+            else:
+                # For linear scale, use standard Freedman-Diaconis
+                iqr = np.percentile(data, 75) - np.percentile(data, 25)
+                if iqr == 0:
+                    return 20
+                bin_width = 2 * iqr / (len(data) ** (1/3))
+                if bin_width == 0:
+                    return 20
+                num_bins = int((data.max() - data.min()) / bin_width)
+                return max(10, min(50, num_bins))
+        
+        # Histogram 1: Amplitude (logarithmic)
+        ax1 = fig.add_subplot(1, 3, 1)
+        ax1.set_facecolor('#1e1e1e')
+        
+        amplitudes_positive = [a for a in peak_amplitudes if a > 0]
+        if len(amplitudes_positive) > 0:
+            # Use log scale directly with matplotlib
+            bins_amp = calculate_bins(amplitudes_positive, is_log=True)
+            # Create log-spaced bins
+            log_min = np.log10(min(amplitudes_positive))
+            log_max = np.log10(max(amplitudes_positive))
+            log_bins = np.logspace(log_min, log_max, bins_amp)
+            ax1.hist(
+                amplitudes_positive,
+                bins=log_bins,
+                color='#5b9bd5',
+                edgecolor='#3a7ba5',
+                alpha=0.8,
+                linewidth=0.5
+            )
+            ax1.set_xscale('log')
+        else:
+            ax1.text(0.5, 0.5, 'No positive amplitudes', 
+                    ha='center', va='center', color='white', transform=ax1.transAxes)
+        
+        ax1.set_xlabel('Amplitude (log scale)', color='white', fontsize=10)
+        ax1.set_ylabel('Frequency', color='white', fontsize=10)
+        ax1.set_title('Amplitude Distribution', color='white', fontsize=11)
+        ax1.grid(True, linestyle='--', alpha=0.3, color='gray')
+        ax1.tick_params(colors='white', labelsize=9)
+        
+        # Histogram 2: Width (linear)
+        ax2 = fig.add_subplot(1, 3, 2)
+        ax2.set_facecolor('#1e1e1e')
+        
+        if len(peak_widths_ms) > 0:
+            widths_positive = [w for w in peak_widths_ms if w > 0]
+            if len(widths_positive) > 0:
+                bins_width = calculate_bins(widths_positive, is_log=False)
+                ax2.hist(
+                    widths_positive,
+                    bins=bins_width,
+                    color='#ff8c42',
+                    edgecolor='#cc6f33',
+                    alpha=0.8,
+                    linewidth=0.5
+                )
+            else:
+                ax2.text(0.5, 0.5, 'No valid widths', 
+                        ha='center', va='center', color='white', transform=ax2.transAxes)
+        else:
+            ax2.text(0.5, 0.5, 'No width data', 
+                    ha='center', va='center', color='white', transform=ax2.transAxes)
+        
+        ax2.set_xlabel('Width (ms)', color='white', fontsize=10)
+        ax2.set_ylabel('Frequency', color='white', fontsize=10)
+        ax2.set_title('Peak Width Distribution', color='white', fontsize=11)
+        ax2.grid(True, linestyle='--', alpha=0.3, color='gray')
+        ax2.tick_params(colors='white', labelsize=9)
+        
+        # Histogram 3: Distance between peaks (logarithmic)
+        ax3 = fig.add_subplot(1, 3, 3)
+        ax3.set_facecolor('#1e1e1e')
+        
+        if len(peak_intervals_ms) > 0:
+            intervals_positive = [i for i in peak_intervals_ms if i > 0]
+            if len(intervals_positive) > 0:
+                # Use log scale directly with matplotlib
+                bins_intervals = calculate_bins(intervals_positive, is_log=True)
+                # Create log-spaced bins
+                log_min = np.log10(min(intervals_positive))
+                log_max = np.log10(max(intervals_positive))
+                log_bins = np.logspace(log_min, log_max, bins_intervals)
+                ax3.hist(
+                    intervals_positive,
+                    bins=log_bins,
+                    color='#4caf50',
+                    edgecolor='#3d8b40',
+                    alpha=0.8,
+                    linewidth=0.5
+                )
+                ax3.set_xscale('log')
+            else:
+                ax3.text(0.5, 0.5, 'No valid intervals', 
+                        ha='center', va='center', color='white', transform=ax3.transAxes)
+        else:
+            ax3.text(0.5, 0.5, 'No interval data', 
+                    ha='center', va='center', color='white', transform=ax3.transAxes)
+        
+        ax3.set_xlabel('Distance Between Peaks (ms, log scale)', color='white', fontsize=10)
+        ax3.set_ylabel('Frequency', color='white', fontsize=10)
+        ax3.set_title('Peak Distance Distribution', color='white', fontsize=11)
+        ax3.grid(True, linestyle='--', alpha=0.3, color='gray')
+        ax3.tick_params(colors='white', labelsize=9)
+        
+        fig.tight_layout()
+        
+        # Convert to base64 PNG
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', facecolor=fig.get_facecolor(), 
+                   bbox_inches='tight', dpi=100)
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        plt.close(fig)
+        
+        logger.info(f"Generated peak histograms: {len(peak_amplitudes)} peaks")
+        return img_base64
+        
+    except Exception as e:
+        logger.error(f"Error generating peak histograms: {e}")
+        raise
+
+

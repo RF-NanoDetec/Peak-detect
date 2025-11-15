@@ -146,21 +146,21 @@ export default function PreprocessPage() {
       <PageControls>
         <div className="space-y-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Process & Detect</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Process & Detect</h2>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Filter Type</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-sm">Filter Type</CardTitle>
+              <CardDescription className="text-xs">
                 Choose a filter to apply to the signal
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Filter</label>
+                <label className="text-xs font-medium">Filter</label>
                 <select 
-                  className="w-full px-3 py-2 rounded-md border bg-background text-sm"
+                  className="w-full px-3 py-2 rounded-md border bg-background text-xs"
                   value={params.filter_type}
                   onChange={(e) => updateParam('filter_type', e.target.value as any)}
                 >
@@ -177,17 +177,18 @@ export default function PreprocessPage() {
           {params.filter_type === 'butterworth' && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Butterworth Parameters</CardTitle>
+                <CardTitle className="text-sm">Butterworth Parameters</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Cutoff Frequency (Hz)</label>
+                  <label className="text-xs font-medium">Cutoff Frequency (Hz)</label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
                       step="1"
                       value={params.filter_cutoff_freq}
                       onChange={(e) => updateParam('filter_cutoff_freq', Math.round(parseFloat(e.target.value) || 0))}
+                      className="text-xs"
                     />
                     <Button
                       variant="outline"
@@ -213,11 +214,12 @@ export default function PreprocessPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Order</label>
+                  <label className="text-xs font-medium">Order</label>
                   <Input
                     type="number"
                     value={params.butter_order}
                     onChange={(e) => updateParam('butter_order', parseInt(e.target.value))}
+                    className="text-xs"
                   />
                 </div>
               </CardContent>
@@ -227,23 +229,25 @@ export default function PreprocessPage() {
           {params.filter_type === 'savgol' && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Savitzky-Golay Parameters</CardTitle>
+                <CardTitle className="text-sm">Savitzky-Golay Parameters</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Window Length</label>
+                  <label className="text-xs font-medium">Window Length</label>
                   <Input
                     type="number"
                     value={params.savgol_window}
                     onChange={(e) => updateParam('savgol_window', parseInt(e.target.value))}
+                    className="text-xs"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Polynomial Order</label>
+                  <label className="text-xs font-medium">Polynomial Order</label>
                   <Input
                     type="number"
                     value={params.savgol_polyorder}
                     onChange={(e) => updateParam('savgol_polyorder', parseInt(e.target.value))}
+                    className="text-xs"
                   />
                 </div>
               </CardContent>
@@ -267,12 +271,12 @@ export default function PreprocessPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Detect Peaks</CardTitle>
+              <CardTitle className="text-sm">Detect Peaks</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">
+                  <label className="text-xs font-medium">
                     Prominence Threshold
                   </label>
                   <Input
@@ -306,18 +310,20 @@ export default function PreprocessPage() {
                     }}
                     step="0.1"
                     min="0"
+                    className="text-xs"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Min Distance (samples)</label>
+                  <label className="text-xs font-medium">Min Distance (samples)</label>
                   <Input
                     type="number"
                     value={params.distance}
                     onChange={(e) => updateParam('distance', parseInt(e.target.value))}
+                    className="text-xs"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Width Min (ms)</label>
+                  <label className="text-xs font-medium">Width Min (ms)</label>
                   <Input
                     type="number"
                     value={params.width_ms.split(',')[0]}
@@ -327,10 +333,11 @@ export default function PreprocessPage() {
                     }}
                     step="0.1"
                     min="0.01"
+                    className="text-xs"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Width Max (ms)</label>
+                  <label className="text-xs font-medium">Width Max (ms)</label>
                   <Input
                     type="number"
                     value={params.width_ms.split(',')[1]}
@@ -340,10 +347,11 @@ export default function PreprocessPage() {
                     }}
                     step="1"
                     min="0.1"
+                    className="text-xs"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Rel Height</label>
+                  <label className="text-xs font-medium">Rel Height</label>
                   <div className="relative">
                     <Input
                       type="number"
@@ -352,13 +360,13 @@ export default function PreprocessPage() {
                       step="0.5"
                       min="0"
                       max="100"
-                      className="pr-10"
+                      className="pr-10 text-xs"
                     />
-                    <span className="absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">%</span>
+                    <span className="absolute inset-y-0 right-3 flex items-center text-[10px] text-muted-foreground">%</span>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Prominence Ratio</label>
+                  <label className="text-xs font-medium">Prominence Ratio</label>
                   <div className="relative">
                     <Input
                       type="number"
@@ -367,9 +375,9 @@ export default function PreprocessPage() {
                       step="0.5"
                       min="0"
                       max="100"
-                      className="pr-10"
+                      className="pr-10 text-xs"
                     />
-                    <span className="absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">%</span>
+                    <span className="absolute inset-y-0 right-3 flex items-center text-[10px] text-muted-foreground">%</span>
                   </div>
                 </div>
               </div>
@@ -423,6 +431,7 @@ export default function PreprocessPage() {
             timeResolution={params.time_resolution}
             peakTimes={detectionResults?.peak_times || []}
             peakAmplitudes={detectionResults?.peak_amplitudes || []}
+            peakIntervals={detectionResults?.peak_intervals || []}
             peakProperties={detectionResults?.properties || null}
             previewData={previewData}
           />

@@ -631,11 +631,15 @@ def detect_run(payload: DetectPeaksRequest, store: InMemoryStore = Depends(get_s
     logger.info(f"Peak detection completed in {tracker.get_total_time():.3f}s")
     tracker.log_summary(logger)
 
+    # Convert intervals from seconds to milliseconds for consistency
+    intervals_ms = [float(i * 1000) for i in intervals] if len(intervals) > 0 else []
+
     return {
         "count": len(peaks_list),
         "peaks": peaks_list,  # Indices (for reference)
         "peak_times": peak_times,  # Actual time values (for plotting)
         "peak_amplitudes": peak_heights,  # Actual amplitudes (for plotting)
+        "peak_intervals": intervals_ms,  # Intervals between peaks in milliseconds
         "stats": {
             "mean_height": mean_height,
             "mean_width": mean_width,
@@ -896,6 +900,53 @@ def inspect_peaks(
         "total_peaks": len(peaks),
         "showing_offset": offset
     }
+
+
+@router.post("/detect/histograms")
+def generate_histograms(
+    payload: Dict[str, Any],
+    store: InMemoryStore = Depends(get_store)
+) -> Dict[str, Any]:
+    """
+    Calculate histogram data for peak statistics.
+    
+    Returns histogram bins and counts for uPlot rendering.
+    Requires peak detection data (amplitudes, widths, intervals).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    peak_amplitudes = payload.get('peak_amplitudes', [])
+    peak_widths_ms = payload.get('peak_widths_ms', [])
+    peak_intervals_ms = payload.get('peak_intervals_ms', [])
+    
+    if len(peak_amplitudes) == 0:
+        return {
+            "amplitude": {"bins": [], "counts": []},
+            "width": {"bins": [], "counts": []},
+            "interval": {"bins": [], "counts": []},
+            "message": "No peak data provided"
+        }
+    
+    try:
+        from service.plotting import generate_peak_histogram_data
+        hist_data = generate_peak_histogram_data(
+            peak_amplitudes,
+            peak_widths_ms,
+            peak_intervals_ms
+        )
+        
+        if hist_data is None:
+            return {
+                "amplitude": {"bins": [], "counts": []},
+                "width": {"bins": [], "counts": []},
+                "interval": {"bins": [], "counts": []}
+            }
+        
+        return hist_data
+    except Exception as e:
+        logger.error(f"Error calculating histogram data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error calculating histogram data: {str(e)}")
 
 
 @router.get("/cache/stats")

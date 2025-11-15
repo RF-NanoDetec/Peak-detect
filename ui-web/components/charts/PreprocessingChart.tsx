@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
 import { UPlotChart } from "./UPlotChart"
+import { UPlotHistogram } from "./UPlotHistogram"
 import { useTheme } from "next-themes"
 import type { DataPreviewResponse } from "@/lib/types"
 import { parseResultBinary } from "@/lib/binaryParsers"
@@ -15,6 +16,7 @@ interface PreprocessingChartProps {
   timeResolution?: number
   peakTimes?: number[]
   peakAmplitudes?: number[]
+  peakIntervals?: number[]  // Intervals between peaks in milliseconds
   peakProperties?: {
     prominences?: number[]
     left_ips: number[]
@@ -72,12 +74,19 @@ export function PreprocessingChart({
   timeResolution,
   peakTimes = [],
   peakAmplitudes = [],
+  peakIntervals = [],
   peakProperties = null,
   previewData = null,
 }: PreprocessingChartProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<any>(null)
+  const [histogramData, setHistogramData] = useState<{
+    amplitude: { bins: number[]; counts: number[] }
+    width: { bins: number[]; counts: number[] }
+    interval: { bins: number[]; counts: number[] }
+  } | null>(null)
+  const [histogramLoading, setHistogramLoading] = useState(false)
   
   // Displayed data (fed by worker)
   const [xData, setXData] = useState<NumericArray>([])
@@ -500,6 +509,40 @@ export function PreprocessingChart({
     }
   }, [peakTimes, peakAmplitudes, peakProperties, timeResolution])
 
+  // Fetch histogram data when peaks are detected
+  useEffect(() => {
+    if (peakAmplitudes.length === 0) {
+      setHistogramData(null)
+      return
+    }
+
+    const fetchHistogram = async () => {
+      setHistogramLoading(true)
+      try {
+        const widthScale = typeof timeResolution === "number" && Number.isFinite(timeResolution)
+          ? timeResolution * 1000
+          : 1
+        const widths_ms = (peakProperties?.widths || []).map((w: number) => w * widthScale)
+        
+        const response = await apiClient.generateHistograms(
+          peakAmplitudes,
+          widths_ms,
+          peakIntervals || []
+        )
+        
+        console.log("Histogram data received:", response)
+        setHistogramData(response)
+      } catch (error) {
+        console.error("Failed to generate histograms:", error)
+        setHistogramData(null)
+      } finally {
+        setHistogramLoading(false)
+      }
+    }
+
+    fetchHistogram()
+  }, [peakAmplitudes, peakProperties, peakIntervals, timeResolution])
+
   const formatStat = (value: number | null | undefined, digits = 2) => {
     if (value == null || !Number.isFinite(value)) return "—"
     return value.toLocaleString(undefined, {
@@ -686,71 +729,108 @@ export function PreprocessingChart({
         />
       </div>
 
-      <div className="px-6 pb-6 flex-shrink-0">
-        <div className="rounded-xl border bg-card/60 shadow-sm">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold">Peak Detection Summary</p>
-              <p className="text-xs text-muted-foreground">
-                {summary ? 'Statistics from the latest detection run' : 'Detect peaks to populate these statistics'}
-              </p>
-            </div>
-          </div>
-          {summary ? (
-            <dl className="grid gap-4 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      {/* Peak Statistics and Histograms */}
+      <div className="px-6 pb-6 flex-shrink-0 space-y-4">
+        {/* Minimalistic Peak Statistics */}
+        {summary && (
+          <div className="rounded-xl border bg-card/60 shadow-sm">
+            <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
-                <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Detected Peaks</dt>
-                <dd className="text-2xl font-semibold">{summary.count.toLocaleString()}</dd>
-                <p className="text-xs text-muted-foreground mt-1">Total peaks above thresholds</p>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mean Amplitude</dt>
-                <dd className="text-xl font-semibold">
-                  {formatStat(summary.meanAmplitude, 2)} <span className="text-xs text-muted-foreground">a.u.</span>
-                </dd>
-                <p className="text-xs text-muted-foreground mt-1">Average peak height</p>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mean Width</dt>
-                <dd className="text-xl font-semibold">
-                  {formatStat(summary.meanWidth, 2)} <span className="text-xs text-muted-foreground">ms</span>
-                </dd>
-                <p className="text-xs text-muted-foreground mt-1">Measured at half prominence</p>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mean Area</dt>
-                <dd className="text-xl font-semibold">
-                  {formatStat(summary.meanArea, 2)} <span className="text-xs text-muted-foreground">a.u.·ms</span>
-                </dd>
-                <p className="text-xs text-muted-foreground mt-1">Amplitude × width approximation</p>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mean Throughput</dt>
-                <dd className="text-xl font-semibold">
-                  {formatStat(summary.meanThroughput, 2)} <span className="text-xs text-muted-foreground">peaks/s</span>
-                </dd>
-                <p className="text-xs text-muted-foreground mt-1">Averaged reciprocal spacing</p>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estimated SNR</dt>
-                <dd className="text-xl font-semibold">
-                  {summary.snrRatio && Number.isFinite(summary.snrRatio)
-                    ? `${formatStat(summary.snrRatio, 2)} : 1`
-                    : '—'}
-                </dd>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {summary.snrDb && Number.isFinite(summary.snrDb)
-                    ? `${formatStat(summary.snrDb, 1)} dB`
-                    : 'Mean prominence vs. variation'}
+                <p className="text-sm font-semibold">Peak Statistics</p>
+                <p className="text-xs text-muted-foreground">
+                  {summary.count.toLocaleString()} peaks detected
                 </p>
               </div>
-            </dl>
-          ) : (
-            <div className="p-6 text-sm text-muted-foreground text-center">
-              Run peak detection to see amplitude, width, throughput, and SNR statistics here.
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Histograms */}
+        {peakAmplitudes.length > 0 && (
+          <div className="rounded-xl border bg-card/60 shadow-sm">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold">Peak Distributions</p>
+                <p className="text-xs text-muted-foreground">
+                  Amplitude, width, and distance distributions
+                </p>
+              </div>
+            </div>
+            <div className="p-4">
+              {histogramLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : histogramData ? (
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Amplitude Histogram (linear scale) */}
+                  <div className="flex flex-col">
+                    <p className="text-xs text-muted-foreground mb-2 text-center">Amplitude</p>
+                    {histogramData.amplitude && histogramData.amplitude.bins && histogramData.amplitude.bins.length > 0 ? (
+                      <UPlotHistogram
+                        data={histogramData.amplitude}
+                        xLabel="Amplitude"
+                        yLabel="Frequency"
+                        color={isDark ? "#5b9bd5" : "#3b82f6"}
+                        xScaleType="linear"
+                        height={200}
+                        className="w-full"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-[200px]">
+                        <p className="text-xs text-muted-foreground">No amplitude data</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Width Histogram (linear scale) */}
+                  <div className="flex flex-col">
+                    <p className="text-xs text-muted-foreground mb-2 text-center">Width</p>
+                    {histogramData.width && histogramData.width.bins && histogramData.width.bins.length > 0 ? (
+                      <UPlotHistogram
+                        data={histogramData.width}
+                        xLabel="Width (ms)"
+                        yLabel="Frequency"
+                        color={isDark ? "#ff8c42" : "#f97316"}
+                        xScaleType="linear"
+                        height={200}
+                        className="w-full"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-[200px]">
+                        <p className="text-xs text-muted-foreground">No width data</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Interval Histogram (linear scale) */}
+                  <div className="flex flex-col">
+                    <p className="text-xs text-muted-foreground mb-2 text-center">Distance</p>
+                    {histogramData.interval && histogramData.interval.bins && histogramData.interval.bins.length > 0 ? (
+                      <UPlotHistogram
+                        data={histogramData.interval}
+                        xLabel="Distance Between Peaks (ms)"
+                        yLabel="Frequency"
+                        color={isDark ? "#4caf50" : "#22c55e"}
+                        xScaleType="linear"
+                        height={200}
+                        className="w-full"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-[200px]">
+                        <p className="text-xs text-muted-foreground">No interval data</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-8 text-sm text-muted-foreground text-center">
+                  Generating histograms...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
