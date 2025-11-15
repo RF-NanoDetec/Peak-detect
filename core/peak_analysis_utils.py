@@ -354,14 +354,13 @@ def filter_subpeaks(signal, peaks, properties, prominence_ratio_threshold):
 # Estimate the average peak width
 def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=1e-4, big_counts=None, **kwargs):
     """
-    Estimate the average width of peaks in a signal (optimized with downsampling).
+    Estimate the average width of the narrowest (fastest) 10% of peaks in a signal.
     
     This function finds significant peaks above the specified threshold and calculates 
-    their average width at half prominence, which is useful for determining an appropriate
-    cutoff frequency for low-pass filtering.
+    their widths at half prominence. It then selects the narrowest 10% of peaks
+    (fastest peaks) to determine an appropriate cutoff frequency for low-pass filtering.
     
-    OPTIMIZATION: Downsamples large signals to max 100K points and stops after finding
-    30 peaks for faster estimation.
+    Uses the full signal (no downsampling) and analyzes all detected peaks.
     
     Parameters:
         signal (numpy.ndarray): The signal to analyze
@@ -372,7 +371,7 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
             converted to seconds using fs. Kept for backward compatibility.
         
     Returns:
-        float: Average width of peaks in seconds
+        float: Average width of the narrowest 10% of peaks in seconds
                
     Note:
         This function calculates peak widths in sample units and then
@@ -382,21 +381,14 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
     """
     import logging
     _logger = logging.getLogger(__name__)
-    _logger.debug("---- Starting estimate_peak_widths (OPTIMIZED) ----")
+    _logger.debug("---- Starting estimate_peak_widths (using fastest 10% of peaks) ----")
     _logger.debug(f"Input signal shape: {signal.shape}")
     _logger.debug(f"Sampling frequency (fs): {fs} Hz")
     
-    # OPTIMIZATION: Downsample large signals
-    MAX_SAMPLES = 100000
-    downsample_factor = 1
+    # Use full signal (no downsampling)
     working_signal = signal
     
-    if len(signal) > MAX_SAMPLES:
-        downsample_factor = len(signal) // MAX_SAMPLES
-        working_signal = signal[::downsample_factor]
-        _logger.debug(f"OPTIMIZATION: Downsampled signal from {len(signal)} to {len(working_signal)} points (factor={downsample_factor})")
-    
-    # Determine threshold if not provided (use MAD for robustness on downsampled signal)
+    # Determine threshold if not provided (use MAD for robustness)
     if prominence_threshold is None or prominence_threshold <= 0:
         # Use Median Absolute Deviation for robust estimation
         median_val = np.median(working_signal)
@@ -406,17 +398,9 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
     else:
         _logger.debug(f"Prominence threshold: {prominence_threshold}")
     
-    # OPTIMIZATION: Find peaks with relaxed distance for faster search
-    # Early stopping after 30 peaks
-    TARGET_PEAKS = 30
+    # Find all peaks (no early stopping)
     peaks, _ = find_peaks(working_signal, width=[1, 20000], prominence=prominence_threshold, distance=500)
-    
-    # If we found more than TARGET_PEAKS, sample a subset
-    if len(peaks) > TARGET_PEAKS:
-        # Use evenly spaced peaks for representative sample
-        step = len(peaks) // TARGET_PEAKS
-        peaks = peaks[::step][:TARGET_PEAKS]
-        _logger.debug(f"OPTIMIZATION: Sampled {TARGET_PEAKS} peaks from {len(peaks) * step} found")
+    _logger.debug(f"Total peaks found: {len(peaks)}")
     
     # If no peaks found, use default width
     if len(peaks) == 0:
@@ -426,15 +410,23 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
         _logger.debug("---- Finished estimate_peak_widths ----")
         return default_width
     
-    # Calculate widths at half-prominence
+    # Calculate widths at half-prominence for all peaks
     width_results = peak_widths(working_signal, peaks, rel_height=0.5)
     widths = width_results[0]
     
-    # Adjust widths for downsampling
-    widths = widths * downsample_factor
+    # Sort widths to find the narrowest (fastest) peaks
+    sorted_widths = np.sort(widths)
     
-    # Calculate average width and convert to seconds using sampling frequency
-    avg_samples = np.mean(widths)
+    # Select the narrowest 10% of peaks (fastest peaks)
+    num_fastest = max(1, int(len(sorted_widths) * 0.1))  # At least 1 peak
+    fastest_widths = sorted_widths[:num_fastest]
+    
+    _logger.debug(f"Total peaks: {len(peaks)}, Narrowest 10%: {num_fastest} peaks")
+    _logger.debug(f"Width range: min={np.min(widths):.2f}, max={np.max(widths):.2f} samples")
+    _logger.debug(f"Fastest 10% width range: min={np.min(fastest_widths):.2f}, max={np.max(fastest_widths):.2f} samples")
+    
+    # Calculate average width of the fastest 10% and convert to seconds using sampling frequency
+    avg_samples = np.mean(fastest_widths)
     # Prefer fs for conversion; fallback to time_resolution only if fs is invalid
     if fs and fs > 0:
         avg_width = avg_samples / fs
@@ -442,14 +434,8 @@ def estimate_peak_widths(signal, fs, prominence_threshold=None, time_resolution=
         avg_width = avg_samples * time_resolution
     
     # Print detailed debug info
-    _logger.debug(f"Peaks found: {len(peaks)}")
-    if len(peaks) < 20:  # Only print all widths if there aren't too many
-        _logger.debug(f"Raw width values in samples: {widths}")
-    else:
-        _logger.debug(f"First 5 width values in samples: {widths[:5]}...")
-    
-    _logger.debug(f"Average width in samples: {avg_samples:.2f}")
-    _logger.debug(f"Average width in seconds: {avg_width:.6f}")
+    _logger.debug(f"Average width of fastest 10% in samples: {avg_samples:.2f}")
+    _logger.debug(f"Average width of fastest 10% in seconds: {avg_width:.6f}")
     if avg_width > 0:
         _logger.debug(f"Inverse of avg_width (1/avg_width): {1/avg_width:.2f}")
         _logger.debug(f"For cutoff calculation (1/avg_width): {1/avg_width:.2f} Hz")

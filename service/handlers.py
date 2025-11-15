@@ -689,7 +689,7 @@ def auto_cutoff(payload: Dict[str, str], store: InMemoryStore = Depends(get_stor
     threshold = signal_max * 0.7
     logger.info(f"Auto-cutoff: max={signal_max}, threshold (70%)={threshold}")
     
-    # OPTIMIZATION: estimate_peak_widths now uses downsampling and early stopping
+    # estimate_peak_widths now uses full signal and fastest 10% of peaks
     avg_width_sec = estimate_peak_widths(signal, fs, prominence_threshold=threshold, time_resolution=time_resolution)
     logger.info(f"Auto-cutoff: avg_width={avg_width_sec} seconds")
     
