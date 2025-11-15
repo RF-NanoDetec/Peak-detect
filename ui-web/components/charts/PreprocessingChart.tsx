@@ -67,6 +67,31 @@ type WorkerErrorMessage = {
 
 type WorkerMessage = WorkerReadyMessage | WorkerRangeMessage | WorkerErrorMessage
 
+type HistogramMetricKey = "amplitude" | "width" | "interval"
+type AxisScaleOption = "linear" | "log" | "symlog"
+type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
+
+const histogramScaleOptions: { label: string; value: AxisScaleOption }[] = [
+  { label: "Linear", value: "linear" },
+  { label: "Log10", value: "log" },
+  { label: "Symlog", value: "symlog" },
+]
+
+const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
+  { label: "Y Linear", value: "linear" },
+  { label: "Y Log", value: "log" },
+]
+
+const defaultAxisConfig: HistogramAxisConfig = { xScale: "linear", yScale: "linear" }
+
+const computeLowRange = (values: number[], percentile = 0.35): [number, number] | null => {
+  const filtered = values.filter((v) => Number.isFinite(v))
+  if (filtered.length === 0) return null
+  const sorted = [...filtered].sort((a, b) => a - b)
+  const upperIndex = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * percentile)))
+  return [sorted[0], sorted[upperIndex]]
+}
+
 export function PreprocessingChart({ 
   resultId, 
   filteredResultId, 
@@ -82,11 +107,53 @@ export function PreprocessingChart({
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<any>(null)
   const [histogramData, setHistogramData] = useState<{
-    amplitude: { bins: number[]; counts: number[] }
-    width: { bins: number[]; counts: number[] }
-    interval: { bins: number[]; counts: number[] }
+    amplitude: { bins: number[]; counts: number[]; bin_edges?: number[] }
+    width: { bins: number[]; counts: number[]; bin_edges?: number[] }
+    interval: { bins: number[]; counts: number[]; bin_edges?: number[] }
   } | null>(null)
   const [histogramLoading, setHistogramLoading] = useState(false)
+  const [histogramScales, setHistogramScales] = useState<Record<HistogramMetricKey, HistogramAxisConfig>>({
+    amplitude: { ...defaultAxisConfig },
+    width: { ...defaultAxisConfig },
+    interval: { ...defaultAxisConfig },
+  })
+  const [histogramConfig, setHistogramConfig] = useState<{
+    binCount: number
+    focusLowRange: boolean
+  }>({
+    binCount: 60,
+    focusLowRange: false,
+  })
+  const updateXAxisScale = useCallback((metric: HistogramMetricKey, value: AxisScaleOption) => {
+    setHistogramScales((prev) => ({
+      ...prev,
+      [metric]: {
+        ...prev[metric],
+        xScale: value,
+      },
+    }))
+  }, [])
+  const updateYAxisScale = useCallback((metric: HistogramMetricKey, value: "linear" | "log") => {
+    setHistogramScales((prev) => ({
+      ...prev,
+      [metric]: {
+        ...prev[metric],
+        yScale: value,
+      },
+    }))
+  }, [])
+  const updateBinCount = useCallback((value: number) => {
+    setHistogramConfig((prev) => ({
+      ...prev,
+      binCount: value,
+    }))
+  }, [])
+  const toggleFocusLowRange = useCallback(() => {
+    setHistogramConfig((prev) => ({
+      ...prev,
+      focusLowRange: !prev.focusLowRange,
+    }))
+  }, [])
   
   // Displayed data (fed by worker)
   const [xData, setXData] = useState<NumericArray>([])
@@ -509,6 +576,12 @@ export function PreprocessingChart({
     }
   }, [peakTimes, peakAmplitudes, peakProperties, timeResolution])
 
+  const widthsMs = useMemo(() => {
+    return (peakProperties?.widths || []).map((w: number) => w * (
+      typeof timeResolution === "number" && Number.isFinite(timeResolution) ? timeResolution * 1000 : 1
+    ))
+  }, [peakProperties?.widths, timeResolution])
+
   // Fetch histogram data when peaks are detected
   useEffect(() => {
     if (peakAmplitudes.length === 0) {
@@ -519,15 +592,36 @@ export function PreprocessingChart({
     const fetchHistogram = async () => {
       setHistogramLoading(true)
       try {
-        const widthScale = typeof timeResolution === "number" && Number.isFinite(timeResolution)
-          ? timeResolution * 1000
-          : 1
-        const widths_ms = (peakProperties?.widths || []).map((w: number) => w * widthScale)
-        
+        const intervalValues = peakIntervals || []
+        const focusRanges = histogramConfig.focusLowRange
+          ? {
+              amplitude: computeLowRange(peakAmplitudes),
+              width: computeLowRange(widthsMs),
+              interval: computeLowRange(intervalValues),
+            }
+          : undefined
+
+        const normalizedRanges = focusRanges
+          ? (Object.entries(focusRanges).reduce((acc, [key, range]) => {
+              if (range) {
+                acc[key as HistogramMetricKey] = range
+              }
+              return acc
+            }, {} as Partial<Record<HistogramMetricKey, [number, number]>>))
+          : undefined
+        const rangeOverrides = normalizedRanges && Object.keys(normalizedRanges).length > 0
+          ? normalizedRanges
+          : undefined
+
         const response = await apiClient.generateHistograms(
           peakAmplitudes,
-          widths_ms,
-          peakIntervals || []
+          widthsMs,
+          intervalValues,
+          {
+            binCount: histogramConfig.binCount,
+            rangeOverrides,
+            metrics: histogramScales,
+          }
         )
         
         console.log("Histogram data received:", response)
@@ -541,7 +635,7 @@ export function PreprocessingChart({
     }
 
     fetchHistogram()
-  }, [peakAmplitudes, peakProperties, peakIntervals, timeResolution])
+  }, [peakAmplitudes, widthsMs, peakIntervals, histogramScales, histogramConfig])
 
   const formatStat = (value: number | null | undefined, digits = 2) => {
     if (value == null || !Number.isFinite(value)) return "—"
@@ -561,6 +655,45 @@ export function PreprocessingChart({
     }
     return segments
   }, [widthSegmentsState])
+
+  const axisButtonClass = (active: boolean) =>
+    `px-2 py-0.5 rounded-full border text-[11px] transition ${
+      active
+        ? "bg-primary/10 border-primary text-primary"
+        : "border-border text-muted-foreground hover:text-foreground"
+    }`
+
+  const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
+    const metricConfig = histogramScales[metric]
+    return (
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-1">
+          {histogramScaleOptions.map((option) => (
+            <button
+              key={`${metric}-${option.value}`}
+              type="button"
+              className={axisButtonClass(metricConfig.xScale === option.value)}
+              onClick={() => updateXAxisScale(metric, option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          {histogramYScaleOptions.map((option) => (
+            <button
+              key={`${metric}-y-${option.value}`}
+              type="button"
+              className={axisButtonClass(metricConfig.yScale === option.value)}
+              onClick={() => updateYAxisScale(metric, option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }, [histogramScales, updateXAxisScale, updateYAxisScale])
 
   // Recalculate series when data or peaks change
   // NOTE: Must be called before any early returns to satisfy Rules of Hooks
@@ -672,7 +805,7 @@ export function PreprocessingChart({
                 <> • zoomed: {zoomRange.min.toFixed(2)}–{zoomRange.max.toFixed(2)} min</>
               )}
               {" • "}
-              <span className="text-muted-foreground/70">Scroll to zoom • Drag to pan • Double-click to reset</span>
+              <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
             </p>
           )}
         </div>
@@ -757,6 +890,31 @@ export function PreprocessingChart({
               </div>
             </div>
             <div className="p-4">
+              <div className="mb-4 space-y-3">
+                <div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                    <span>Bin Count ({histogramConfig.binCount})</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={200}
+                    step={10}
+                    value={histogramConfig.binCount}
+                    onChange={(event) => updateBinCount(Number(event.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border"
+                    checked={histogramConfig.focusLowRange}
+                    onChange={toggleFocusLowRange}
+                  />
+                  <span>Focus on low range</span>
+                </label>
+              </div>
               {histogramLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -765,14 +923,16 @@ export function PreprocessingChart({
                 <div className="grid grid-cols-3 gap-4">
                   {/* Amplitude Histogram (linear scale) */}
                   <div className="flex flex-col">
-                    <p className="text-xs text-muted-foreground mb-2 text-center">Amplitude</p>
+                    <p className="text-xs text-muted-foreground mb-1 text-center">Amplitude</p>
+                    {renderScaleControls("amplitude")}
                     {histogramData.amplitude && histogramData.amplitude.bins && histogramData.amplitude.bins.length > 0 ? (
                       <UPlotHistogram
                         data={histogramData.amplitude}
                         xLabel="Amplitude"
                         yLabel="Frequency"
                         color={isDark ? "#5b9bd5" : "#3b82f6"}
-                        xScaleType="linear"
+                        xScaleType={histogramScales.amplitude.xScale}
+                        yScaleType={histogramScales.amplitude.yScale}
                         height={200}
                         className="w-full"
                       />
@@ -785,14 +945,16 @@ export function PreprocessingChart({
                   
                   {/* Width Histogram (linear scale) */}
                   <div className="flex flex-col">
-                    <p className="text-xs text-muted-foreground mb-2 text-center">Width</p>
+                    <p className="text-xs text-muted-foreground mb-1 text-center">Width</p>
+                    {renderScaleControls("width")}
                     {histogramData.width && histogramData.width.bins && histogramData.width.bins.length > 0 ? (
                       <UPlotHistogram
                         data={histogramData.width}
                         xLabel="Width (ms)"
                         yLabel="Frequency"
                         color={isDark ? "#ff8c42" : "#f97316"}
-                        xScaleType="linear"
+                        xScaleType={histogramScales.width.xScale}
+                        yScaleType={histogramScales.width.yScale}
                         height={200}
                         className="w-full"
                       />
@@ -805,14 +967,16 @@ export function PreprocessingChart({
                   
                   {/* Interval Histogram (linear scale) */}
                   <div className="flex flex-col">
-                    <p className="text-xs text-muted-foreground mb-2 text-center">Distance</p>
+                    <p className="text-xs text-muted-foreground mb-1 text-center">Distance</p>
+                    {renderScaleControls("interval")}
                     {histogramData.interval && histogramData.interval.bins && histogramData.interval.bins.length > 0 ? (
                       <UPlotHistogram
                         data={histogramData.interval}
                         xLabel="Distance Between Peaks (ms)"
                         yLabel="Frequency"
                         color={isDark ? "#4caf50" : "#22c55e"}
-                        xScaleType="linear"
+                        xScaleType={histogramScales.interval.xScale}
+                        yScaleType={histogramScales.interval.yScale}
                         height={200}
                         className="w-full"
                       />

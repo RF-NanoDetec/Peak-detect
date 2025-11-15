@@ -919,6 +919,7 @@ def generate_histograms(
     peak_amplitudes = payload.get('peak_amplitudes', [])
     peak_widths_ms = payload.get('peak_widths_ms', [])
     peak_intervals_ms = payload.get('peak_intervals_ms', [])
+    config = payload.get('config') or {}
     
     if len(peak_amplitudes) == 0:
         return {
@@ -933,7 +934,8 @@ def generate_histograms(
         hist_data = generate_peak_histogram_data(
             peak_amplitudes,
             peak_widths_ms,
-            peak_intervals_ms
+            peak_intervals_ms,
+            config=config
         )
         
         if hist_data is None:

@@ -7,6 +7,7 @@ OPTIMIZED: Uses smart decimation for faster rendering while preserving visual qu
 
 import io
 import base64
+from typing import Any, Dict
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for server
@@ -346,71 +347,97 @@ def generate_peak_regions_plot(time_data, amplitude_data, filtered_amplitude, pe
         raise
 
 
-def calculate_histogram_bins(data, is_log=False):
+def _normalize_range(values):
+    if values is None:
+        return None
+    if isinstance(values, dict):
+        return (values.get("min"), values.get("max"))
+    if isinstance(values, (list, tuple)) and len(values) == 2:
+        return (values[0], values[1])
+    return None
+
+
+def _estimate_bin_count(data) -> int:
+    n = len(data)
+    if n <= 1:
+        return 1
+    
+    iqr = np.percentile(data, 75) - np.percentile(data, 25)
+    if iqr == 0:
+        return max(10, int(np.cbrt(n)))
+    bin_width = 2 * iqr / (n ** (1 / 3))
+    if bin_width <= 0:
+        return 20
+    return int(np.ceil((data.max() - data.min()) / bin_width))
+
+
+def calculate_histogram_bins(
+    data,
+    *,
+    bin_count: int | None = None,
+    range_override=None,
+    log_scale: bool = False,
+    symlog: bool = False,
+) -> Dict[str, Any]:
     """
     Calculate histogram bins and counts for given data.
-    
-    Args:
-        data: Array of data values
-        is_log: Whether to use logarithmic binning
-    
-    Returns:
-        dict with 'bins' (bin edges) and 'counts' (counts per bin)
     """
     if len(data) == 0:
         return {"bins": [], "counts": []}
     
-    data = np.asarray(data)
+    data_array = np.asarray(data, dtype=float)
+    data_array = data_array[np.isfinite(data_array)]
+    if data_array.size == 0:
+        return {"bins": [], "counts": []}
     
-    # Filter positive values for log scale
-    if is_log:
-        data_positive = data[data > 0]
-        if len(data_positive) == 0:
+    normalized_range = _normalize_range(range_override)
+    if normalized_range:
+        min_val, max_val = normalized_range
+        if min_val is not None:
+            data_array = data_array[data_array >= float(min_val)]
+        if max_val is not None:
+            data_array = data_array[data_array <= float(max_val)]
+        if data_array.size == 0:
             return {"bins": [], "counts": []}
-        data = data_positive
     
-    # Calculate number of bins using Freedman-Diaconis rule
-    if is_log:
-        log_data = np.log10(data)
-        iqr = np.percentile(log_data, 75) - np.percentile(log_data, 25)
-        if iqr == 0:
-            num_bins = 20
-        else:
-            bin_width = 2 * iqr / (len(data) ** (1/3))
-            if bin_width == 0:
-                num_bins = 20
-            else:
-                num_bins = int((log_data.max() - log_data.min()) / bin_width)
-                num_bins = max(10, min(50, num_bins))
-        # Create log-spaced bins
-        log_min = np.log10(data.min())
-        log_max = np.log10(data.max())
-        bins = np.logspace(log_min, log_max, num_bins + 1)
+    effective_log = log_scale or (strategy or "").lower() == "log"
+    if effective_log:
+        positive_data = data_array[data_array > 0]
+        if positive_data.size == 0:
+            return {"bins": [], "counts": []}
+        data_array = positive_data
+    
+    min_value = data_array.min()
+    max_value = data_array.max()
+    if min_value == max_value:
+        max_value = min_value + 1e-9
+    
+    bins_requested = int(bin_count) if bin_count else _estimate_bin_count(data_array)
+    bins_requested = max(5, min(500, bins_requested))
+    
+    if effective_log:
+        log_min = np.log10(min_value)
+        log_max = np.log10(max_value)
+        bins = np.logspace(log_min, log_max, bins_requested + 1, base=10)
+    elif symlog:
+        transformed = np.arcsinh(data_array)
+        t_min = transformed.min()
+        t_max = transformed.max()
+        t_bins = np.linspace(t_min, t_max, bins_requested + 1)
+        bins = np.sinh(t_bins)
     else:
-        iqr = np.percentile(data, 75) - np.percentile(data, 25)
-        if iqr == 0:
-            num_bins = 20
-        else:
-            bin_width = 2 * iqr / (len(data) ** (1/3))
-            if bin_width == 0:
-                num_bins = 20
-            else:
-                num_bins = int((data.max() - data.min()) / bin_width)
-                num_bins = max(10, min(50, num_bins))
-        # Create linear bins
-        bins = np.linspace(data.min(), data.max(), num_bins + 1)
+        bins = np.linspace(min_value, max_value, bins_requested + 1)
     
-    # Calculate histogram counts
-    counts, _ = np.histogram(data, bins=bins)
+    counts, _ = np.histogram(data_array, bins=bins)
     
-    # Convert bin edges to centers for plotting
-    # For log scale, use geometric mean; for linear, use arithmetic mean
-    if is_log:
-        # Geometric mean for log scale: sqrt(bin_left * bin_right)
+    if effective_log:
         bin_centers = np.sqrt(bins[:-1] * bins[1:])
+    elif symlog:
+        left = np.arcsinh(bins[:-1])
+        right = np.arcsinh(bins[1:])
+        bin_centers = np.sinh((left + right) / 2.0)
     else:
-        # Arithmetic mean for linear scale
-        bin_centers = (bins[:-1] + bins[1:]) / 2
+        bin_centers = (bins[:-1] + bins[1:]) / 2.0
     
     return {
         "bins": bin_centers.tolist(),
@@ -419,7 +446,7 @@ def calculate_histogram_bins(data, is_log=False):
     }
 
 
-def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals_ms):
+def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals_ms, config=None):
     """
     Calculate histogram data for peak statistics.
     
@@ -428,26 +455,42 @@ def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals
         peak_widths_ms: Array of peak widths in milliseconds (linear scale)
         peak_intervals_ms: Array of intervals between peaks in milliseconds (logarithmic scale)
     
+        config: Optional configuration for binning behaviour.
+    
     Returns:
         dict with histogram data for each distribution
     """
+    config = config or {}
+    metrics_config: Dict[str, Any] = config.get("metrics", {})
+    range_overrides = config.get("range_overrides", {}) or {}
+    bin_count = config.get("bin_count")
+    
+    def metric_hist(values, metric_key: str):
+        numeric_values = [v for v in values if isinstance(v, (int, float)) and not np.isnan(v)]
+        if len(numeric_values) == 0:
+            return {"bins": [], "counts": []}
+        
+        metric_cfg = metrics_config.get(metric_key, {})
+        x_scale = metric_cfg.get("xScale") or metric_cfg.get("x_scale") or "linear"
+        range_override = range_overrides.get(metric_key) or metric_cfg.get("range") or metric_cfg.get("range_override")
+        
+        return calculate_histogram_bins(
+            numeric_values,
+            bin_count=bin_count,
+            range_override=range_override,
+            log_scale=x_scale == "log",
+            symlog=x_scale == "symlog",
+        )
+    
     try:
         if len(peak_amplitudes) == 0:
             logger.warning("No peak data to calculate histograms")
             return None
-        
-        # Calculate histogram for amplitudes (linear scale)
-        amplitudes_positive = [a for a in peak_amplitudes if a > 0]
-        amplitude_hist = calculate_histogram_bins(amplitudes_positive, is_log=False) if len(amplitudes_positive) > 0 else {"bins": [], "counts": []}
-        
-        # Calculate histogram for widths (linear scale)
-        widths_positive = [w for w in peak_widths_ms if w > 0]
-        width_hist = calculate_histogram_bins(widths_positive, is_log=False) if len(widths_positive) > 0 else {"bins": [], "counts": []}
-        
-        # Calculate histogram for intervals (linear scale)
-        intervals_positive = [i for i in peak_intervals_ms if i > 0]
-        interval_hist = calculate_histogram_bins(intervals_positive, is_log=False) if len(intervals_positive) > 0 else {"bins": [], "counts": []}
-        
+
+        amplitude_hist = metric_hist(peak_amplitudes, "amplitude")
+        width_hist = metric_hist(peak_widths_ms, "width")
+        interval_hist = metric_hist(peak_intervals_ms, "interval")
+
         return {
             "amplitude": amplitude_hist,
             "width": width_hist,
@@ -624,5 +667,3 @@ def generate_peak_histograms(peak_amplitudes, peak_widths_ms, peak_intervals_ms)
     except Exception as e:
         logger.error(f"Error generating peak histograms: {e}")
         raise
-
-
