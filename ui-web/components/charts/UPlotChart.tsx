@@ -17,6 +17,8 @@ export type Series = {
   points?: boolean
   pointSize?: number
 	dash?: number[]
+  bar?: boolean
+  barWidth?: number
 }
 
 interface UPlotChartProps {
@@ -38,8 +40,9 @@ interface UPlotChartProps {
 	legend?: boolean
 }
 
-const formatAxisNumber = (value: number): string => {
-  if (value === 0) return '0'
+const formatAxisNumber = (value: number | null | undefined): string => {
+  if (value == null || Number.isNaN(value) || !Number.isFinite(value)) return ""
+  if (value === 0) return "0"
   const abs = Math.abs(value)
   if (abs < 0.001 || abs > 10000) return value.toExponential(1)
   if (abs >= 100) return value.toFixed(0)
@@ -100,12 +103,24 @@ export function UPlotChart({
       scales: {
 				x: { 
 					time: false,
-					...(xScaleType === "log" ? { distr: 2 as const } : {}),
+					...(xScaleType === "log"
+            ? {
+                distr: 3 as const,
+                log: 10,
+                clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
+              }
+            : {}),
 					...(xRange ? { min: xRange.min, max: xRange.max } : {}),
 				},
 				y: { 
 					auto: true,
-					...(yScaleType === "log" ? { distr: 2 as const } : {}),
+					...(yScaleType === "log"
+            ? {
+                distr: 3 as const,
+                log: 10,
+                clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
+              }
+            : {}),
 					...(yRange ? { min: yRange.min, max: yRange.max } : {}),
 				},
       },
@@ -137,7 +152,7 @@ export function UPlotChart({
         ...series.map(s => ({
           label: s.label,
           stroke: s.color,
-          width: s.width ?? 1.5,
+          width: s.bar ? 0 : (s.width ?? 1.5),
 					dash: s.dash,
           points: s.points ? {
             show: true,
@@ -163,6 +178,31 @@ export function UPlotChart({
           (u: uPlot) => {
             uPlotInstanceRef.current = u
             const over = u.over
+
+            // Prevent drag-to-pan by blocking mouse drag behavior
+            let isDragging = false
+            over.addEventListener("mousedown", (e: MouseEvent) => {
+              // Track when drag starts (left mouse button)
+              if (e.button === 0) {
+                isDragging = false
+              }
+            })
+
+            over.addEventListener("mousemove", (e: MouseEvent) => {
+              // Prevent drag-to-pan when left mouse button is pressed and dragging
+              if (e.buttons === 1) {
+                if (!isDragging) {
+                  isDragging = true
+                }
+                // Prevent the default drag behavior that would cause panning
+                e.preventDefault()
+                e.stopPropagation()
+              }
+            })
+
+            over.addEventListener("mouseup", () => {
+              isDragging = false
+            })
 
             // Wheel zoom
             over.addEventListener("wheel", (e: WheelEvent) => {
@@ -201,6 +241,66 @@ export function UPlotChart({
         draw: [
           (u: uPlot) => {
 						const ctx = u.ctx
+
+            // Draw bar-style series (e.g., throughput histogram over time)
+            if (series && series.length > 0) {
+              const xVals = (u.data[0] as number[]) || []
+              series.forEach((s, sIdx) => {
+                if (!s.bar) return
+                const yVals = (u.data[sIdx + 1] as (number | null | undefined)[]) || []
+                if (!xVals.length || !yVals.length) return
+
+                ctx.save()
+                ctx.fillStyle = s.color
+                ctx.strokeStyle = s.color
+                ctx.lineWidth = 1
+
+                const baseY = yScaleType === "log" ? Math.max(u.scales.y.min ?? 1e-9, 1e-9) : (u.scales.y.min ?? 0)
+                const baseYPx = u.valToPos(baseY, "y", true)
+
+                // Compute bar width in pixels once, assuming roughly uniform spacing
+                let barHalfWidthPx = 0
+                if (s.barWidth && s.barWidth > 0) {
+                  const leftVal = xVals[0] - s.barWidth / 2
+                  const rightVal = xVals[0] + s.barWidth / 2
+                  barHalfWidthPx = Math.abs(u.valToPos(rightVal, "x", true) - u.valToPos(leftVal, "x", true)) / 2
+                } else if (xVals.length > 1) {
+                  const dx = Math.abs(xVals[1] - xVals[0])
+                  const leftVal = xVals[0] - dx / 2
+                  const rightVal = xVals[0] + dx / 2
+                  barHalfWidthPx = Math.abs(u.valToPos(rightVal, "x", true) - u.valToPos(leftVal, "x", true)) / 2
+                } else {
+                  barHalfWidthPx = Math.max(2, width * 0.02)
+                }
+
+                for (let i = 0; i < xVals.length && i < yVals.length; i += 1) {
+                  const xv = xVals[i]
+                  const yv = yVals[i]
+                  if (yv == null || !Number.isFinite(yv)) continue
+
+                  const xPx = u.valToPos(xv, "x", true)
+                  const yPx = u.valToPos(
+                    yScaleType === "log" ? Math.max(yv, 1e-9) : yv,
+                    "y",
+                    true,
+                  )
+
+                  const barLeft = xPx - barHalfWidthPx
+                  const barRight = xPx + barHalfWidthPx
+                  const barTop = Math.min(baseYPx, yPx)
+                  const barHeight = Math.abs(baseYPx - yPx)
+
+                  if (barHeight <= 0) continue
+
+                  ctx.beginPath()
+                  ctx.rect(barLeft, barTop, barRight - barLeft, barHeight)
+                  ctx.fill()
+                }
+
+                ctx.restore()
+              })
+            }
+
 						// Draw width segments (horizontal segments at given y between x0-x1)
 						if (widthSegments && widthSegments.length > 0) {
 							ctx.save()
@@ -301,4 +401,3 @@ export function UPlotChart({
     </div>
   )
 }
-

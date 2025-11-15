@@ -68,13 +68,12 @@ type WorkerErrorMessage = {
 type WorkerMessage = WorkerReadyMessage | WorkerRangeMessage | WorkerErrorMessage
 
 type HistogramMetricKey = "amplitude" | "width" | "interval"
-type AxisScaleOption = "linear" | "log" | "symlog"
+type AxisScaleOption = "linear" | "log"
 type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
 const histogramScaleOptions: { label: string; value: AxisScaleOption }[] = [
   { label: "Linear", value: "linear" },
   { label: "Log10", value: "log" },
-  { label: "Symlog", value: "symlog" },
 ]
 
 const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
@@ -82,7 +81,7 @@ const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
   { label: "Y Log", value: "log" },
 ]
 
-const defaultAxisConfig: HistogramAxisConfig = { xScale: "linear", yScale: "linear" }
+const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
 
 const computeLowRange = (values: number[], percentile = 0.35): [number, number] | null => {
   const filtered = values.filter((v) => Number.isFinite(v))
@@ -624,8 +623,30 @@ export function PreprocessingChart({
           }
         )
         
-        console.log("Histogram data received:", response)
-        setHistogramData(response)
+        // Validate histogram data before setting
+        const isValidHistogram = (hist: any) => {
+          return hist && 
+                 Array.isArray(hist.bins) && 
+                 Array.isArray(hist.counts) && 
+                 hist.bins.length > 0 && 
+                 hist.counts.length > 0 &&
+                 hist.bins.every((v: any) => Number.isFinite(v)) &&
+                 hist.counts.every((v: any) => Number.isFinite(v))
+        }
+        
+        const validatedResponse = {
+          amplitude: isValidHistogram(response.amplitude) ? response.amplitude : { bins: [], counts: [] },
+          width: isValidHistogram(response.width) ? response.width : { bins: [], counts: [] },
+          interval: isValidHistogram(response.interval) ? response.interval : { bins: [], counts: [] },
+        }
+        
+        console.log("Histogram data validated:", {
+          amplitude: validatedResponse.amplitude.bins.length + " bins",
+          width: validatedResponse.width.bins.length + " bins", 
+          interval: validatedResponse.interval.bins.length + " bins"
+        })
+        
+        setHistogramData(validatedResponse)
       } catch (error) {
         console.error("Failed to generate histograms:", error)
         setHistogramData(null)
@@ -657,17 +678,18 @@ export function PreprocessingChart({
   }, [widthSegmentsState])
 
   const axisButtonClass = (active: boolean) =>
-    `px-2 py-0.5 rounded-full border text-[11px] transition ${
+    `px-2.5 py-1 rounded-md border text-[10px] font-medium transition-colors ${
       active
-        ? "bg-primary/10 border-primary text-primary"
-        : "border-border text-muted-foreground hover:text-foreground"
+        ? "bg-primary border-primary text-primary-foreground shadow-sm"
+        : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/50"
     }`
 
   const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
     const metricConfig = histogramScales[metric]
     return (
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2 text-xs">
         <div className="flex items-center gap-1">
+          <span className="text-muted-foreground mr-1">X:</span>
           {histogramScaleOptions.map((option) => (
             <button
               key={`${metric}-${option.value}`}
@@ -680,6 +702,7 @@ export function PreprocessingChart({
           ))}
         </div>
         <div className="flex items-center gap-1">
+          <span className="text-muted-foreground mr-1">Y:</span>
           {histogramYScaleOptions.map((option) => (
             <button
               key={`${metric}-y-${option.value}`}
@@ -687,7 +710,7 @@ export function PreprocessingChart({
               className={axisButtonClass(metricConfig.yScale === option.value)}
               onClick={() => updateYAxisScale(metric, option.value)}
             >
-              {option.label}
+              {option.label.replace('Y ', '')}
             </button>
           ))}
         </div>
@@ -844,56 +867,92 @@ export function PreprocessingChart({
         </div>
       </div>
       
-      {/* uPlot chart */}
-      <div className="flex-1 px-4 pb-6" style={{ minHeight: 0 }}>
-        <UPlotChart
-          xData={xData}
-          series={series}
-          xLabel="Time (min)"
-          yLabel="Counts"
-          height={400}
-          widthSegments={widthSegments || undefined}
-          xRange={zoomRange || undefined} // Preserve zoom when data updates
-          onXRangeChange={handleZoomChange}
-          onResetZoom={() => {
-            resetZoom()
-            requestRange(null)
-          }}
-        />
-      </div>
+      {/* Chart and Statistics side-by-side */}
+      <div className="flex-1 flex gap-4 px-4 pb-6" style={{ minHeight: 0 }}>
+        {/* uPlot chart */}
+        <div className="flex-1" style={{ minHeight: 0 }}>
+          <UPlotChart
+            xData={xData}
+            series={series}
+            xLabel="Time (min)"
+            yLabel="Counts"
+            height={400}
+            widthSegments={widthSegments || undefined}
+            xRange={zoomRange || undefined} // Preserve zoom when data updates
+            onXRangeChange={handleZoomChange}
+            onResetZoom={() => {
+              resetZoom()
+              requestRange(null)
+            }}
+          />
+        </div>
 
-      {/* Peak Statistics and Histograms */}
-      <div className="px-6 pb-6 flex-shrink-0 space-y-4">
-        {/* Minimalistic Peak Statistics */}
+        {/* Peak Statistics - Vertical box on the right */}
         {summary && (
-          <div className="rounded-xl border bg-card/60 shadow-sm">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold">Peak Statistics</p>
-                <p className="text-xs text-muted-foreground">
-                  {summary.count.toLocaleString()} peaks detected
-                </p>
+          <div className="w-[280px] flex-shrink-0">
+            <div className="rounded-xl border bg-card/60 shadow-sm h-full">
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold">Peak Statistics</p>
+                  <p className="text-xs text-muted-foreground">
+                    Summary of detected peaks
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 space-y-4">
+                {/* Number of peaks */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Detected Peaks</p>
+                  <p className="text-lg font-semibold">{summary.count.toLocaleString()}</p>
+                </div>
+                
+                {/* Mean Amplitude */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Mean Amplitude</p>
+                  <p className="text-lg font-semibold">{formatStat(summary.meanAmplitude, 2)}</p>
+                </div>
+                
+                {/* Mean Width */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Mean Width</p>
+                  <p className="text-lg font-semibold">{formatStat(summary.meanWidth, 3)} <span className="text-xs text-muted-foreground">ms</span></p>
+                </div>
+                
+                {/* Mean Throughput */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Mean Throughput</p>
+                  <p className="text-lg font-semibold">{formatStat(summary.meanThroughput, 2)} <span className="text-xs text-muted-foreground">Hz</span></p>
+                </div>
+                
+                {/* Mean Area */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Mean Area</p>
+                  <p className="text-lg font-semibold">{formatStat(summary.meanArea, 2)}</p>
+                </div>
               </div>
             </div>
           </div>
         )}
+      </div>
 
-        {/* Histograms */}
+      {/* Histograms */}
+      <div className="px-6 pb-6 flex-shrink-0">
         {peakAmplitudes.length > 0 && (
-          <div className="rounded-xl border bg-card/60 shadow-sm">
-            <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="rounded-xl border bg-card shadow-sm">
+            <div className="flex items-center justify-between border-b px-6 py-4">
               <div>
-                <p className="text-sm font-semibold">Peak Distributions</p>
-                <p className="text-xs text-muted-foreground">
-                  Amplitude, width, and distance distributions
+                <p className="text-base font-semibold">Peak Distributions</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Statistical analysis of detected peaks
                 </p>
               </div>
             </div>
-            <div className="p-4">
-              <div className="mb-4 space-y-3">
+            <div className="p-6">
+              <div className="mb-6 space-y-4 bg-muted/30 rounded-lg p-4">
                 <div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                    <span>Bin Count ({histogramConfig.binCount})</span>
+                  <div className="flex items-center justify-between text-xs font-medium text-foreground mb-2">
+                    <span>Bin Count</span>
+                    <span className="text-primary font-semibold">{histogramConfig.binCount}</span>
                   </div>
                   <input
                     type="range"
@@ -902,94 +961,103 @@ export function PreprocessingChart({
                     step={10}
                     value={histogramConfig.binCount}
                     onChange={(event) => updateBinCount(Number(event.target.value))}
-                    className="w-full accent-primary"
+                    className="w-full accent-primary h-2 rounded-lg cursor-pointer"
                   />
                 </div>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <label className="flex items-center gap-3 text-xs font-medium cursor-pointer">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border"
+                    className="h-4 w-4 rounded border cursor-pointer"
                     checked={histogramConfig.focusLowRange}
                     onChange={toggleFocusLowRange}
                   />
-                  <span>Focus on low range</span>
+                  <span>Focus on low range (35th percentile)</span>
                 </label>
               </div>
               {histogramLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center space-y-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                    <p className="text-sm text-muted-foreground">Calculating distributions...</p>
+                  </div>
                 </div>
               ) : histogramData ? (
-                <div className="grid grid-cols-3 gap-4">
-                  {/* Amplitude Histogram (linear scale) */}
-                  <div className="flex flex-col">
-                    <p className="text-xs text-muted-foreground mb-1 text-center">Amplitude</p>
+                <div className="grid grid-cols-3 gap-6">
+                  {/* Amplitude Histogram */}
+                  <div className="flex flex-col space-y-2">
+                    <p className="text-sm font-medium text-center">Amplitude</p>
                     {renderScaleControls("amplitude")}
                     {histogramData.amplitude && histogramData.amplitude.bins && histogramData.amplitude.bins.length > 0 ? (
-                      <UPlotHistogram
-                        data={histogramData.amplitude}
-                        xLabel="Amplitude"
-                        yLabel="Frequency"
-                        color={isDark ? "#5b9bd5" : "#3b82f6"}
-                        xScaleType={histogramScales.amplitude.xScale}
-                        yScaleType={histogramScales.amplitude.yScale}
-                        height={200}
-                        className="w-full"
-                      />
+                      <div className="border rounded-lg p-2 bg-card">
+                        <UPlotHistogram
+                          data={histogramData.amplitude}
+                          xLabel="Amplitude"
+                          yLabel="Frequency"
+                          color={isDark ? "#5b9bd5" : "#3b82f6"}
+                          xScaleType={histogramScales.amplitude.xScale}
+                          yScaleType={histogramScales.amplitude.yScale}
+                          height={220}
+                          className="w-full"
+                        />
+                      </div>
                     ) : (
-                      <div className="flex items-center justify-center h-[200px]">
+                      <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
                         <p className="text-xs text-muted-foreground">No amplitude data</p>
                       </div>
                     )}
                   </div>
                   
-                  {/* Width Histogram (linear scale) */}
-                  <div className="flex flex-col">
-                    <p className="text-xs text-muted-foreground mb-1 text-center">Width</p>
+                  {/* Width Histogram */}
+                  <div className="flex flex-col space-y-2">
+                    <p className="text-sm font-medium text-center">Peak Width</p>
                     {renderScaleControls("width")}
                     {histogramData.width && histogramData.width.bins && histogramData.width.bins.length > 0 ? (
-                      <UPlotHistogram
-                        data={histogramData.width}
-                        xLabel="Width (ms)"
-                        yLabel="Frequency"
-                        color={isDark ? "#ff8c42" : "#f97316"}
-                        xScaleType={histogramScales.width.xScale}
-                        yScaleType={histogramScales.width.yScale}
-                        height={200}
-                        className="w-full"
-                      />
+                      <div className="border rounded-lg p-2 bg-card">
+                        <UPlotHistogram
+                          data={histogramData.width}
+                          xLabel="Width (ms)"
+                          yLabel="Frequency"
+                          color={isDark ? "#ff8c42" : "#f97316"}
+                          xScaleType={histogramScales.width.xScale}
+                          yScaleType={histogramScales.width.yScale}
+                          height={220}
+                          className="w-full"
+                        />
+                      </div>
                     ) : (
-                      <div className="flex items-center justify-center h-[200px]">
+                      <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
                         <p className="text-xs text-muted-foreground">No width data</p>
                       </div>
                     )}
                   </div>
                   
-                  {/* Interval Histogram (linear scale) */}
-                  <div className="flex flex-col">
-                    <p className="text-xs text-muted-foreground mb-1 text-center">Distance</p>
+                  {/* Interval Histogram */}
+                  <div className="flex flex-col space-y-2">
+                    <p className="text-sm font-medium text-center">Peak Distance</p>
                     {renderScaleControls("interval")}
                     {histogramData.interval && histogramData.interval.bins && histogramData.interval.bins.length > 0 ? (
-                      <UPlotHistogram
-                        data={histogramData.interval}
-                        xLabel="Distance Between Peaks (ms)"
-                        yLabel="Frequency"
-                        color={isDark ? "#4caf50" : "#22c55e"}
-                        xScaleType={histogramScales.interval.xScale}
-                        yScaleType={histogramScales.interval.yScale}
-                        height={200}
-                        className="w-full"
-                      />
+                      <div className="border rounded-lg p-2 bg-card">
+                        <UPlotHistogram
+                          data={histogramData.interval}
+                          xLabel="Distance Between Peaks (ms)"
+                          yLabel="Frequency"
+                          color={isDark ? "#4caf50" : "#22c55e"}
+                          xScaleType={histogramScales.interval.xScale}
+                          yScaleType={histogramScales.interval.yScale}
+                          height={220}
+                          className="w-full"
+                        />
+                      </div>
                     ) : (
-                      <div className="flex items-center justify-center h-[200px]">
+                      <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
                         <p className="text-xs text-muted-foreground">No interval data</p>
                       </div>
                     )}
                   </div>
                 </div>
               ) : (
-                <div className="py-8 text-sm text-muted-foreground text-center">
-                  Generating histograms...
+                <div className="py-12 text-sm text-muted-foreground text-center">
+                  <p>Generating histograms...</p>
                 </div>
               )}
             </div>

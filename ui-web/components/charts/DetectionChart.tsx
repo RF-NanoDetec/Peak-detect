@@ -129,7 +129,7 @@ export function DetectionChart({
         <p className="text-[11px] text-muted-foreground">
           {peakX.length} peaks detected
           {" • "}
-          <span className="text-muted-foreground/70">Scroll to zoom • Drag to pan • Double-click to reset</span>
+          <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
         </p>
         <label className="text-[11px] text-muted-foreground flex items-center gap-2">
           <input

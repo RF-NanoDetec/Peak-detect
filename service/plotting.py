@@ -358,17 +358,29 @@ def _normalize_range(values):
 
 
 def _estimate_bin_count(data) -> int:
+    """
+    Estimate optimal bin count using Freedman-Diaconis rule.
+    Returns a value between 5 and 500 to prevent extreme binning.
+    """
     n = len(data)
     if n <= 1:
-        return 1
+        return 10
     
     iqr = np.percentile(data, 75) - np.percentile(data, 25)
-    if iqr == 0:
-        return max(10, int(np.cbrt(n)))
+    if iqr == 0 or not np.isfinite(iqr):
+        return max(10, min(100, int(np.cbrt(n))))
+    
     bin_width = 2 * iqr / (n ** (1 / 3))
-    if bin_width <= 0:
+    if bin_width <= 0 or not np.isfinite(bin_width):
         return 20
-    return int(np.ceil((data.max() - data.min()) / bin_width))
+    
+    data_range = data.max() - data.min()
+    if data_range <= 0 or not np.isfinite(data_range):
+        return 20
+    
+    bin_count = int(np.ceil(data_range / bin_width))
+    # Clamp to reasonable range
+    return max(5, min(500, bin_count))
 
 
 def calculate_histogram_bins(
@@ -377,12 +389,21 @@ def calculate_histogram_bins(
     bin_count: int | None = None,
     range_override=None,
     log_scale: bool = False,
-    symlog: bool = False,
 ) -> Dict[str, Any]:
     """
     Calculate histogram bins and counts for given data.
+    
+    Args:
+        data: Input data array
+        bin_count: Number of bins (optional, auto-calculated if not provided)
+        range_override: Optional range to filter data
+        log_scale: Use logarithmic binning
+    
+    Returns:
+        Dictionary with bins, counts, and bin_edges
     """
     if len(data) == 0:
+        logger.debug("Empty data array for histogram")
         return {"bins": [], "counts": []}
     
     data_array = np.asarray(data, dtype=float)
@@ -400,7 +421,7 @@ def calculate_histogram_bins(
         if data_array.size == 0:
             return {"bins": [], "counts": []}
     
-    effective_log = log_scale or (strategy or "").lower() == "log"
+    effective_log = log_scale
     if effective_log:
         positive_data = data_array[data_array > 0]
         if positive_data.size == 0:
@@ -415,16 +436,13 @@ def calculate_histogram_bins(
     bins_requested = int(bin_count) if bin_count else _estimate_bin_count(data_array)
     bins_requested = max(5, min(500, bins_requested))
     
+    logger.debug(f"Calculating histogram: {len(data_array)} data points, {bins_requested} bins, "
+                 f"log_scale={log_scale}")
+    
     if effective_log:
         log_min = np.log10(min_value)
         log_max = np.log10(max_value)
         bins = np.logspace(log_min, log_max, bins_requested + 1, base=10)
-    elif symlog:
-        transformed = np.arcsinh(data_array)
-        t_min = transformed.min()
-        t_max = transformed.max()
-        t_bins = np.linspace(t_min, t_max, bins_requested + 1)
-        bins = np.sinh(t_bins)
     else:
         bins = np.linspace(min_value, max_value, bins_requested + 1)
     
@@ -432,12 +450,13 @@ def calculate_histogram_bins(
     
     if effective_log:
         bin_centers = np.sqrt(bins[:-1] * bins[1:])
-    elif symlog:
-        left = np.arcsinh(bins[:-1])
-        right = np.arcsinh(bins[1:])
-        bin_centers = np.sinh((left + right) / 2.0)
     else:
         bin_centers = (bins[:-1] + bins[1:]) / 2.0
+    
+    # Ensure all values are finite before sending to frontend
+    bin_centers = np.nan_to_num(bin_centers, nan=0.0, posinf=0.0, neginf=0.0)
+    counts = np.nan_to_num(counts, nan=0.0, posinf=0.0, neginf=0.0)
+    bins = np.nan_to_num(bins, nan=0.0, posinf=0.0, neginf=0.0)
     
     return {
         "bins": bin_centers.tolist(),
@@ -466,21 +485,27 @@ def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals
     bin_count = config.get("bin_count")
     
     def metric_hist(values, metric_key: str):
-        numeric_values = [v for v in values if isinstance(v, (int, float)) and not np.isnan(v)]
-        if len(numeric_values) == 0:
+        try:
+            numeric_values = [v for v in values if isinstance(v, (int, float)) and not np.isnan(v)]
+            if len(numeric_values) == 0:
+                logger.debug(f"No valid numeric values for {metric_key} histogram")
+                return {"bins": [], "counts": []}
+            
+            metric_cfg = metrics_config.get(metric_key, {})
+            x_scale = metric_cfg.get("xScale") or metric_cfg.get("x_scale") or "linear"
+            range_override = range_overrides.get(metric_key) or metric_cfg.get("range") or metric_cfg.get("range_override")
+            
+            logger.debug(f"Calculating {metric_key} histogram: {len(numeric_values)} values, scale={x_scale}, bins={bin_count}")
+            
+            return calculate_histogram_bins(
+                numeric_values,
+                bin_count=bin_count,
+                range_override=range_override,
+                log_scale=x_scale == "log",
+            )
+        except Exception as e:
+            logger.error(f"Error calculating {metric_key} histogram: {e}", exc_info=True)
             return {"bins": [], "counts": []}
-        
-        metric_cfg = metrics_config.get(metric_key, {})
-        x_scale = metric_cfg.get("xScale") or metric_cfg.get("x_scale") or "linear"
-        range_override = range_overrides.get(metric_key) or metric_cfg.get("range") or metric_cfg.get("range_override")
-        
-        return calculate_histogram_bins(
-            numeric_values,
-            bin_count=bin_count,
-            range_override=range_override,
-            log_scale=x_scale == "log",
-            symlog=x_scale == "symlog",
-        )
     
     try:
         if len(peak_amplitudes) == 0:
@@ -491,6 +516,9 @@ def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals
         width_hist = metric_hist(peak_widths_ms, "width")
         interval_hist = metric_hist(peak_intervals_ms, "interval")
 
+        logger.info(f"Generated histograms: amplitude={len(amplitude_hist['bins'])} bins, "
+                   f"width={len(width_hist['bins'])} bins, interval={len(interval_hist['bins'])} bins")
+
         return {
             "amplitude": amplitude_hist,
             "width": width_hist,
@@ -498,7 +526,7 @@ def generate_peak_histogram_data(peak_amplitudes, peak_widths_ms, peak_intervals
         }
         
     except Exception as e:
-        logger.error(f"Error calculating histogram data: {e}")
+        logger.error(f"Error calculating histogram data: {e}", exc_info=True)
         raise
 
 

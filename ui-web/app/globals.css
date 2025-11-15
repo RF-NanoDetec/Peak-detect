@@ -55,6 +55,12 @@
   * {
     @apply border-border;
   }
+  
+  /* Override Tailwind's base style to use standard property for better cross-browser support */
+  html {
+    text-size-adjust: 100%;
+  }
+  
   body {
     @apply bg-background text-foreground;
   }
@@ -88,6 +94,8 @@
   }
   
   /* Thumb (handle) styling - Light theme */
+  /* Note: WebKit pseudo-elements are intentionally used for Chrome/Safari/Edge.
+     Firefox will show warnings but uses ::-moz-range-thumb instead. */
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -149,6 +157,7 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
   }
   
+  /* WebKit pseudo-element for dark theme - Firefox warnings are expected and harmless */
   html.dark input[type="range"]::-webkit-slider-thumb:hover {
     transform: scale(1.15);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6) !important;

@@ -6,11 +6,14 @@ import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useDataStore } from "@/lib/stores/dataStore"
+import { useParamsStore } from "@/lib/stores/paramsStore"
+import { AnalyzeTimeSeries } from "@/components/charts/AnalyzeTimeSeries"
 
 export default function AnalyzePage() {
   const router = useRouter()
   const { detectionResults } = useResultsStore()
   const { previewData } = useDataStore()
+  const { params } = useParamsStore()
 
   const hasResults = !!(detectionResults && previewData)
 
@@ -29,8 +32,21 @@ export default function AnalyzePage() {
 
       <PageVisualization>
         {hasResults ? (
-          <div className="flex-1 p-4 space-y-6 overflow-auto">
-            {/* Analysis content will be added here */}
+          <div className="flex-1 p-4 space-y-4 overflow-auto">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Scatter plots of detected peak amplitudes, widths, and throughput over time.
+                All time axes are linked �?� scroll to zoom, double-click to reset.
+              </p>
+            </div>
+            <AnalyzeTimeSeries
+              className="flex-1"
+              peakTimes={detectionResults?.peak_times || []}
+              peakAmplitudes={detectionResults?.peak_amplitudes || []}
+              peakIntervalsMs={detectionResults?.peak_intervals || []}
+              peakWidths={detectionResults?.properties?.widths || []}
+              timeResolution={params.time_resolution}
+            />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">

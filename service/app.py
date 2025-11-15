@@ -125,28 +125,29 @@ if static_dir.exists() and next_static_dir.exists():
     # Mount static assets
     app.mount("/_next", StaticFiles(directory=str(next_static_dir)), name="next_static")
     
+    # Explicit root route handler
+    @app.get("/")
+    async def serve_root():
+        index_path = static_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        # Try Next.js App Router structure: app/page.html
+        app_page_path = static_dir / "app" / "page.html"
+        if app_page_path.exists():
+            return FileResponse(app_page_path)
+        # If neither exists, return helpful error
+        return {
+            "error": "Static files not found",
+            "message": "The UI has not been built. Please run 'npm run build' in the ui-web directory.",
+            "static_dir": str(static_dir)
+        }
+    
     # Serve index.html for all other routes (SPA fallback)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         # Don't intercept API routes
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             return {"error": "Not found"}
-        
-        # Handle root path - try index.html first
-        if full_path == "" or full_path == "/":
-            index_path = static_dir / "index.html"
-            if index_path.exists():
-                return FileResponse(index_path)
-            # Try Next.js App Router structure: app/page.html
-            app_page_path = static_dir / "app" / "page.html"
-            if app_page_path.exists():
-                return FileResponse(app_page_path)
-            # If neither exists, return helpful error
-            return {
-                "error": "Static files not found",
-                "message": "The UI has not been built. Please run 'npm run build' in the ui-web directory.",
-                "static_dir": str(static_dir)
-            }
         
         # Try to serve the requested file
         file_path = static_dir / full_path
@@ -171,6 +172,18 @@ if static_dir.exists() and next_static_dir.exists():
         return {"error": "Not found", "path": full_path}
 else:
     logger.info("Static files not found. UI must be served separately (e.g., npm run dev)")
+    
+    # Add a root route handler when static files aren't available
+    @app.get("/")
+    async def root():
+        return {
+            "message": "Peak Analysis Service API",
+            "status": "running",
+            "docs": "/api/docs",
+            "health": "/api/health",
+            "note": "Static UI files not found. UI must be served separately (e.g., npm run dev in ui-web directory)",
+            "static_dir": str(static_dir)
+        }
 
 # Optional entrypoint for local runs: `python -m service.app` or running the EXE
 if __name__ == "__main__":

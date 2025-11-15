@@ -12,6 +12,7 @@ import { apiClient } from "@/lib/apiClient"
 import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useProtocolStore } from "@/lib/stores/protocolStore"
+import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useRouter } from "next/navigation"
 import { parseFilePreview, type LocalPreviewResult } from "@/lib/localDataParser"
 
@@ -25,9 +26,10 @@ export default function LoadDataPage() {
   const previewTask = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
-  const { setResultId, setFiles, setMeta, setPreviewData, setOriginalPreviewData, setFilteredPreviewData, recentFiles, addRecentFiles } = useDataStore()
+  const { setResultId, setFiles, setMeta, setPreviewData, setOriginalPreviewData, setFilteredPreviewData, setFilteredResultId, clearData, recentFiles, addRecentFiles } = useDataStore()
   const { params, updateParam } = useParamsStore()
   const { photonCorrection, protocol, setApplyCorrection, setDeadTimeNs, updateProtocol } = useProtocolStore()
+  const { clearResults } = useResultsStore()
   
   // Time resolution conversion: display in milliseconds, store in seconds
   const timeResolutionMs = params.time_resolution * 1000
@@ -84,6 +86,11 @@ export default function LoadDataPage() {
 
     setLoading(true)
     try {
+      // RESET ALL STATE: Clear all previous data, peaks, filters, and analysis results
+      // This ensures we start fresh with the new sample
+      clearResults() // Clear all detection, analysis, and double peak results
+      clearData() // Clear all data-related state (resultId, filteredResultId, previews, etc.)
+      
       // Upload files to backend with correction and protocol options
       const response = await apiClient.uploadFiles(selectedFiles, params.time_resolution, {
         applyDeadTimeCorrection: photonCorrection.applyCorrection,

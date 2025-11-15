@@ -13,7 +13,7 @@ interface HistogramData {
   bin_edges?: number[]
 }
 
-type AxisScaleType = "linear" | "log" | "symlog"
+type AxisScaleType = "linear" | "log"
 type YAxisScaleType = "linear" | "log"
 
 interface UPlotHistogramProps {
@@ -94,15 +94,14 @@ export function UPlotHistogram({
     if (xScaleType === "log") {
       xScaleBase.distr = SCALE_DISTRIBUTIONS.LOG
       xScaleBase.clamp = (_self, val) => Math.max(val, 1e-9)
-    } else if (xScaleType === "symlog") {
-      xScaleBase.distr = SCALE_DISTRIBUTIONS.ARCSINH
-      xScaleBase.asinh = 1
+      xScaleBase.log = 10
     }
 
     const yScaleBase: uPlot.Scale = {}
     if (yScaleType === "log") {
       yScaleBase.distr = SCALE_DISTRIBUTIONS.LOG
-      yScaleBase.clamp = (_self, val) => Math.max(val, 1e-6)
+      yScaleBase.clamp = (_self, val) => Math.max(val, 1)
+      yScaleBase.log = 10
     } else {
       yScaleBase.auto = false
       yScaleBase.min = 0
@@ -122,14 +121,6 @@ export function UPlotHistogram({
           return {
             min: minVal / (1 + padding),
             max: maxVal * (1 + padding),
-          }
-        }
-        if (xScaleType === "symlog") {
-          const range = maxVal - minVal
-          const padding = range > 0 ? range * 0.05 : Math.abs(maxVal) * 0.05 || 1
-          return {
-            min: minVal - padding,
-            max: maxVal + padding,
           }
         }
         const range = maxVal - minVal
@@ -232,12 +223,10 @@ export function UPlotHistogram({
 
               if (barWidthPx <= 0) continue
 
-              const scaleMin = u.scales.y?.min
-              const countValue = yScaleType === "log" ? Math.max(count, 1e-6) : count
-              const baseValue =
-                yScaleType === "log"
-                  ? Math.max(scaleMin ?? 1e-6, 1e-6)
-                  : (scaleMin ?? 0)
+              const scaleMin = u.scales.y?.min ?? 0
+              // For log scale, clamp to minimum of 1 to prevent negative bars
+              const countValue = yScaleType === "log" ? Math.max(count, 1) : count
+              const baseValue = yScaleType === "log" ? Math.max(scaleMin, 1) : scaleMin
 
               const xPx = u.valToPos(center, "x", true)
               const yPx = u.valToPos(countValue, "y", true)
@@ -261,9 +250,15 @@ export function UPlotHistogram({
   }, [width, height, isDark, data, xLabel, yLabel, barColor, edgeColor, xScaleType, yScaleType])
 
   const chartData = useMemo(() => {
-    const xValues = data.bins || []
-    const yValues = data.counts || []
-    return [xValues as number[], yValues as number[]]
+    const xValues = (data.bins || []).filter(v => Number.isFinite(v))
+    const yValues = (data.counts || []).filter(v => Number.isFinite(v))
+    
+    // Ensure arrays have the same length
+    const minLength = Math.min(xValues.length, yValues.length)
+    return [
+      xValues.slice(0, minLength) as number[], 
+      yValues.slice(0, minLength) as number[]
+    ]
   }, [data])
 
   useEffect(() => {
@@ -290,13 +285,6 @@ export function UPlotHistogram({
           min: minVal / (1 + padding),
           max: maxVal * (1 + padding),
         })
-      } else if (xScaleType === "symlog") {
-        const range = maxVal - minVal
-        const padding = range > 0 ? range * 0.05 : Math.abs(maxVal) * 0.05 || 1
-        u.setScale("x", {
-          min: minVal - padding,
-          max: maxVal + padding,
-        })
       }
     }
 
@@ -317,13 +305,16 @@ export function UPlotHistogram({
       const maxCount = Math.max(...yVals)
       const positiveCounts = yVals.filter(v => Number.isFinite(v) && v > 0)
       if (yScaleType === "log") {
+        // For log scale, ensure minimum is at least 1 to avoid negative bars
         const minPositive = positiveCounts.length > 0 ? Math.min(...positiveCounts) : 1
+        const effectiveMin = Math.max(1, minPositive * 0.5)
+        const effectiveMax = Math.max(10, maxCount * 1.5)
         u.setScale("y", {
-          min: Math.max(1e-6, minPositive * 0.9),
-          max: Math.max(1, maxCount * 1.1),
+          min: effectiveMin,
+          max: effectiveMax,
         })
       } else {
-        u.setScale("y", { min: 0, max: maxCount * 1.1 })
+        u.setScale("y", { min: 0, max: Math.max(1, maxCount * 1.1) })
       }
     }
   }, [chartReady, data, xScaleType, yScaleType])
