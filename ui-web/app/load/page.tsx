@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type ReactNode } from "react"
 import { FileUp, FolderOpen, Clock, Loader2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,6 +15,63 @@ import { useProtocolStore } from "@/lib/stores/protocolStore"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useRouter } from "next/navigation"
 import { parseFilePreview, type LocalPreviewResult } from "@/lib/localDataParser"
+import type { ProtocolInfo } from "@/lib/types"
+import { BlockMath } from "react-katex"
+import "katex/dist/katex.min.css"
+
+const sessionHandleCache = new Map<string, FileSystemFileHandle[]>()
+const sessionFileCache = new Map<string, File[]>() 
+
+const createSessionKey = (fileNames: string[]) =>
+  fileNames.length ? [...fileNames].sort((a, b) => a.localeCompare(b)).join("|") : ""
+
+const filesMatchGroup = (files: File[] | null, fileGroup: string[]) => {
+  if (!files || files.length !== fileGroup.length) return false
+  const selectedNames = files.map((file) => file.name)
+  const expectedNames = [...fileGroup]
+  selectedNames.sort((a, b) => a.localeCompare(b))
+  expectedNames.sort((a, b) => a.localeCompare(b))
+  return selectedNames.every((name, idx) => name === expectedNames[idx])
+}
+
+const handlesToFiles = async (handles: FileSystemFileHandle[]): Promise<File[]> => {
+  return Promise.all(handles.map((handle) => handle.getFile()))
+}
+
+const cacheSessionFiles = (files: File[], handles?: FileSystemFileHandle[]) => {
+  if (!files.length) return
+  const key = createSessionKey(files.map((file) => file.name))
+  if (!key) return
+  sessionFileCache.set(key, files)
+  if (handles) {
+    sessionHandleCache.set(key, handles)
+  }
+}
+
+const restoreCachedFiles = async (fileGroup: string[]): Promise<File[] | null> => {
+  const key = createSessionKey(fileGroup)
+  if (!key) return null
+
+  const handles = sessionHandleCache.get(key)
+  if (handles) {
+    try {
+      const files = await handlesToFiles(handles)
+      if (filesMatchGroup(files, fileGroup)) {
+        return files
+      }
+    } catch (error) {
+      console.warn("Stored file handles are no longer valid:", error)
+    }
+    sessionHandleCache.delete(key)
+  }
+
+  const cachedFiles = sessionFileCache.get(key)
+  if (cachedFiles && filesMatchGroup(cachedFiles, fileGroup)) {
+    return cachedFiles
+  }
+
+  return null
+}
 
 export default function LoadDataPage() {
   const router = useRouter()
@@ -26,7 +83,7 @@ export default function LoadDataPage() {
   const previewTask = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
-  const { setResultId, setFiles, setMeta, setPreviewData, setOriginalPreviewData, setFilteredPreviewData, setFilteredResultId, clearData, recentFiles, addRecentFiles } = useDataStore()
+  const { setResultId, setFiles, setMeta, setPreviewData, setFilteredResultId, clearData, recentFiles, addRecentFiles } = useDataStore()
   const { params, updateParam } = useParamsStore()
   const { photonCorrection, protocol, setApplyCorrection, setDeadTimeNs, updateProtocol } = useProtocolStore()
   const { clearResults } = useResultsStore()
@@ -43,9 +100,53 @@ export default function LoadDataPage() {
       const files = Array.from(e.target.files)
       setSelectedFiles(files)
       toast.info(`Selected ${files.length} file(s)`)
+      cacheSessionFiles(files)
     }
   }
 
+  const openFileSelectionFlow = async () => {
+    if ('showOpenFilePicker' in window) {
+      const files = await selectFilesWithHandles()
+      if (files && files.length > 0) {
+        setSelectedFiles(files)
+        toast.info(`Selected ${files.length} file(s)`)
+        return
+      }
+    }
+    fileInputRef.current?.click()
+  }
+  
+  // Helper to select files using File System Access API (stores handles for future restoration)
+  const selectFilesWithHandles = async (): Promise<File[] | null> => {
+    if (!('showOpenFilePicker' in window)) {
+      return null
+    }
+    
+    try {
+      const handles = await (window as any).showOpenFilePicker({
+        multiple: true,
+        types: [{
+          description: 'Data files',
+          accept: {
+            'text/plain': ['.txt'],
+            'application/vnd.ms-excel': ['.xls'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+          }
+        }]
+      })
+      
+      const files = await handlesToFiles(handles)
+      cacheSessionFiles(files, handles)
+      return files
+    } catch (error: any) {
+      // User cancelled or error occurred
+      if (error.name !== 'AbortError') {
+        console.error('Error selecting files:', error)
+      }
+      return null
+    }
+  }
+  
   useEffect(() => {
     if (selectedFiles.length === 0) {
       setLocalPreview(null)
@@ -103,13 +204,13 @@ export default function LoadDataPage() {
       setMeta(response.meta)
       
       // Add to recent files (as a group)
-      addRecentFiles(selectedFiles.map(f => f.name))
+      const fileNames = selectedFiles.map(f => f.name)
+      addRecentFiles(fileNames)
+      cacheSessionFiles(selectedFiles)
 
       // Fetch preview data
       const previewData = await apiClient.getDataPreview(response.resultId)
       setPreviewData(previewData)
-      setOriginalPreviewData(previewData)
-      setFilteredPreviewData(null) // Clear any previous filtered data
 
       toast.success(`Loaded ${response.meta.total_files} file(s) successfully`)
       
@@ -142,15 +243,30 @@ export default function LoadDataPage() {
     }
   }
 
-  const handleRecentFilesClick = (fileGroup: string[]) => {
-    // Show which files were in this session in the selected files area
-    // Note: We display file info but user still needs to actually select files to load
-    // This gives better visibility of what files should be selected
-    toast.info(`Session files: ${fileGroup.join(', ')}. Please select these files to load.`)
-    
-    // We'll show the file names in the UI even though they're not actually selected yet
-    // This is just for display purposes - actual file selection still required
-    // For now, just open the file picker
+  const handleRecentFilesClick = async (fileGroup: string[]) => {
+    const cachedFiles = await restoreCachedFiles(fileGroup)
+    if (cachedFiles) {
+      setSelectedFiles(cachedFiles)
+      toast.success(`Restored ${cachedFiles.length} file(s) from recent session`)
+      return
+    }
+
+    if ('showOpenFilePicker' in window) {
+      toast.info(`Please re-select these files: ${fileGroup.join(', ')}`)
+      const files = await selectFilesWithHandles()
+      if (!files) {
+        return
+      }
+      if (filesMatchGroup(files, fileGroup)) {
+        setSelectedFiles(files)
+        toast.success(`Selected ${files.length} file(s) from recent session`)
+        return
+      }
+      toast.warning('Selected files do not match this session. Please try again.')
+      return
+    }
+
+    toast.info(`Please select these files: ${fileGroup.join(', ')}`)
     fileInputRef.current?.click()
   }
 
@@ -158,7 +274,12 @@ export default function LoadDataPage() {
     if (fileGroup.length === 1) {
       return fileGroup[0]
     }
-    return `${fileGroup[0]} + ${fileGroup.length - 1}`
+    return (
+      <>
+        {fileGroup[0]}{' '}
+        <span className="text-muted-foreground">+ {fileGroup.length - 1}</span>
+      </>
+    )
   }
 
   return (
@@ -188,15 +309,17 @@ export default function LoadDataPage() {
                 onChange={handleFileSelect}
                 className="hidden"
               />
-              <Button 
-                className="w-full" 
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Select Files
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  className="flex-1" 
+                  variant="outline"
+                  onClick={openFileSelectionFlow}
+                  disabled={loading}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Select Files
+                </Button>
+              </div>
               {selectedFiles.length > 0 && (
                 <div className="text-sm space-y-1">
                   <p className="font-medium">{selectedFiles.length} file(s) selected:</p>
@@ -230,35 +353,7 @@ export default function LoadDataPage() {
             )}
           </Button>
 
-          {recentFiles.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  Recent Sessions
-                </CardTitle>
-                <CardDescription>
-                  Previously loaded file groups
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1">
-                  {recentFiles
-                    .filter((fileGroup) => Array.isArray(fileGroup) && fileGroup.length > 0)
-                    .map((fileGroup, idx) => (
-                      <button
-                        key={idx}
-                        className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-sm truncate"
-                        onClick={() => handleRecentFilesClick(fileGroup)}
-                        title={fileGroup.join(', ')}
-                      >
-                        {formatRecentFileDisplay(fileGroup)}
-                      </button>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          
 
           <Card>
             <CardHeader>
@@ -313,170 +408,45 @@ export default function LoadDataPage() {
                     min="1"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Detector dead time T_D (default: 43 ns). Correction uses 1/(1 - R×T_D).
+                    Detector dead time <span className="font-mono">T_D</span> (default: 43 ns).
+                    <br />
+                    <span className="text-xs">Correction factor:</span>
+                    <div className="my-1">
+                      <BlockMath math="\frac{1}{1 - R \times T_D}" />
+                    </div>
                   </p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Protocol Information</CardTitle>
-              <CardDescription>
-                Experiment metadata for documentation
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Measurement Date</label>
-                  <Input
-                    type="date"
-                    value={protocol.measurement_date || ''}
-                    onChange={(e) => updateProtocol('measurement_date', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Start Time</label>
-                  <Input
-                    type="time"
-                    value={protocol.start_time || ''}
-                    onChange={(e) => updateProtocol('start_time', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Setup</label>
-                <Input
-                  placeholder="e.g., Prototype, Old Ladom"
-                  value={protocol.setup || ''}
-                  onChange={(e) => updateProtocol('setup', e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Sample Number</label>
-                  <Input
-                    placeholder="Sample ID"
-                    value={protocol.sample_number || ''}
-                    onChange={(e) => updateProtocol('sample_number', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Particle</label>
-                  <Input
-                    placeholder="Particle type"
-                    value={protocol.particle || ''}
-                    onChange={(e) => updateProtocol('particle', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Concentration</label>
-                <Input
-                  placeholder="Particle concentration"
-                  value={protocol.concentration || ''}
-                  onChange={(e) => updateProtocol('concentration', e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Buffer</label>
-                  <Input
-                    placeholder="Buffer solution"
-                    value={protocol.buffer || ''}
-                    onChange={(e) => updateProtocol('buffer', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Buffer Conc.</label>
-                  <Input
-                    placeholder="Buffer concentration"
-                    value={protocol.buffer_concentration || ''}
-                    onChange={(e) => updateProtocol('buffer_concentration', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">ND Filter</label>
-                  <Input
-                    placeholder="Filter value"
-                    value={protocol.nd_filter || ''}
-                    onChange={(e) => updateProtocol('nd_filter', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Laser Power</label>
-                  <Input
-                    placeholder="Power setting"
-                    value={protocol.laser_power || ''}
-                    onChange={(e) => updateProtocol('laser_power', e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Stamp</label>
-                <Input
-                  placeholder="e.g., triple-block"
-                  value={protocol.stamp || ''}
-                  onChange={(e) => updateProtocol('stamp', e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Notes</label>
-                <Input
-                  placeholder="Additional observations"
-                  value={protocol.notes || ''}
-                  onChange={(e) => updateProtocol('notes', e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </PageControls>
 
       <PageVisualization>
-        {selectedFiles.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="text-center space-y-4 max-w-md">
-              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <FileUp className="h-8 w-8 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold">No Data Loaded</h3>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Select files using the file picker to begin your analysis.
-                  Supported formats: .txt, .xls, .xlsx
-                </p>
-              </div>
-              <Button onClick={() => fileInputRef.current?.click()}>
-                Get Started
-              </Button>
-            </div>
+        <div className="flex-1 overflow-auto p-6">
+          <div className="max-w-5xl mx-auto space-y-6">
+            {selectedFiles.length === 0 ? (
+              <LoadLandingHero
+                onSelectFiles={openFileSelectionFlow}
+                recentFiles={recentFiles}
+                onRecentClick={handleRecentFilesClick}
+                loading={loading}
+                renderRecentLabel={formatRecentFileDisplay}
+              />
+            ) : (
+              <LocalPreviewPanel
+                loading={previewLoading}
+                error={previewError}
+                preview={localPreview}
+                fileCount={selectedFiles.length}
+                onSelectFiles={openFileSelectionFlow}
+              />
+            )}
+
+            <ProtocolInformationCard protocol={protocol} updateProtocol={updateProtocol} />
           </div>
-        ) : (
-          <LocalPreviewPanel
-            loading={previewLoading}
-            error={previewError}
-            preview={localPreview}
-            fileCount={selectedFiles.length}
-            onSelectFiles={() => fileInputRef.current?.click()}
-          />
-        )}
+        </div>
       </PageVisualization>
     </PageShell>
   )
@@ -497,112 +467,349 @@ function LocalPreviewPanel({ loading, error, preview, fileCount, onSelectFiles }
       : preview?.sampleRows[0]?.map((_, idx) => `Column ${idx + 1}`) ?? []
 
   return (
-    <div className="flex-1 p-6 overflow-auto">
-      <div className="max-w-4xl mx-auto space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold">Local Data Preview</h3>
-            <p className="text-sm text-muted-foreground">
-              Client-side parsing powered by uDSV. Showing first file ({fileCount} selected).
-            </p>
-          </div>
-          <Button variant="outline" onClick={onSelectFiles} size="sm">
-            <FolderOpen className="h-4 w-4 mr-2" />
-            Choose Different Files
-          </Button>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold">Local Data Preview</h3>
+          <p className="text-sm text-muted-foreground">
+            Client-side parsing powered by uDSV. Showing first file ({fileCount} selected).
+          </p>
         </div>
+        <Button variant="outline" onClick={onSelectFiles} size="sm">
+          <FolderOpen className="h-4 w-4 mr-2" />
+          Choose Different Files
+        </Button>
+      </div>
 
-        <div className="rounded-2xl border bg-card/80 shadow-sm p-6 min-h-[320px]">
-          {loading && (
-            <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground gap-2">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              Parsing preview with uDSV...
-            </div>
-          )}
+      <div className="rounded-2xl border bg-card/80 shadow-sm p-6 min-h-[320px]">
+        {loading && (
+          <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground gap-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            Parsing preview with uDSV...
+          </div>
+        )}
 
-          {!loading && error && (
-            <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
-              <p className="text-base font-semibold">Preview failed</p>
-              <p className="text-sm text-muted-foreground">{error}</p>
-              <Button variant="outline" size="sm" onClick={onSelectFiles}>
-                Try Selecting Files Again
-              </Button>
-            </div>
-          )}
+        {!loading && error && (
+          <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
+            <p className="text-base font-semibold">Preview failed</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+            <Button variant="outline" size="sm" onClick={onSelectFiles}>
+              Try Selecting Files Again
+            </Button>
+          </div>
+        )}
 
-          {!loading && !error && preview && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">{preview.fileName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Parsed {preview.rowsParsed.toLocaleString()} rows in {preview.durationMs.toFixed(1)} ms
-                    {preview.truncated && ' (preview limited for speed)'}
-                  </p>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Powered by <a href="https://github.com/leeoniya/uDSV" target="_blank" rel="noreferrer" className="underline">uDSV</a>
-                </div>
+        {!loading && !error && preview && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">{preview.fileName}</p>
+                <p className="text-xs text-muted-foreground">
+                  Parsed {preview.rowsParsed.toLocaleString()} rows in {preview.durationMs.toFixed(1)} ms
+                  {preview.truncated && ' (preview limited for speed)'}
+                </p>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                <div className="rounded-lg border bg-background/40 p-3">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Points Parsed</p>
-                  <p className="text-lg font-semibold">{preview.rowsParsed.toLocaleString()}</p>
-                </div>
-                <div className="rounded-lg border bg-background/40 p-3">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Time Range</p>
-                  <p className="text-lg font-semibold">
-                    {formatRange(preview.stats.minTime, preview.stats.maxTime, 's')}
-                  </p>
-                </div>
-                <div className="rounded-lg border bg-background/40 p-3">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Amplitude Range</p>
-                  <p className="text-lg font-semibold">
-                    {formatRange(preview.stats.minAmplitude, preview.stats.maxAmplitude)}
-                  </p>
-                </div>
-                <div className="rounded-lg border bg-background/40 p-3">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Parse Duration</p>
-                  <p className="text-lg font-semibold">{preview.durationMs.toFixed(1)} ms</p>
-                </div>
+              <div className="text-xs text-muted-foreground">
+                Powered by <a href="https://github.com/leeoniya/uDSV" target="_blank" rel="noreferrer" className="underline">uDSV</a>
               </div>
+            </div>
 
-              {preview.sampleRows.length > 0 ? (
-                <div className="overflow-auto rounded-lg border">
-                  <table className="min-w-full divide-y divide-border text-sm">
-                    <thead className="bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <tr>
-                        {header.map((column, idx) => (
-                          <th key={idx} className="px-3 py-2 whitespace-nowrap font-medium">
-                            {column || `Column ${idx + 1}`}
-                          </th>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Points Parsed</p>
+                <p className="text-lg font-semibold">{preview.rowsParsed.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Time Range</p>
+                <p className="text-lg font-semibold">
+                  {formatRange(preview.stats.minTime, preview.stats.maxTime, 's')}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Amplitude Range</p>
+                <p className="text-lg font-semibold">
+                  {formatRange(preview.stats.minAmplitude, preview.stats.maxAmplitude)}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Parse Duration</p>
+                <p className="text-lg font-semibold">{preview.durationMs.toFixed(1)} ms</p>
+              </div>
+            </div>
+
+            {preview.sampleRows.length > 0 ? (
+              <div className="overflow-auto rounded-lg border">
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      {header.map((column, idx) => (
+                        <th key={idx} className="px-3 py-2 whitespace-nowrap font-medium">
+                          {column || `Column ${idx + 1}`}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-background/60">
+                    {preview.sampleRows.map((row, rowIdx) => (
+                      <tr key={rowIdx}>
+                        {row.map((value, colIdx) => (
+                          <td key={colIdx} className="px-3 py-2 whitespace-nowrap">
+                            {value || '-'}
+                          </td>
                         ))}
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border bg-background/60">
-                      {preview.sampleRows.map((row, rowIdx) => (
-                        <tr key={rowIdx}>
-                          {row.map((value, colIdx) => (
-                            <td key={colIdx} className="px-3 py-2 whitespace-nowrap">
-                              {value || '-'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground border rounded-lg p-4 text-center">
-                  No rows parsed from the selected file.
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground border rounded-lg p-4 text-center">
+                No rows parsed from the selected file.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface LoadLandingHeroProps {
+  onSelectFiles: () => void
+  recentFiles: string[][]
+  onRecentClick: (fileGroup: string[]) => void
+  loading: boolean
+  renderRecentLabel: (fileGroup: string[]) => ReactNode
+}
+
+function LoadLandingHero({ onSelectFiles, recentFiles, onRecentClick, loading, renderRecentLabel }: LoadLandingHeroProps) {
+  const validRecents = recentFiles
+    .filter((group): group is string[] => Array.isArray(group) && group.length > 0)
+  const topRecents = validRecents.slice(0, 4)
+
+  const steps = [
+    {
+      title: 'Select files',
+      description: 'Pick your .txt, .xls or .xlsx measurement files',
+    },
+    {
+      title: 'Set acquisition parameters',
+      description: 'Adjust time resolution or photon correction as needed',
+    },
+    {
+      title: 'Document the protocol',
+      description: 'Capture setup details directly below',
+    },
+  ]
+
+  return (
+    <div className="rounded-2xl border bg-card/80 shadow-sm p-8">
+      <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <FileUp className="h-3.5 w-3.5" />
+            Ready to load data
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-2xl font-semibold tracking-tight">Peaks in time‑series: load, preprocess, detect</h3>
+            <p className="text-sm text-muted-foreground">
+              Upload your measurement files, preview the signal, and run preprocessing. Then detect peaks and choose the right segment and peak width. Especially suited for low‑signal fluorescence data.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={onSelectFiles} disabled={loading}>
+              <Upload className="h-4 w-4 mr-2" />
+              Select Files
+            </Button>
+            {topRecents.length > 0 && (
+              <Button
+                variant="ghost"
+                onClick={() => onRecentClick(topRecents[0])}
+                disabled={loading}
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                Load last session
+              </Button>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {steps.map((step) => (
+              <div key={step.title} className="rounded-xl border bg-background/70 p-4">
+                <p className="text-sm font-semibold">{step.title}</p>
+                <p className="text-xs text-muted-foreground mt-1">{step.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-background/70 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Recent sessions</p>
+            <span className="text-xs text-muted-foreground">
+              {topRecents.length > 0 ? 'Tap to auto-select' : 'No history yet'}
+            </span>
+          </div>
+
+          {topRecents.length > 0 ? (
+            <div className="space-y-2">
+              {topRecents.map((group, idx) => (
+                <button
+                  key={`${group.join('|')}-${idx}`}
+                  className="w-full rounded-lg border px-3 py-2 text-left text-sm hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onRecentClick(group)}
+                  disabled={loading}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="truncate">{renderRecentLabel(group)}</div>
+                    <span className="text-xs text-muted-foreground">#{idx + 1}</span>
+                  </div>
+                </button>
+              ))}
             </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Load a group of files and we will keep it here for one-click access next time.
+            </p>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+interface ProtocolInformationCardProps {
+  protocol: ProtocolInfo
+  updateProtocol: <K extends keyof ProtocolInfo>(key: K, value: ProtocolInfo[K]) => void
+}
+
+function ProtocolInformationCard({ protocol, updateProtocol }: ProtocolInformationCardProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Protocol Information</CardTitle>
+        <CardDescription>
+          Keep experiment metadata with the dataset for future reference.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Measurement Date</label>
+            <Input
+              type="date"
+              value={protocol.measurement_date || ''}
+              onChange={(e) => updateProtocol('measurement_date', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Start Time</label>
+            <Input
+              type="time"
+              value={protocol.start_time || ''}
+              onChange={(e) => updateProtocol('start_time', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium">Setup</label>
+          <Input
+            placeholder="e.g., Prototype, Old Ladom"
+            value={protocol.setup || ''}
+            onChange={(e) => updateProtocol('setup', e.target.value)}
+            className="text-sm"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Sample Number</label>
+            <Input
+              placeholder="Sample ID"
+              value={protocol.sample_number || ''}
+              onChange={(e) => updateProtocol('sample_number', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Particle</label>
+            <Input
+              placeholder="Particle type"
+              value={protocol.particle || ''}
+              onChange={(e) => updateProtocol('particle', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium">Concentration</label>
+          <Input
+            placeholder="Particle concentration"
+            value={protocol.concentration || ''}
+            onChange={(e) => updateProtocol('concentration', e.target.value)}
+            className="text-sm"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Buffer</label>
+            <Input
+              placeholder="Buffer solution"
+              value={protocol.buffer || ''}
+              onChange={(e) => updateProtocol('buffer', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Buffer Conc.</label>
+            <Input
+              placeholder="Buffer concentration"
+              value={protocol.buffer_concentration || ''}
+              onChange={(e) => updateProtocol('buffer_concentration', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">ND Filter</label>
+            <Input
+              placeholder="Filter value"
+              value={protocol.nd_filter || ''}
+              onChange={(e) => updateProtocol('nd_filter', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Laser Power</label>
+            <Input
+              placeholder="Power setting"
+              value={protocol.laser_power || ''}
+              onChange={(e) => updateProtocol('laser_power', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium">Stamp</label>
+          <Input
+            placeholder="e.g., triple-block"
+            value={protocol.stamp || ''}
+            onChange={(e) => updateProtocol('stamp', e.target.value)}
+            className="text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium">Notes</label>
+          <Input
+            placeholder="Additional observations"
+            value={protocol.notes || ''}
+            onChange={(e) => updateProtocol('notes', e.target.value)}
+            className="text-sm"
+          />
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

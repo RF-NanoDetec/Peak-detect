@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react"
 import { UPlotChart, type Series } from "./UPlotChart"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/hooks/use-theme"
 
 interface AnalyzeTimeSeriesProps {
   peakTimes?: number[]
@@ -11,6 +11,8 @@ interface AnalyzeTimeSeriesProps {
   peakWidths?: number[]
   timeResolution?: number
   className?: string
+  binWidthSeconds?: number
+  rollingMeanWindow?: number
 }
 
 type ScaleType = "linear" | "log"
@@ -76,8 +78,9 @@ const computeBinnedThroughput = (peakTimes: number[], binWidthSeconds = 10) => {
     const binStart = start + i * binWidthSeconds
     const binCenterSec = binStart + binWidthSeconds / 2
     binCentersMinutes.push(Math.max(0, binCenterSec / 60))
-    // Convert to peaks per 10 seconds (same units as screenshot)
-    throughputPerBin.push(counts[i])
+    // Normalize to peaks per second by dividing by bin width
+    // This ensures consistent units regardless of bin width
+    throughputPerBin.push(counts[i] / binWidthSeconds)
   }
 
   return { binCentersMinutes, throughputPerBin }
@@ -105,14 +108,15 @@ export function AnalyzeTimeSeries({
   peakWidths = [],
   timeResolution,
   className = "",
+  binWidthSeconds = 10,
+  rollingMeanWindow = 10,
 }: AnalyzeTimeSeriesProps) {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const { theme } = useTheme()
+  const isDark = theme === "dark"
 
   const [sharedXRange, setSharedXRange] = useState<Range>(null)
   const [ampScale, setAmpScale] = useState<ScaleType>("log")
   const [widthScale, setWidthScale] = useState<ScaleType>("log")
-  const [throughputScale, setThroughputScale] = useState<ScaleType>("linear")
 
   const xTimesMinutes = useMemo(
     () => peakTimes.map((t) => Math.max(0, t / 60)),
@@ -135,64 +139,73 @@ export function AnalyzeTimeSeries({
     )
   }, [peakIntervalsMs])
 
+  // Cooler scatter dots with lower opacity; distinct mean line for contrast
+  const pointColor = isDark ? "rgba(203, 213, 225, 0.1)" : "rgba(15,23,42,0.5)" // slate-300 tint
+  const rollingMeanColor = isDark ? "#60a5fa" : "#3b82f6" // blue color used throughout the app
+
+  // Compute rolling mean for amplitude data
+  const amplitudeRollingMean = useMemo(() => {
+    if (!peakAmplitudes.length) return [] as number[]
+    return computeMovingAverage(peakAmplitudes, rollingMeanWindow)
+  }, [peakAmplitudes, rollingMeanWindow])
+
+  // Compute rolling mean for width data
+  const widthRollingMean = useMemo(() => {
+    if (!widthsMs.length) return [] as number[]
+    return computeMovingAverage(widthsMs, rollingMeanWindow)
+  }, [widthsMs, rollingMeanWindow])
+
   const amplitudeSeries: Series[] = useMemo(
     () => [
       {
         label: "Peak Amplitude",
-        color: isDark ? "#f9fafb" : "#111827",
+        color: pointColor,
         width: 0,
         data: peakAmplitudes,
         points: true,
         pointSize: 3,
       },
+      {
+        label: `Rolling Mean (${rollingMeanWindow}-point)`,
+        color: rollingMeanColor,
+        width: 2,
+        data: amplitudeRollingMean,
+      },
     ],
-    [isDark, peakAmplitudes],
+    [pointColor, peakAmplitudes, amplitudeRollingMean, rollingMeanColor, rollingMeanWindow],
   )
 
   const widthSeries: Series[] = useMemo(
     () => [
       {
         label: "Peak Width (ms)",
-        color: isDark ? "#f97316" : "#ea580c",
+        color: pointColor,
         width: 0,
         data: widthsMs,
         points: true,
         pointSize: 3,
       },
-    ],
-    [isDark, widthsMs],
-  )
-
-  const throughputSeries: Series[] = useMemo(
-    () => [
       {
-        label: "Throughput (Hz)",
-        color: isDark ? "#22c55e" : "#16a34a",
-        width: 0,
-        data: instantaneousThroughput,
-        points: true,
-        pointSize: 3,
+        label: `Rolling Mean (${rollingMeanWindow}-point)`,
+        color: rollingMeanColor,
+        width: 2,
+        data: widthRollingMean,
       },
     ],
-    [instantaneousThroughput, isDark],
+    [pointColor, widthsMs, widthRollingMean, rollingMeanColor, rollingMeanWindow],
   )
 
   const amplitudeRange = useMemo(
-    () => computeRange(peakAmplitudes, ampScale),
-    [peakAmplitudes, ampScale],
+    () => computeRange(peakAmplitudes.concat(amplitudeRollingMean), ampScale),
+    [peakAmplitudes, amplitudeRollingMean, ampScale],
   )
   const widthRange = useMemo(
-    () => computeRange(widthsMs, widthScale),
-    [widthsMs, widthScale],
+    () => computeRange(widthsMs.concat(widthRollingMean), widthScale),
+    [widthsMs, widthRollingMean, widthScale],
   )
-  const throughputRange = useMemo(
-    () => computeRange(instantaneousThroughput, throughputScale),
-    [instantaneousThroughput, throughputScale],
-  )
-
   const { binCentersMinutes, throughputPerBin } = useMemo(
-    () => computeBinnedThroughput(peakTimes),
-    [peakTimes],
+    () => computeBinnedThroughput(peakTimes, binWidthSeconds),
+    [peakTimes, binWidthSeconds],
   )
   const movingAverage = useMemo(
     () => computeMovingAverage(throughputPerBin, 5),
@@ -202,16 +215,17 @@ export function AnalyzeTimeSeries({
   const throughputBarSeries: Series[] = useMemo(
     () => [
       {
-        label: "Peak Throughput (10s bins)",
-        color: isDark ? "#60a5fa" : "#3b82f6",
-        width: 0,
-        data: throughputPerBin,
-      },
-      {
         label: "5-point Moving Average",
         color: isDark ? "#f97316" : "#ea580c",
         width: 2,
         data: movingAverage,
+      },
+      {
+        label: "Peak Throughput",
+        color: isDark ? "rgba(96,165,250,0.7)" : "rgba(59,130,246,0.7)",
+        width: 0,
+        data: throughputPerBin,
+        bar: true,
       },
     ],
     [isDark, throughputPerBin, movingAverage],
@@ -247,8 +261,7 @@ export function AnalyzeTimeSeries({
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Amplitude */}
       <div className="border rounded-lg bg-card/60 shadow-sm p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium">Peak Amplitudes</p>
+        <div className="flex items-center justify-end mb-2">
           <div className="flex items-center gap-2 text-[10px]">
             <span className="text-muted-foreground">Y Scale:</span>
             <button
@@ -282,8 +295,7 @@ export function AnalyzeTimeSeries({
 
       {/* Width */}
       <div className="border rounded-lg bg-card/60 shadow-sm p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium">Peak Widths</p>
+        <div className="flex items-center justify-end mb-2">
           <div className="flex items-center gap-2 text-[10px]">
             <span className="text-muted-foreground">Y Scale:</span>
             <button
@@ -315,64 +327,29 @@ export function AnalyzeTimeSeries({
         />
       </div>
 
-      {/* Instantaneous throughput scatter */}
-      <div className="border rounded-lg bg-card/60 shadow-sm p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium">Instantaneous Throughput</p>
-          <div className="flex items-center gap-2 text-[10px]">
-            <span className="text-muted-foreground">Y Scale:</span>
-            <button
-              type="button"
-              className={axisButtonClass(throughputScale === "linear")}
-              onClick={() => setThroughputScale("linear")}
-            >
-              Linear
-            </button>
-            <button
-              type="button"
-              className={axisButtonClass(throughputScale === "log")}
-              onClick={() => setThroughputScale("log")}
-            >
-              Log10
-            </button>
-          </div>
-        </div>
-        <UPlotChart
-          xData={xTimesMinutes.slice(0, instantaneousThroughput.length)}
-          series={throughputSeries}
-          xLabel="Time (min)"
-          yLabel="Throughput (Hz)"
-          height={200}
-          xRange={sharedXRange || undefined}
-          onXRangeChange={handleSharedRangeChange}
-          yScaleType={throughputScale}
-          yRange={throughputRange || undefined}
-        />
-      </div>
-
       {/* Binned throughput bar + moving average */}
       {binCentersMinutes.length > 0 && throughputPerBin.length > 0 && (
         <div className="border rounded-lg bg-card/60 shadow-sm p-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium">Peak Throughput (10s bins)</p>
+            <p className="text-xs font-medium">Peak Throughput</p>
             <p className="text-[10px] text-muted-foreground">
-              Bars: peaks / 10 s, line: 5-point moving average
+              Scroll to zoom, double-click to reset
             </p>
           </div>
           <UPlotChart
             xData={binCentersMinutes}
             series={throughputBarSeries}
             xLabel="Time (min)"
-            yLabel="Peaks per 10 s"
+            yLabel="Peaks per second"
             height={220}
             xRange={sharedXRange || undefined}
             onXRangeChange={handleSharedRangeChange}
             yScaleType="linear"
             yRange={throughputBarRange || undefined}
+            enableYAxisZoom={true}
           />
         </div>
       )}
     </div>
   )
 }
-

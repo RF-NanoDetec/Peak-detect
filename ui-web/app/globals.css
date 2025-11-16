@@ -181,5 +181,7 @@
   html.dark input[type="range"]:focus::-moz-range-thumb {
     box-shadow: 0 0 0 3px hsl(224.3 76.3% 48% / 0.4) !important;
   }
+
+/* uPlot uses canvas rendering, so axis colors are controlled via JS options */
 }
 

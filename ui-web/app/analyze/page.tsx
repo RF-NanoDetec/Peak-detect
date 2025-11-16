@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { BarChart3 } from "lucide-react"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,8 @@ export default function AnalyzePage() {
   const { params } = useParamsStore()
 
   const hasResults = !!(detectionResults && previewData)
+  const [binWidthSeconds, setBinWidthSeconds] = useState<number>(10)
+  const [rollingMeanWindow, setRollingMeanWindow] = useState<number>(10)
 
   return (
     <PageShell>
@@ -27,18 +30,57 @@ export default function AnalyzePage() {
               Time series and distributions of detected peaks
             </p>
           </div>
+
+          {hasResults && (
+            <>
+              <div className="space-y-2 text-xs">
+                <p className="font-medium">Throughput Binning</p>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Bin width</span>
+                    <span className="font-semibold">{binWidthSeconds.toFixed(1)} s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={20}
+                    step={0.5}
+                    value={binWidthSeconds}
+                    onChange={(e) => setBinWidthSeconds(parseFloat(e.target.value))}
+                    className="w-full accent-primary h-2 rounded-lg cursor-pointer"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2 text-xs">
+                <p className="font-medium">Rolling Mean</p>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Window size</span>
+                    <span className="font-semibold">{rollingMeanWindow}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={200}
+                    step={1}
+                    value={rollingMeanWindow}
+                    onChange={(e) => setRollingMeanWindow(Number(e.target.value))}
+                    className="w-full accent-primary h-2 rounded-lg cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>2</span>
+                    <span>200</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </PageControls>
 
       <PageVisualization>
         {hasResults ? (
           <div className="flex-1 p-4 space-y-4 overflow-auto">
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Scatter plots of detected peak amplitudes, widths, and throughput over time.
-                All time axes are linked �?� scroll to zoom, double-click to reset.
-              </p>
-            </div>
             <AnalyzeTimeSeries
               className="flex-1"
               peakTimes={detectionResults?.peak_times || []}
@@ -46,6 +88,8 @@ export default function AnalyzePage() {
               peakIntervalsMs={detectionResults?.peak_intervals || []}
               peakWidths={detectionResults?.properties?.widths || []}
               timeResolution={params.time_resolution}
+              binWidthSeconds={binWidthSeconds}
+              rollingMeanWindow={rollingMeanWindow}
             />
           </div>
         ) : (

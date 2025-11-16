@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/hooks/use-theme"
 import uPlot from "uplot"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
@@ -61,8 +61,8 @@ export function UPlotHistogram({
   const [width, setWidth] = useState<number>(600)
   const [mounted, setMounted] = useState(false)
   const [chartReady, setChartReady] = useState(false)
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const { theme } = useTheme()
+  const isDark = theme === "dark"
 
   const barColor = color || (isDark ? "#5b9bd5" : "#3b82f6")
   const edgeColor = isDark ? "#3a7ba5" : "#2563eb"
@@ -83,8 +83,8 @@ export function UPlotHistogram({
   }, [])
 
   const opts: uPlot.Options = useMemo(() => {
-    const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"
-    const axisColor = isDark ? "#e5e7eb" : "#1f2937"
+    const gridColor = isDark ? "rgba(248,250,252,0.10)" : "rgba(15,23,42,0.06)"
+    const axisColor = isDark ? "rgba(248,250,252,0.88)" : "rgba(15,23,42,0.65)"
 
     const xData = data.bins || []
     const yData = data.counts || []
@@ -151,7 +151,8 @@ export function UPlotHistogram({
           grid: { stroke: gridColor, width: 1 },
           label: xLabel,
           labelSize: 20,
-          labelFont: "12px sans-serif",
+          font: "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
+          labelFont: "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif",
           size: 50,
           values: (_u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
         },
@@ -160,7 +161,8 @@ export function UPlotHistogram({
           grid: { stroke: gridColor, width: 1 },
           label: yLabel,
           labelSize: 30,
-          labelFont: "12px sans-serif",
+          font: "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
+          labelFont: "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif",
           size: 60,
           values: (_u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
         },
@@ -256,9 +258,9 @@ export function UPlotHistogram({
     // Ensure arrays have the same length
     const minLength = Math.min(xValues.length, yValues.length)
     return [
-      xValues.slice(0, minLength) as number[], 
-      yValues.slice(0, minLength) as number[]
-    ]
+      xValues.slice(0, minLength), 
+      yValues.slice(0, minLength)
+    ] as uPlot.AlignedData
   }, [data])
 
   useEffect(() => {

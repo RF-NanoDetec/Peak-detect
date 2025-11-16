@@ -39,7 +39,7 @@ interface PageVisualizationProps {
 
 export function PageVisualization({ children, className }: PageVisualizationProps) {
   return (
-    <div className={cn("flex-1 flex flex-col bg-background min-h-0 min-w-0 overflow-hidden", className)}>
+    <div className={cn("flex-1 flex flex-col bg-background min-h-0 min-w-0 overflow-auto", className)}>
       {children}
     </div>
   )

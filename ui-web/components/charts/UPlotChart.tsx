@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/hooks/use-theme"
 import uPlot from "uplot"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
@@ -38,6 +38,7 @@ interface UPlotChartProps {
 	yScaleType?: "linear" | "log"
 	yRange?: { min: number; max: number } | null
 	legend?: boolean
+	enableYAxisZoom?: boolean
 }
 
 const formatAxisNumber = (value: number | null | undefined): string => {
@@ -49,6 +50,50 @@ const formatAxisNumber = (value: number | null | undefined): string => {
   if (abs >= 10) return value.toFixed(1)
   if (abs >= 1) return value.toFixed(2)
   return value.toFixed(3)
+}
+
+type TimeUnit = "min" | "s" | "ms"
+
+// Format x-axis ticks for time (input values are minutes)
+const formatTimeAxisTicks = (u: uPlot, vals: number[]): string[] => {
+  const xMin = u.scales.x.min ?? (vals.length ? vals[0] : 0)
+  const xMax = u.scales.x.max ?? (vals.length ? vals[vals.length - 1] : xMin)
+  const spanMin = Math.max(0, (xMax ?? 0) - (xMin ?? 0))
+  const stepMin = vals.length >= 2
+    ? Math.max(0, vals[1] - vals[0])
+    : (spanMin > 0 ? spanMin / Math.max(vals.length - 1, 1) : 0)
+  const stepSec = stepMin * 60
+
+  let unit: TimeUnit
+  if (stepSec < 1) {
+    unit = "ms"
+  } else if (spanMin < 1) {
+    unit = "s"
+  } else {
+    unit = "min"
+  }
+
+  if (unit === "min") {
+    const decimals =
+      stepMin >= 10 ? 0 :
+      stepMin >= 1 ? 0 :
+      stepMin >= 0.1 ? 1 : 2
+    return vals.map(v => (Number.isFinite(v) ? v.toFixed(decimals) : ""))
+  }
+
+  if (unit === "s") {
+    const decimals = stepSec >= 5 ? 0 : 1
+    return vals.map(v => {
+      const s = v * 60
+      return Number.isFinite(s) ? s.toFixed(decimals) : ""
+    })
+  }
+
+  // ms
+  return vals.map(v => {
+    const ms = v * 60000
+    return Number.isFinite(ms) ? Math.round(ms).toString() : ""
+  })
 }
 
 export function UPlotChart({
@@ -68,13 +113,14 @@ export function UPlotChart({
 	yScaleType = "linear",
 	yRange,
 	legend = true,
+	enableYAxisZoom = false,
 }: UPlotChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const uPlotInstanceRef = useRef<uPlot | null>(null)
   const [width, setWidth] = useState<number>(800)
   const [mounted, setMounted] = useState(false)
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const { theme } = useTheme()
+  const isDark = theme === "dark"
 
   // Ensure component is mounted before rendering UPlot
   useEffect(() => {
@@ -94,8 +140,47 @@ export function UPlotChart({
   }, [])
 
   const opts: uPlot.Options = useMemo(() => {
-    const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"
-    const axisColor = isDark ? "#e5e7eb" : "#1f2937"
+    const gridColor = isDark ? "rgba(248,250,252,0.10)" : "rgba(15,23,42,0.06)"
+    const axisColor = isDark ? "rgba(248,250,252,0.88)" : "rgba(15,23,42,0.65)"
+    const axisFont = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
+    const axisLabelFont = "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif"
+
+    // Dynamic x-axis label unit based on current visible span (xData is in minutes)
+    const currentXMin = (xRange?.min ?? (xData.length ? xData[0] : 0))
+    const currentXMax = (xRange?.max ?? (xData.length ? xData[xData.length - 1] : 0))
+    const visibleSpanMin = Math.max(0, currentXMax - currentXMin)
+    const approxStepSec = (visibleSpanMin > 0 ? (visibleSpanMin / 10) * 60 : 0)
+    let timeUnitLabel: TimeUnit = "min"
+    if (approxStepSec < 1) {
+      timeUnitLabel = "ms"
+    } else if (visibleSpanMin < 1) {
+      timeUnitLabel = "s"
+    } else {
+      timeUnitLabel = "min"
+    }
+    const baseXLabel = (xLabel || "Time").replace(/\s*\(.*\)\s*$/, "")
+    const dynamicXLabel = `${baseXLabel} (${timeUnitLabel})`
+
+    const yLogConfig: Partial<uPlot.Scale> =
+      yScaleType === "log"
+        ? {
+            distr: 3 as const,
+            log: 10,
+            clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
+            range: (_u: uPlot, dataMin: number, dataMax: number) => {
+              let min = yRange?.min ?? dataMin
+              let max = yRange?.max ?? dataMax
+
+              if (!Number.isFinite(min) || min <= 0) {
+                min = 1e-3
+              }
+              if (!Number.isFinite(max) || max <= min) {
+                max = min * 10
+              }
+              return [min, max]
+            },
+          }
+        : {}
 
     return {
       width,
@@ -113,39 +198,36 @@ export function UPlotChart({
 					...(xRange ? { min: xRange.min, max: xRange.max } : {}),
 				},
 				y: { 
-					auto: true,
-					...(yScaleType === "log"
-            ? {
-                distr: 3 as const,
-                log: 10,
-                clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
-              }
-            : {}),
-					...(yRange ? { min: yRange.min, max: yRange.max } : {}),
+					...(yRange ? { auto: false, min: yRange.min, max: yRange.max } : { auto: true }),
+          ...yLogConfig,
 				},
       },
       axes: [
         {
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
-          label: xLabel,
+          label: dynamicXLabel,
           labelSize: 20,
-          labelFont: "12px sans-serif",
+          font: axisFont,
+          labelFont: axisLabelFont,
           size: 50,
-          values: (u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
+          values: (u: uPlot, vals: number[]) => formatTimeAxisTicks(u, vals),
         },
         {
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
           label: yLabel,
           labelSize: 30,
-          labelFont: "12px sans-serif",
+          font: axisFont,
+          labelFont: axisLabelFont,
           size: 60,
           values: (u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
         },
       ],
       legend: {
 				show: !!legend,
+        stroke: isDark ? "rgba(248,250,252,0.95)" : "#1f2937",
+        fill: isDark ? "rgba(0,0,0,0)" : "rgba(255,255,255,0)",
       },
       series: [
         {}, // x axis
@@ -178,6 +260,18 @@ export function UPlotChart({
           (u: uPlot) => {
             uPlotInstanceRef.current = u
             const over = u.over
+            
+            // Style legend text for dark mode
+            const legendEl = u.root.querySelector('.u-legend')
+            if (legendEl) {
+              const legendTextColor = isDark ? "rgba(248,250,252,0.95)" : "#1f2937"
+              ;(legendEl as HTMLElement).style.color = legendTextColor
+              // Also style individual legend items
+              const legendItems = legendEl.querySelectorAll('.u-legend-item')
+              legendItems.forEach((item) => {
+                ;(item as HTMLElement).style.color = legendTextColor
+              })
+            }
 
             // Prevent drag-to-pan by blocking mouse drag behavior
             let isDragging = false
@@ -209,13 +303,60 @@ export function UPlotChart({
               e.preventDefault()
               const rect = over.getBoundingClientRect()
               const leftPx = e.clientX - rect.left
-              const xVal = u.posToVal(leftPx, "x")
-              const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
-              const min = u.scales.x.min!
-              const max = u.scales.x.max!
-              const nxMin = xVal - (xVal - min) * factor
-              const nxMax = xVal + (max - xVal) * factor
-              u.setScale("x", { min: nxMin, max: nxMax })
+              const topPx = e.clientY - rect.top
+              
+              if (enableYAxisZoom && e.shiftKey) {
+                // Shift+scroll: zoom y-axis
+                const yVal = u.posToVal(topPx, "y")
+                const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                const min = u.scales.y.min!
+                const max = u.scales.y.max!
+                const nyMin = yVal - (yVal - min) * factor
+                const nyMax = yVal + (max - yVal) * factor
+                u.setScale("y", { min: nyMin, max: nyMax })
+              } else if (enableYAxisZoom) {
+                // When y-axis zoom is enabled, zoom the axis closer to the mouse
+                const plotLeft = u.bbox.left
+                const plotTop = u.bbox.top
+                const plotWidth = u.bbox.width
+                const plotHeight = u.bbox.height
+                const distToLeft = leftPx - plotLeft
+                const distToRight = (plotLeft + plotWidth) - leftPx
+                const distToTop = topPx - plotTop
+                const distToBottom = (plotTop + plotHeight) - topPx
+                
+                const minDistX = Math.min(distToLeft, distToRight)
+                const minDistY = Math.min(distToTop, distToBottom)
+                
+                if (minDistY < minDistX) {
+                  // Zoom y-axis
+                  const yVal = u.posToVal(topPx, "y")
+                  const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                  const min = u.scales.y.min!
+                  const max = u.scales.y.max!
+                  const nyMin = yVal - (yVal - min) * factor
+                  const nyMax = yVal + (max - yVal) * factor
+                  u.setScale("y", { min: nyMin, max: nyMax })
+                } else {
+                  // Zoom x-axis
+                  const xVal = u.posToVal(leftPx, "x")
+                  const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                  const min = u.scales.x.min!
+                  const max = u.scales.x.max!
+                  const nxMin = xVal - (xVal - min) * factor
+                  const nxMax = xVal + (max - xVal) * factor
+                  u.setScale("x", { min: nxMin, max: nxMax })
+                }
+              } else {
+                // Default: zoom x-axis only
+                const xVal = u.posToVal(leftPx, "x")
+                const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                const min = u.scales.x.min!
+                const max = u.scales.x.max!
+                const nxMin = xVal - (xVal - min) * factor
+                const nxMax = xVal + (max - xVal) * factor
+                u.setScale("x", { min: nxMin, max: nxMax })
+              }
             }, { passive: false })
 
             // Double-click to reset zoom
@@ -223,7 +364,9 @@ export function UPlotChart({
               if (onResetZoom) {
                 onResetZoom()
               } else {
+                // Reset x-axis
                 u.setScale("x", { min: xData[0], max: xData[xData.length - 1] })
+                // Reset y-axis
                 const baseY = (series && series.length > 0 ? series[0].data : []) as number[]
                 const finiteY = baseY.filter(v => typeof v === "number" && Number.isFinite(v))
                 if (finiteY.length > 0) {
@@ -241,6 +384,17 @@ export function UPlotChart({
         draw: [
           (u: uPlot) => {
 						const ctx = u.ctx
+						
+						// Update legend text color for dark mode (runs on every draw to catch theme changes)
+						const legendEl = u.root.querySelector('.u-legend')
+						if (legendEl) {
+							const legendTextColor = isDark ? "rgba(248,250,252,0.95)" : "#1f2937"
+							;(legendEl as HTMLElement).style.color = legendTextColor
+							const legendItems = legendEl.querySelectorAll('.u-legend-item')
+							legendItems.forEach((item) => {
+								;(item as HTMLElement).style.color = legendTextColor
+							})
+						}
 
             // Draw bar-style series (e.g., throughput histogram over time)
             if (series && series.length > 0) {
@@ -357,7 +511,7 @@ export function UPlotChart({
         ]
       }
 		}
-	}, [width, height, isDark, series, xLabel, yLabel, xData, onResetZoom, widthSegments, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, legend])
+	}, [width, height, isDark, series, xLabel, yLabel, xData, onResetZoom, widthSegments, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, yRange, legend, enableYAxisZoom])
 
   const data = useMemo(() => {
     const result: any[] = [xData]

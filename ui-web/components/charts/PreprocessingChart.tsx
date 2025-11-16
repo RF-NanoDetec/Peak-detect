@@ -5,9 +5,10 @@ import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
 import { UPlotChart } from "./UPlotChart"
 import { UPlotHistogram } from "./UPlotHistogram"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/hooks/use-theme"
 import type { DataPreviewResponse } from "@/lib/types"
 import { parseResultBinary } from "@/lib/binaryParsers"
+import { Button } from "@/components/ui/button"
 
 interface PreprocessingChartProps {
   resultId: string
@@ -73,7 +74,7 @@ type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
 const histogramScaleOptions: { label: string; value: AxisScaleOption }[] = [
   { label: "Linear", value: "linear" },
-  { label: "Log10", value: "log" },
+  { label: "Log", value: "log" },
 ]
 
 const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
@@ -177,8 +178,8 @@ export function PreprocessingChart({
   const zoomRangeRef = useRef<WorkerRange>(null)
   const latestRequestIdRef = useRef<string | null>(null)
   const requestCounterRef = useRef(0)
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const { theme } = useTheme()
+  const isDark = theme === "dark"
   
   const TARGET_POINTS = 10000 // Target number of points to display
   const ZOOM_THRESHOLD = 0.1
@@ -666,6 +667,28 @@ export function PreprocessingChart({
     })
   }
 
+  const formatZoomRange = (range: { min: number; max: number } | null) => {
+    if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max)) return ""
+    const spanMin = Math.max(0, range.max - range.min)
+    if (spanMin <= (1 / 60)) {
+      // < 1 second: show ms
+      const lo = Math.round(range.min * 60000)
+      const hi = Math.round(range.max * 60000)
+      return `${lo}–${hi} ms`
+    }
+    if (spanMin < 1) {
+      // < 1 minute: show seconds
+      const spanSec = spanMin * 60
+      const decimals = spanSec >= 5 ? 0 : 1
+      const lo = (range.min * 60).toFixed(decimals)
+      const hi = (range.max * 60).toFixed(decimals)
+      return `${lo}–${hi} s`
+    }
+    // minutes
+    const decimals = spanMin >= 10 ? 0 : 2
+    return `${range.min.toFixed(decimals)}–${range.max.toFixed(decimals)} min`
+  }
+
   const widthSegments = useMemo(() => {
     if (!widthSegmentsState) return null
     const { x0, x1, y } = widthSegmentsState
@@ -678,7 +701,7 @@ export function PreprocessingChart({
   }, [widthSegmentsState])
 
   const axisButtonClass = (active: boolean) =>
-    `px-2.5 py-1 rounded-md border text-[10px] font-medium transition-colors ${
+    `px-2 py-0.5 rounded-md border text-[10px] font-medium transition-colors ${
       active
         ? "bg-primary border-primary text-primary-foreground shadow-sm"
         : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/50"
@@ -687,8 +710,8 @@ export function PreprocessingChart({
   const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
     const metricConfig = histogramScales[metric]
     return (
-      <div className="flex items-center justify-between gap-2 mb-2 text-xs">
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-center sm:justify-between gap-2 mb-1 text-[11px]">
+        <div className="flex items-center gap-1 flex-wrap">
           <span className="text-muted-foreground mr-1">X:</span>
           {histogramScaleOptions.map((option) => (
             <button
@@ -701,7 +724,7 @@ export function PreprocessingChart({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           <span className="text-muted-foreground mr-1">Y:</span>
           {histogramYScaleOptions.map((option) => (
             <button
@@ -731,7 +754,7 @@ export function PreprocessingChart({
       ...(yFiltered ? [{
         label: "Filtered",
         color: isDark ? "#60a5fa" : "#3b82f6",
-        width: 1.5,
+        width: 1.2,
         data: yFiltered,
       }] : []),
     ]
@@ -777,7 +800,7 @@ export function PreprocessingChart({
         width: 0,
         data: sparse as any,
         points: true,
-        pointSize: 6,
+        pointSize: 4,
       }]
     })() : []
 
@@ -815,42 +838,38 @@ export function PreprocessingChart({
 
   return (
     <div className={`flex flex-col h-full w-full ${className}`} style={{ minHeight: 0 }}>
-      {/* Dataset info + controls */}
-      <div className="px-8 pt-6 pb-2 flex items-center justify-between flex-shrink-0">
-        <div>
-          {info && (
-            <p className="text-[11px] text-muted-foreground">
-              {info.original_points?.toLocaleString()} points
-              {info.displayed_points && (
-                <> • displaying {info.displayed_points.toLocaleString()}</>
-              )}
-              {dynamicDownsampling && fullRes && zoomRange && (
-                <> • zoomed: {zoomRange.min.toFixed(2)}–{zoomRange.max.toFixed(2)} min</>
-              )}
-              {" • "}
-              <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          <label className="text-[11px] text-muted-foreground flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="h-3 w-3"
-              checked={!!fullRes}
-              onChange={(e) => setFullRes(e.target.checked)}
-              disabled={loading}
-            />
-            Load full-resolution data
-          </label>
+      {/* Dataset info */}
+      <div className="px-8 pt-6 pb-2 flex-shrink-0">
+        {info && (
+          <p className="text-[11px] text-muted-foreground mb-2">
+            {info.original_points?.toLocaleString()} points
+            {info.displayed_points && (
+              <> • displaying {info.displayed_points.toLocaleString()}</>
+            )}
+            {dynamicDownsampling && fullRes && zoomRange && (
+              <> • zoomed: {formatZoomRange(zoomRange)}</>
+            )}
+            {" • "}
+            <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
+          </p>
+        )}
+        {/* Toggle buttons below info text, aligned left */}
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <Button
+            variant={fullRes ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFullRes(!fullRes)}
+            disabled={loading}
+            className="text-[11px] h-7 px-3 whitespace-nowrap"
+          >
+            {fullRes ? "✓ Full Resolution" : "Load Full Resolution"}
+          </Button>
           {fullRes && (
-            <label className="text-[11px] text-muted-foreground flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="h-3 w-3"
-                checked={dynamicDownsampling}
-              onChange={(e) => {
-                const enabled = e.target.checked
+            <Button
+              variant={dynamicDownsampling ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                const enabled = !dynamicDownsampling
                 setDynamicDownsampling(enabled)
                 if (!enabled) {
                   resetZoom()
@@ -859,18 +878,19 @@ export function PreprocessingChart({
                   requestRange(zoomRange)
                 }
               }}
-                disabled={loading}
-              />
-              Dynamic downsampling (zoom-adaptive)
-            </label>
+              disabled={loading}
+              className="text-[11px] h-7 px-3 whitespace-nowrap"
+            >
+              {dynamicDownsampling ? "✓ Dynamic Downsampling" : "Dynamic Downsampling"}
+            </Button>
           )}
         </div>
       </div>
       
       {/* Chart and Statistics side-by-side */}
-      <div className="flex-1 flex gap-4 px-4 pb-6" style={{ minHeight: 0 }}>
+      <div className="flex-1 flex flex-col lg:flex-row gap-4 px-4 pb-6 min-w-0" style={{ minHeight: 0 }}>
         {/* uPlot chart */}
-        <div className="flex-1" style={{ minHeight: 0 }}>
+        <div className="flex-1 min-w-0" style={{ minHeight: 0 }}>
           <UPlotChart
             xData={xData}
             series={series}
@@ -889,7 +909,7 @@ export function PreprocessingChart({
 
         {/* Peak Statistics - Vertical box on the right */}
         {summary && (
-          <div className="w-[280px] flex-shrink-0">
+          <div className="w-full lg:w-[280px] flex-shrink-0 min-w-0">
             <div className="rounded-xl border bg-card/60 shadow-sm h-full">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div>
@@ -939,7 +959,7 @@ export function PreprocessingChart({
       <div className="px-6 pb-6 flex-shrink-0">
         {peakAmplitudes.length > 0 && (
           <div className="rounded-xl border bg-card shadow-sm">
-            <div className="flex items-center justify-between border-b px-6 py-4">
+            <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
                 <p className="text-base font-semibold">Peak Distributions</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -947,13 +967,10 @@ export function PreprocessingChart({
                 </p>
               </div>
             </div>
-            <div className="p-6">
-              <div className="mb-6 space-y-4 bg-muted/30 rounded-lg p-4">
-                <div>
-                  <div className="flex items-center justify-between text-xs font-medium text-foreground mb-2">
-                    <span>Bin Count</span>
-                    <span className="text-primary font-semibold">{histogramConfig.binCount}</span>
-                  </div>
+            <div className="p-3">
+              <div className="mb-3 bg-muted/10 rounded-lg p-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-foreground">Bin Count</span>
                   <input
                     type="range"
                     min={20}
@@ -961,18 +978,19 @@ export function PreprocessingChart({
                     step={10}
                     value={histogramConfig.binCount}
                     onChange={(event) => updateBinCount(Number(event.target.value))}
-                    className="w-full accent-primary h-2 rounded-lg cursor-pointer"
+                    className="flex-1 min-w-[140px] accent-primary/80 h-1.5 rounded-lg cursor-pointer"
                   />
+                  <span className="text-xs text-primary font-semibold w-10 text-right">{histogramConfig.binCount}</span>
+                  <label className="ml-auto flex items-center gap-2 text-[11px] font-medium cursor-pointer whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border cursor-pointer"
+                      checked={histogramConfig.focusLowRange}
+                      onChange={toggleFocusLowRange}
+                    />
+                    <span>Focus low range</span>
+                  </label>
                 </div>
-                <label className="flex items-center gap-3 text-xs font-medium cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border cursor-pointer"
-                    checked={histogramConfig.focusLowRange}
-                    onChange={toggleFocusLowRange}
-                  />
-                  <span>Focus on low range (35th percentile)</span>
-                </label>
               </div>
               {histogramLoading ? (
                 <div className="flex items-center justify-center py-12">
@@ -982,7 +1000,7 @@ export function PreprocessingChart({
                   </div>
                 </div>
               ) : histogramData ? (
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {/* Amplitude Histogram */}
                   <div className="flex flex-col space-y-2">
                     <p className="text-sm font-medium text-center">Amplitude</p>

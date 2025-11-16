@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { UPlotChart, type Series } from "./UPlotChart"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/hooks/use-theme"
 import { apiClient } from "@/lib/apiClient"
 
 interface DetectionChartProps {
@@ -23,8 +23,8 @@ export function DetectionChart({
   peakAmplitudes = [], 
   className = "" 
 }: DetectionChartProps) {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const { theme } = useTheme()
+  const isDark = theme === "dark"
 
   const [xDataFull, setXDataFull] = useState<number[] | null>(null)
   const [yDataFull, setYDataFull] = useState<number[] | null>(null)
@@ -92,7 +92,7 @@ export function DetectionChart({
       {
         label: "Signal",
         color: isDark ? "#60a5fa" : "#3b82f6",
-        width: 1.5,
+        width: 1.2,
         data: yData,
       }
     ]
@@ -115,7 +115,7 @@ export function DetectionChart({
         width: 0,
         data: peakDataSparse as any,
         points: true,
-        pointSize: 6,
+        pointSize: 4,
       })
     }
 
