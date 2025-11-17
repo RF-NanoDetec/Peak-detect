@@ -143,7 +143,7 @@ export function AnalyzeTimeSeries({
   const pointColor = isDark ? "rgba(203, 213, 225, 0.1)" : "rgba(15,23,42,0.5)" // slate-300 tint
   const rollingMeanColor = isDark ? "#60a5fa" : "#3b82f6" // blue color used throughout the app
 
-  // Compute rolling mean for amplitude data
+  // Compute rolling mean for prominence data
   const amplitudeRollingMean = useMemo(() => {
     if (!peakAmplitudes.length) return [] as number[]
     return computeMovingAverage(peakAmplitudes, rollingMeanWindow)
@@ -158,7 +158,7 @@ export function AnalyzeTimeSeries({
   const amplitudeSeries: Series[] = useMemo(
     () => [
       {
-        label: "Peak Amplitude",
+        label: "Peak prominence",
         color: pointColor,
         width: 0,
         data: peakAmplitudes,
@@ -166,7 +166,7 @@ export function AnalyzeTimeSeries({
         pointSize: 3,
       },
       {
-        label: `Rolling Mean (${rollingMeanWindow}-point)`,
+        label: `Rolling mean prominence (${rollingMeanWindow}-point)`,
         color: rollingMeanColor,
         width: 2,
         data: amplitudeRollingMean,
@@ -178,7 +178,7 @@ export function AnalyzeTimeSeries({
   const widthSeries: Series[] = useMemo(
     () => [
       {
-        label: "Peak Width (ms)",
+        label: "Peak width (ms)",
         color: pointColor,
         width: 0,
         data: widthsMs,
@@ -186,7 +186,7 @@ export function AnalyzeTimeSeries({
         pointSize: 3,
       },
       {
-        label: `Rolling Mean (${rollingMeanWindow}-point)`,
+        label: `Rolling mean width (${rollingMeanWindow}-point)`,
         color: rollingMeanColor,
         width: 2,
         data: widthRollingMean,
@@ -215,14 +215,14 @@ export function AnalyzeTimeSeries({
   const throughputBarSeries: Series[] = useMemo(
     () => [
       {
-        label: "5-point Moving Average",
+        label: `Rolling mean throughput (5-bin)`,
         color: isDark ? "#f97316" : "#ea580c",
         width: 2,
         data: movingAverage,
       },
       {
-        label: "Peak Throughput",
-        color: isDark ? "rgba(96,165,250,0.7)" : "rgba(59,130,246,0.7)",
+        label: "Peak throughput",
+        color: isDark ? "rgba(96,165,250,0.8)" : "rgba(59,130,246,0.85)",
         width: 0,
         data: throughputPerBin,
         bar: true,
@@ -263,7 +263,7 @@ export function AnalyzeTimeSeries({
 
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
-      {/* Amplitude */}
+      {/* Prominence */}
       <div className="border rounded-lg bg-card/60 shadow-sm p-3">
         <div className="flex items-center justify-end mb-2">
           <div className="flex items-center gap-2 text-[10px]">
@@ -288,7 +288,7 @@ export function AnalyzeTimeSeries({
           xData={xTimesMinutes}
           series={amplitudeSeries}
           xLabel="Time (min)"
-          yLabel="Amplitude"
+          yLabel="Prominence"
           height={200}
           xRange={sharedXRange || undefined}
           onXRangeChange={handleSharedRangeChange}

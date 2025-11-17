@@ -478,27 +478,33 @@ export function UPlotChart({
                 return
               }
               
-              const rect = over.getBoundingClientRect()
-              const mouseX = e.clientX - rect.left
-              const mouseY = e.clientY - rect.top
+              const overRect = over.getBoundingClientRect()
+              const containerRect = containerRef.current?.getBoundingClientRect()
+              const mouseX = e.clientX - overRect.left
+              const mouseY = e.clientY - overRect.top
+
+              // Position relative to the React container so the tooltip follows correctly
+              const containerX = containerRect ? e.clientX - containerRect.left : mouseX
+              const containerY = containerRect ? e.clientY - containerRect.top : mouseY
               
-              // Store mouse position for tooltip
-              setMousePos({ x: e.clientX, y: e.clientY })
+              // Store mouse position for tooltip (container-relative)
+              setMousePos({ x: containerX, y: containerY })
               
               // Check each width segment
               let found = false
-              for (let i = 0; i < widthSegments.length; i++) {
+              for (let i = 0; i < widthSegments.length; i += 1) {
                 const seg = widthSegments[i]
                 const x0px = u.valToPos(seg.x0, "x", true)
                 const x1px = u.valToPos(seg.x1, "x", true)
                 const ypx = u.valToPos(seg.y, "y", true)
                 
-                // Check if mouse is near the segment (within 5 pixels vertically and between x0-x1)
-                const hoverThreshold = 5
+                // Generous hitbox around the segment
+                const hoverThresholdY = 8
+                const hoverPaddingX = 5
                 if (
-                  mouseX >= x0px - 3 &&
-                  mouseX <= x1px + 3 &&
-                  Math.abs(mouseY - ypx) <= hoverThreshold
+                  mouseX >= x0px - hoverPaddingX &&
+                  mouseX <= x1px + hoverPaddingX &&
+                  Math.abs(mouseY - ypx) <= hoverThresholdY
                 ) {
                   // Calculate width: either from seg.width or from x1-x0
                   const widthValue = seg.width ?? (seg.x1 - seg.x0)
@@ -753,7 +759,7 @@ export function UPlotChart({
       {/* Tooltip for peak width */}
       {hoveredSegment && mousePos && (
         <div
-          className="pointer-events-none fixed z-50 px-2 py-1 text-xs font-medium rounded shadow-lg border"
+          className="pointer-events-none absolute z-50 px-2 py-1 text-xs font-medium rounded shadow-lg border"
           style={{
             left: mousePos.x + 10,
             top: mousePos.y - 30,
@@ -763,7 +769,7 @@ export function UPlotChart({
           }}
         >
           <div className="whitespace-nowrap">
-            Peak Width: {hoveredSegment.width.toFixed(3)} ms
+            Peak width (ms): {hoveredSegment.width.toFixed(3)}
           </div>
         </div>
       )}

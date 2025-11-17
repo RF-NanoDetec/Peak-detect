@@ -76,13 +76,13 @@ type AxisScaleOption = "linear" | "log"
 type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
 const histogramScaleOptions: { label: string; value: AxisScaleOption }[] = [
-  { label: "Linear", value: "linear" },
+  { label: "Lin", value: "linear" },
   { label: "Log", value: "log" },
 ]
 
 const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
-  { label: "Y Linear", value: "linear" },
-  { label: "Y Log", value: "log" },
+  { label: "Lin", value: "linear" },
+  { label: "Log", value: "log" },
 ]
 
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
@@ -201,6 +201,29 @@ export function PreprocessingChart({
     }
   }, [])
 
+  const dispatchRangeRequest = useCallback((worker: Worker, range: WorkerRange | null) => {
+    const requestId = `range-${requestCounterRef.current++}`
+    latestRequestIdRef.current = requestId
+    worker.postMessage({
+      type: 'GET_RANGE',
+      requestId,
+      payload: {
+        range,
+        targetPoints: TARGET_POINTS,
+        dynamicDownsampling,
+        zoomThreshold: ZOOM_THRESHOLD,
+      },
+    })
+  }, [TARGET_POINTS, dynamicDownsampling])
+
+  const requestRange = useCallback((range: WorkerRange | null) => {
+    const normalizedRange = range ?? null
+    pendingRangeRef.current = normalizedRange
+    const worker = workerRef.current
+    if (!worker || !workerReady) return
+    dispatchRangeRequest(worker, normalizedRange)
+  }, [dispatchRangeRequest, workerReady])
+
   useEffect(() => {
     const worker = workerRef.current
     if (!worker) return
@@ -234,30 +257,11 @@ export function PreprocessingChart({
       },
       transferList
     )
-  }, [peakProperties])
-
-  const dispatchRangeRequest = useCallback((worker: Worker, range: WorkerRange | null) => {
-    const requestId = `range-${requestCounterRef.current++}`
-    latestRequestIdRef.current = requestId
-    worker.postMessage({
-      type: 'GET_RANGE',
-      requestId,
-      payload: {
-        range,
-        targetPoints: TARGET_POINTS,
-        dynamicDownsampling,
-        zoomThreshold: ZOOM_THRESHOLD,
-      },
-    })
-  }, [TARGET_POINTS, dynamicDownsampling])
-
-  const requestRange = useCallback((range: WorkerRange | null) => {
-    const normalizedRange = range ?? null
-    pendingRangeRef.current = normalizedRange
-    const worker = workerRef.current
-    if (!worker || !workerReady) return
-    dispatchRangeRequest(worker, normalizedRange)
-  }, [dispatchRangeRequest, workerReady])
+    // After updating peak properties, request an updated range so width segments
+    // are recomputed for the current zoom without requiring manual zooming.
+    const currentRange = zoomRangeRef.current ?? zoomRange ?? null
+    requestRange(currentRange)
+  }, [peakProperties, requestRange, zoomRange])
 
   const sendDatasetToWorker = useCallback((dataset: {
     time: NumericArray
@@ -537,8 +541,6 @@ export function PreprocessingChart({
     const totalPeaks = peakTimes?.length || 0
     if (!totalPeaks) return null
 
-    const avgAmplitude = mean(peakAmplitudes)
-
     const widthScale = typeof timeResolution === "number" && Number.isFinite(timeResolution)
       ? timeResolution * 1000
       : 1
@@ -546,12 +548,17 @@ export function PreprocessingChart({
     const avgWidth = mean(widths)
 
     const areaVals: number[] = []
+    let totalArea = 0
     const pairs = Math.min(peakAmplitudes.length, widths.length)
     for (let i = 0; i < pairs; i++) {
       const amp = peakAmplitudes[i]
       const width = widths[i]
       if (Number.isFinite(amp) && Number.isFinite(width)) {
-        areaVals.push(amp * width)
+        // Convert width from ms to seconds so area is in "counts" (amplitude × seconds)
+        const widthSeconds = width / 1000
+        const area = amp * widthSeconds
+        areaVals.push(area)
+        totalArea += area
       }
     }
     const avgArea = mean(areaVals)
@@ -567,18 +574,22 @@ export function PreprocessingChart({
 
     const prominences = cleanNumbers(peakProperties?.prominences || [])
     const avgProminence = mean(prominences)
-    const prominenceStd = std(prominences)
-    const snrRatio = avgProminence && prominenceStd ? avgProminence / prominenceStd : null
-    const snrDb = snrRatio && snrRatio > 0 ? 20 * Math.log10(snrRatio) : null
+
+    // Compute peak area as (total area within peaks) per second of recording
+    let peakAreaPerSecond: number | null = null
+    if (areaVals.length > 0 && peakTimes.length > 1) {
+      const totalDurationSeconds = peakTimes[peakTimes.length - 1] - peakTimes[0]
+      if (Number.isFinite(totalDurationSeconds) && totalDurationSeconds > 0) {
+        peakAreaPerSecond = totalArea / totalDurationSeconds
+      }
+    }
 
     return {
       count: totalPeaks,
-      meanAmplitude: avgAmplitude,
+      meanProminence: avgProminence,
       meanWidth: avgWidth,
-      meanArea: avgArea,
       meanThroughput: avgThroughput,
-      snrRatio,
-      snrDb,
+      peakAreaPerSecond,
     }
   }, [peakTimes, peakAmplitudes, peakProperties, timeResolution])
 
@@ -647,7 +658,9 @@ export function PreprocessingChart({
 
   // Fetch histogram data when peaks are detected
   useEffect(() => {
-    if (peakAmplitudes.length === 0) {
+    const prominenceValues = cleanNumbers(peakProperties?.prominences || [])
+
+    if (prominenceValues.length === 0) {
       setHistogramData(null)
       return
     }
@@ -658,7 +671,7 @@ export function PreprocessingChart({
         const intervalValues = peakIntervals || []
         const focusRanges = histogramConfig.focusLowRange
           ? {
-              amplitude: computeLowRange(peakAmplitudes),
+              amplitude: computeLowRange(prominenceValues),
               width: computeLowRange(widthsMs),
               interval: computeLowRange(intervalValues),
             }
@@ -677,7 +690,7 @@ export function PreprocessingChart({
           : undefined
 
         const response = await apiClient.generateHistograms(
-          peakAmplitudes,
+          prominenceValues,
           widthsMs,
           intervalValues,
           {
@@ -720,7 +733,7 @@ export function PreprocessingChart({
     }
 
     fetchHistogram()
-  }, [peakAmplitudes, widthsMs, peakIntervals, histogramScales, histogramConfig])
+  }, [peakProperties, widthsMs, peakIntervals, histogramScales, histogramConfig])
 
   const formatStat = (value: number | null | undefined, digits = 2) => {
     if (value == null || !Number.isFinite(value)) return "—"
@@ -766,18 +779,18 @@ export function PreprocessingChart({
   }, [widthSegmentsState])
 
   const axisButtonClass = (active: boolean) =>
-    `px-2 py-0.5 rounded-md border text-[10px] font-medium transition-colors ${
+    `px-1.5 py-0.5 rounded border text-[9px] font-medium transition-colors ${
       active
         ? "bg-primary border-primary text-primary-foreground shadow-sm"
-        : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/50"
+        : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/40"
     }`
 
   const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
     const metricConfig = histogramScales[metric]
     return (
-      <div className="flex flex-wrap items-center justify-center sm:justify-between gap-2 mb-1 text-[11px]">
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-muted-foreground mr-1">X:</span>
+      <>
+        {/* X scale controls – snug to bottom-right near X axis */}
+        <div className="absolute bottom-1 right-1 flex items-center gap-1 rounded border bg-background/80 px-1 py-0.5 text-[9px] shadow-sm">
           {histogramScaleOptions.map((option) => (
             <button
               key={`${metric}-${option.value}`}
@@ -789,8 +802,8 @@ export function PreprocessingChart({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-muted-foreground mr-1">Y:</span>
+        {/* Y scale controls – snug to top-left near Y axis */}
+        <div className="absolute top-1 left-1 flex items-center gap-1 rounded border bg-background/80 px-1 py-0.5 text-[9px] shadow-sm">
           {histogramYScaleOptions.map((option) => (
             <button
               key={`${metric}-y-${option.value}`}
@@ -798,11 +811,11 @@ export function PreprocessingChart({
               className={axisButtonClass(metricConfig.yScale === option.value)}
               onClick={() => updateYAxisScale(metric, option.value)}
             >
-              {option.label.replace('Y ', '')}
+              {option.label}
             </button>
           ))}
         </div>
-      </div>
+      </>
     )
   }, [histogramScales, updateXAxisScale, updateYAxisScale])
 
@@ -906,17 +919,28 @@ export function PreprocessingChart({
       {/* Dataset info */}
       <div className="px-8 pt-6 pb-2 flex-shrink-0">
         {info && (
-          <p className="text-[11px] text-muted-foreground mb-2">
-            {info.original_points?.toLocaleString()} points
-            {info.displayed_points && (
-              <> • displaying {info.displayed_points.toLocaleString()}</>
+          <>
+            <p className="text-[11px] text-muted-foreground mb-1">
+              {info.original_points?.toLocaleString()} points
+              {info.displayed_points && (
+                <> • displaying {info.displayed_points.toLocaleString()}</>
+              )}
+              {dynamicDownsampling && fullRes && zoomRange && (
+                <> • zoomed: {formatZoomRange(zoomRange)}</>
+              )}
+              {" • "}
+              <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
+            </p>
+            {widthSegments && widthSegments.length > 0 && (
+              <p className="text-[10px] text-muted-foreground flex items-center gap-2">
+                <span
+                  className="inline-block h-[6px] w-5 rounded-full"
+                  style={{ backgroundColor: isDark ? "#f59e0b" : "#d97706" }}
+                />
+                <span>Orange bars: peak width (ms). Hover a bar to see the width.</span>
+              </p>
             )}
-            {dynamicDownsampling && fullRes && zoomRange && (
-              <> • zoomed: {formatZoomRange(zoomRange)}</>
-            )}
-            {" • "}
-            <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
-          </p>
+          </>
         )}
         {/* Toggle buttons below info text, aligned left */}
         <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -974,45 +998,51 @@ export function PreprocessingChart({
 
         {/* Peak Statistics - Vertical box on the right */}
         {summary && (
-          <div className="w-full lg:w-[280px] flex-shrink-0 min-w-0">
-            <div className="rounded-xl border bg-card/60 shadow-sm h-full">
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold">Peak Statistics</p>
-                  <p className="text-xs text-muted-foreground">
-                    Summary of detected peaks
-                  </p>
+          <div className="w-full lg:w-[220px] flex-shrink-0 min-w-0">
+            <div className="rounded-lg border bg-card/60 shadow-sm h-full">
+              <div className="flex items-center justify-between border-b px-3 py-2">
+                <div className="truncate">
+                  <p className="text-xs font-semibold">Peak Statistics</p>
                 </div>
               </div>
-              <div className="p-4 space-y-4">
+              <div className="p-3 space-y-3">
                 {/* Number of peaks */}
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Detected Peaks</p>
-                  <p className="text-lg font-semibold">{summary.count.toLocaleString()}</p>
+                  <p className="text-[11px] text-muted-foreground">Detected peaks</p>
+                  <p className="text-sm font-semibold">{summary.count.toLocaleString()}</p>
                 </div>
                 
-                {/* Mean Amplitude */}
+                {/* Mean Prominence */}
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Mean Amplitude</p>
-                  <p className="text-lg font-semibold">{formatStat(summary.meanAmplitude, 2)}</p>
+                  <p className="text-[11px] text-muted-foreground">Mean prominence</p>
+                  <p className="text-sm font-semibold">{formatStat(summary.meanProminence, 2)}</p>
                 </div>
                 
                 {/* Mean Width */}
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Mean Width</p>
-                  <p className="text-lg font-semibold">{formatStat(summary.meanWidth, 3)} <span className="text-xs text-muted-foreground">ms</span></p>
+                  <p className="text-[11px] text-muted-foreground">Mean peak width</p>
+                  <p className="text-sm font-semibold">
+                    {formatStat(summary.meanWidth, 3)}{" "}
+                    <span className="text-[10px] text-muted-foreground">ms</span>
+                  </p>
                 </div>
                 
                 {/* Mean Throughput */}
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Mean Throughput</p>
-                  <p className="text-lg font-semibold">{formatStat(summary.meanThroughput, 2)} <span className="text-xs text-muted-foreground">Hz</span></p>
+                  <p className="text-[11px] text-muted-foreground">Mean throughput</p>
+                  <p className="text-sm font-semibold">
+                    {formatStat(summary.meanThroughput, 2)}{" "}
+                    <span className="text-[10px] text-muted-foreground">peaks/s</span>
+                  </p>
                 </div>
                 
-                {/* Mean Area */}
+                {/* Peak area (counts per second) */}
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Mean Area</p>
-                  <p className="text-lg font-semibold">{formatStat(summary.meanArea, 2)}</p>
+                  <p className="text-[11px] text-muted-foreground">Peak area</p>
+                  <p className="text-sm font-semibold">
+                    {formatStat(summary.peakAreaPerSecond, 2)}{" "}
+                    <span className="text-[10px] text-muted-foreground">counts/s</span>
+                  </p>
                 </div>
               </div>
             </div>
@@ -1066,16 +1096,15 @@ export function PreprocessingChart({
                 </div>
               ) : histogramData ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {/* Amplitude Histogram */}
+                  {/* Prominence Histogram (was Amplitude) */}
                   <div className="flex flex-col space-y-2">
-                    <p className="text-sm font-medium text-center">Amplitude</p>
-                    {renderScaleControls("amplitude")}
+                    <p className="text-sm font-medium text-center">Prominence</p>
                     {histogramData.amplitude && histogramData.amplitude.bins && histogramData.amplitude.bins.length > 0 ? (
-                      <div className="border rounded-lg p-2 bg-card">
+                      <div className="relative border rounded-lg p-2 bg-card">
                         <UPlotHistogram
                           data={histogramData.amplitude}
-                          xLabel="Amplitude"
-                          yLabel="Frequency"
+                          xLabel="Prominence"
+                          yLabel="Count"
                           color={isDark ? "#5b9bd5" : "#3b82f6"}
                           xScaleType={histogramScales.amplitude.xScale}
                           yScaleType={histogramScales.amplitude.yScale}
@@ -1083,10 +1112,11 @@ export function PreprocessingChart({
                           className="w-full"
                           verticalLines={histogramVerticalLines.amplitude}
                         />
+                        {renderScaleControls("amplitude")}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
-                        <p className="text-xs text-muted-foreground">No amplitude data</p>
+                        <p className="text-xs text-muted-foreground">No prominence data</p>
                       </div>
                     )}
                   </div>
@@ -1094,13 +1124,12 @@ export function PreprocessingChart({
                   {/* Width Histogram */}
                   <div className="flex flex-col space-y-2">
                     <p className="text-sm font-medium text-center">Peak Width</p>
-                    {renderScaleControls("width")}
                     {histogramData.width && histogramData.width.bins && histogramData.width.bins.length > 0 ? (
-                      <div className="border rounded-lg p-2 bg-card">
+                      <div className="relative border rounded-lg p-2 bg-card">
                         <UPlotHistogram
                           data={histogramData.width}
                           xLabel="Width (ms)"
-                          yLabel="Frequency"
+                          yLabel="Count"
                           color={isDark ? "#ff8c42" : "#f97316"}
                           xScaleType={histogramScales.width.xScale}
                           yScaleType={histogramScales.width.yScale}
@@ -1108,6 +1137,7 @@ export function PreprocessingChart({
                           className="w-full"
                           verticalLines={histogramVerticalLines.width}
                         />
+                        {renderScaleControls("width")}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
@@ -1119,13 +1149,12 @@ export function PreprocessingChart({
                   {/* Interval Histogram */}
                   <div className="flex flex-col space-y-2">
                     <p className="text-sm font-medium text-center">Peak Distance</p>
-                    {renderScaleControls("interval")}
                     {histogramData.interval && histogramData.interval.bins && histogramData.interval.bins.length > 0 ? (
-                      <div className="border rounded-lg p-2 bg-card">
+                      <div className="relative border rounded-lg p-2 bg-card">
                         <UPlotHistogram
                           data={histogramData.interval}
                           xLabel="Distance Between Peaks (ms)"
-                          yLabel="Frequency"
+                          yLabel="Count"
                           color={isDark ? "#4caf50" : "#22c55e"}
                           xScaleType={histogramScales.interval.xScale}
                           yScaleType={histogramScales.interval.yScale}
@@ -1133,6 +1162,7 @@ export function PreprocessingChart({
                           className="w-full"
                           verticalLines={histogramVerticalLines.interval}
                         />
+                        {renderScaleControls("interval")}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">

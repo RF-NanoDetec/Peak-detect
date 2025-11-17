@@ -50,7 +50,7 @@ const defaultRange = (scaleType: AxisScaleType) =>
 export function UPlotHistogram({
   data,
   xLabel,
-  yLabel = "Frequency",
+  yLabel = "Count",
   color,
   xScaleType = "linear",
   yScaleType = "linear",
