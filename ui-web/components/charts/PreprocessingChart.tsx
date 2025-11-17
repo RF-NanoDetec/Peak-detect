@@ -756,9 +756,11 @@ export function PreprocessingChart({
     if (!widthSegmentsState) return null
     const { x0, x1, y } = widthSegmentsState
     const count = Math.min(x0.length, x1.length, y.length)
-    const segments: { x0: number; x1: number; y: number }[] = []
+    const segments: { x0: number; x1: number; y: number; width: number }[] = []
     for (let i = 0; i < count; i += 1) {
-      segments.push({ x0: x0[i], x1: x1[i], y: y[i] })
+      // Calculate width in milliseconds (x values are in minutes)
+      const widthMs = (x1[i] - x0[i]) * 60 * 1000
+      segments.push({ x0: x0[i], x1: x1[i], y: y[i], width: widthMs })
     }
     return segments
   }, [widthSegmentsState])

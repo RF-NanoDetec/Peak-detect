@@ -21,6 +21,13 @@ export type Series = {
   barWidth?: number
 }
 
+export type WidthSegment = { 
+  x0: number
+  x1: number
+  y: number
+  width?: number  // Optional: the actual width value for tooltip display
+}
+
 interface UPlotChartProps {
   xData: NumberArray
   series: Series[]
@@ -29,7 +36,7 @@ interface UPlotChartProps {
   className?: string
   height?: number
   onResetZoom?: () => void
-  widthSegments?: { x0: number; x1: number; y: number }[]
+  widthSegments?: WidthSegment[]
 	hLines?: { y: number; color?: string; dash?: number[] }[]
 	vLines?: { x: number; color?: string; dash?: number[] }[]
 	xRange?: { min: number; max: number } | null
@@ -201,6 +208,8 @@ export function UPlotChart({
   const offsetInfoRef = useRef<{ offset: number; unit: TimeUnit; decimals?: number } | null>(null)
   const [width, setWidth] = useState<number>(800)
   const [mounted, setMounted] = useState(false)
+  const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number } | null>(null)
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
   const { theme } = useTheme()
   const isDark = theme === "dark"
 
@@ -462,6 +471,54 @@ export function UPlotChart({
               }
             })
 
+            // Mouse move for width segment hover detection
+            over.addEventListener("mousemove", (e: MouseEvent) => {
+              if (!widthSegments || widthSegments.length === 0) {
+                setHoveredSegment(null)
+                return
+              }
+              
+              const rect = over.getBoundingClientRect()
+              const mouseX = e.clientX - rect.left
+              const mouseY = e.clientY - rect.top
+              
+              // Store mouse position for tooltip
+              setMousePos({ x: e.clientX, y: e.clientY })
+              
+              // Check each width segment
+              let found = false
+              for (let i = 0; i < widthSegments.length; i++) {
+                const seg = widthSegments[i]
+                const x0px = u.valToPos(seg.x0, "x", true)
+                const x1px = u.valToPos(seg.x1, "x", true)
+                const ypx = u.valToPos(seg.y, "y", true)
+                
+                // Check if mouse is near the segment (within 5 pixels vertically and between x0-x1)
+                const hoverThreshold = 5
+                if (
+                  mouseX >= x0px - 3 &&
+                  mouseX <= x1px + 3 &&
+                  Math.abs(mouseY - ypx) <= hoverThreshold
+                ) {
+                  // Calculate width: either from seg.width or from x1-x0
+                  const widthValue = seg.width ?? (seg.x1 - seg.x0)
+                  setHoveredSegment({ index: i, width: widthValue })
+                  found = true
+                  break
+                }
+              }
+              
+              if (!found) {
+                setHoveredSegment(null)
+              }
+            })
+
+            // Mouse leave to clear hover
+            over.addEventListener("mouseleave", () => {
+              setHoveredSegment(null)
+              setMousePos(null)
+            })
+
             over.style.cursor = "crosshair"
           }
         ]
@@ -540,18 +597,41 @@ export function UPlotChart({
               })
             }
 
-						// Draw width segments (horizontal segments at given y between x0-x1)
+						// Draw width segments (horizontal segments at given y between x0-x1 with vertical caps)
 						if (widthSegments && widthSegments.length > 0) {
 							ctx.save()
-							ctx.lineWidth = 2
-							ctx.strokeStyle = isDark ? "#f59e0b" : "#d97706"
-							widthSegments.forEach(seg => {
+							const capHeight = 8 // Height of vertical caps in pixels
+							
+							widthSegments.forEach((seg, idx) => {
 								const x0px = Math.round(u.valToPos(seg.x0, "x", true))
 								const x1px = Math.round(u.valToPos(seg.x1, "x", true))
 								const ypx = Math.round(u.valToPos(seg.y, "y", true))
+								
+								// Check if this segment is hovered
+								const isHovered = hoveredSegment?.index === idx
+								
+								// Set styling - highlight if hovered
+								ctx.lineWidth = isHovered ? 3 : 2
+								ctx.strokeStyle = isHovered 
+									? (isDark ? "#fbbf24" : "#f59e0b")  // Brighter when hovered
+									: (isDark ? "#f59e0b" : "#d97706")
+								
+								// Draw horizontal line
 								ctx.beginPath()
 								ctx.moveTo(x0px, ypx)
 								ctx.lineTo(x1px, ypx)
+								ctx.stroke()
+								
+								// Draw left vertical cap
+								ctx.beginPath()
+								ctx.moveTo(x0px, ypx - capHeight / 2)
+								ctx.lineTo(x0px, ypx + capHeight / 2)
+								ctx.stroke()
+								
+								// Draw right vertical cap
+								ctx.beginPath()
+								ctx.moveTo(x1px, ypx - capHeight / 2)
+								ctx.lineTo(x1px, ypx + capHeight / 2)
 								ctx.stroke()
 							})
 							ctx.restore()
@@ -667,8 +747,26 @@ export function UPlotChart({
   }
 
   return (
-    <div ref={containerRef} className={className} style={{ minHeight: 0 }}>
+    <div ref={containerRef} className={className} style={{ minHeight: 0, position: "relative" }}>
       <UplotReact options={opts} data={data} />
+      
+      {/* Tooltip for peak width */}
+      {hoveredSegment && mousePos && (
+        <div
+          className="pointer-events-none fixed z-50 px-2 py-1 text-xs font-medium rounded shadow-lg border"
+          style={{
+            left: mousePos.x + 10,
+            top: mousePos.y - 30,
+            backgroundColor: isDark ? "rgba(30, 41, 59, 0.95)" : "rgba(255, 255, 255, 0.95)",
+            color: isDark ? "rgba(248, 250, 252, 0.95)" : "rgba(15, 23, 42, 0.9)",
+            borderColor: isDark ? "rgba(71, 85, 105, 0.5)" : "rgba(203, 213, 225, 0.8)",
+          }}
+        >
+          <div className="whitespace-nowrap">
+            Peak Width: {hoveredSegment.width.toFixed(3)} ms
+          </div>
+        </div>
+      )}
     </div>
   )
 }
