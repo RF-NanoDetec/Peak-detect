@@ -434,6 +434,9 @@ export default function PreprocessPage() {
             peakIntervals={detectionResults?.peak_intervals || []}
             peakProperties={detectionResults?.properties || null}
             previewData={previewData}
+            prominenceThreshold={params.prominence_threshold}
+            distance={params.distance}
+            widthMs={params.width_ms}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">

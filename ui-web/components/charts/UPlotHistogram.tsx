@@ -25,6 +25,7 @@ interface UPlotHistogramProps {
   yScaleType?: YAxisScaleType
   height?: number
   className?: string
+  verticalLines?: Array<{ value: number; color?: string; label?: string }>
 }
 
 const formatAxisNumber = (value: number | null | undefined): string => {
@@ -55,6 +56,7 @@ export function UPlotHistogram({
   yScaleType = "linear",
   height = 200,
   className = "",
+  verticalLines = [],
 }: UPlotHistogramProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const uPlotInstanceRef = useRef<uPlot | null>(null)
@@ -90,67 +92,88 @@ export function UPlotHistogram({
     const yData = data.counts || []
     const binEdges = data.bin_edges || []
 
+    // Filter valid edges based on scale type
+    const effectiveEdges = binEdges.length > 0 ? binEdges : xData
+    const validEdges = effectiveEdges.filter(v =>
+      Number.isFinite(v) && (xScaleType !== "log" || v > 0)
+    )
+
+    // Filter valid counts based on scale type
+    const validCounts = yData.filter(v =>
+      Number.isFinite(v) && (yScaleType !== "log" || v > 0)
+    )
+
+    // X Scale Configuration
     const xScaleBase: uPlot.Scale = { time: false }
     if (xScaleType === "log") {
       xScaleBase.distr = SCALE_DISTRIBUTIONS.LOG
       xScaleBase.clamp = (_self, val) => Math.max(val, 1e-9)
       xScaleBase.log = 10
+      // Use range function for log scale instead of explicit min/max
+      xScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
+        // Get valid edges for range calculation
+        if (validEdges.length >= 2) {
+          const minVal = Math.min(...validEdges)
+          const maxVal = Math.max(...validEdges)
+          if (minVal > 0 && maxVal > minVal) {
+            const padding = 0.1
+            return [minVal / (1 + padding), maxVal * (1 + padding)]
+          }
+        }
+        // Fallback to safe defaults for log scale
+        return [0.1, 1000]
+      }
+    } else {
+      // For linear scale, we can set explicit min/max
+      if (validEdges.length >= 2) {
+        const minVal = Math.min(...validEdges)
+        const maxVal = Math.max(...validEdges)
+        const range = maxVal - minVal
+        const padding = range > 0 ? range * 0.05 : Math.abs(maxVal) * 0.05 || 1
+        xScaleBase.min = Math.max(0, minVal - padding)
+        xScaleBase.max = maxVal + padding
+      } else {
+        xScaleBase.min = 0
+        xScaleBase.max = 100
+      }
     }
 
+    // Y Scale Configuration
     const yScaleBase: uPlot.Scale = {}
     if (yScaleType === "log") {
       yScaleBase.distr = SCALE_DISTRIBUTIONS.LOG
       yScaleBase.clamp = (_self, val) => Math.max(val, 1)
       yScaleBase.log = 10
       yScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
-        let min = Number.isFinite(dataMin) ? dataMin : NaN
-        let max = Number.isFinite(dataMax) ? dataMax : NaN
-        if (!Number.isFinite(min) || min <= 0) min = 1
-        if (!Number.isFinite(max) || max <= min) max = min * 10
-        return [min, max]
-      }
-    } else {
-      yScaleBase.auto = false
-      yScaleBase.min = 0
-    }
-
-    const effectiveEdges = binEdges.length > 0 ? binEdges : xData
-    const validEdges = effectiveEdges.filter(v =>
-      Number.isFinite(v) && (xScaleType !== "log" || v > 0)
-    )
-
-    const edgeRange = () => {
-      if (validEdges.length >= 2) {
-        const minVal = Math.min(...validEdges)
-        const maxVal = Math.max(...validEdges)
-        if (xScaleType === "log" && minVal > 0) {
-          const padding = 0.1
-          return {
-            min: minVal / (1 + padding),
-            max: maxVal * (1 + padding),
+        // Use valid counts for range calculation
+        if (validCounts.length > 0) {
+          const minPositive = Math.min(...validCounts)
+          const maxPositive = Math.max(...validCounts)
+          if (minPositive > 0 && maxPositive > minPositive) {
+            const effectiveMin = Math.max(1, minPositive * 0.5)
+            const effectiveMax = Math.max(10, maxPositive * 1.5)
+            return [effectiveMin, effectiveMax]
           }
         }
-        const range = maxVal - minVal
-        const padding = range > 0 ? range * 0.05 : Math.abs(maxVal) * 0.05 || 1
-        return {
-          min: Math.max(0, minVal - padding),
-          max: maxVal + padding,
-        }
+        // Fallback to safe defaults for log scale
+        return [1, 100]
       }
-      return defaultRange(xScaleType)
+    } else {
+      // For linear Y scale, start from 0
+      yScaleBase.auto = false
+      yScaleBase.min = 0
+      if (validCounts.length > 0) {
+        const maxCount = Math.max(...validCounts)
+        yScaleBase.max = Math.max(1, maxCount * 1.1)
+      }
     }
 
     return {
       width,
       height,
       scales: {
-        x: {
-          ...xScaleBase,
-          ...(validEdges.length >= 2 ? edgeRange() : defaultRange(xScaleType)),
-        },
-        y: {
-          ...yScaleBase,
-        },
+        x: xScaleBase,
+        y: yScaleBase,
       },
       axes: [
         {
@@ -252,81 +275,78 @@ export function UPlotHistogram({
             }
 
             ctx.restore()
+
+            // Draw vertical lines for thresholds
+            if (verticalLines.length > 0) {
+              ctx.save()
+              verticalLines.forEach((line) => {
+                const { value, color: lineColor = "#ef4444", label } = line
+                
+                // Skip if value is not in valid range for scale type
+                if (!Number.isFinite(value)) return
+                if (xScaleType === "log" && value <= 0) return
+                
+                const xPx = u.valToPos(value, "x", true)
+                const yMin = u.valToPos(u.scales.y?.min ?? 0, "y", true)
+                const yMax = u.valToPos(u.scales.y?.max ?? 1, "y", true)
+                
+                // Draw vertical line
+                ctx.strokeStyle = lineColor
+                ctx.lineWidth = 2
+                ctx.setLineDash([5, 3])
+                ctx.beginPath()
+                ctx.moveTo(xPx, yMax)
+                ctx.lineTo(xPx, yMin)
+                ctx.stroke()
+                ctx.setLineDash([])
+                
+                // Draw label if provided
+                if (label) {
+                  ctx.fillStyle = lineColor
+                  ctx.font = "600 10px 'Inter', 'Segoe UI', system-ui, sans-serif"
+                  ctx.textAlign = "center"
+                  ctx.fillText(label, xPx, yMax - 5)
+                }
+              })
+              ctx.restore()
+            }
           },
         ],
       },
     }
-  }, [width, height, isDark, data, xLabel, yLabel, barColor, edgeColor, xScaleType, yScaleType])
+  }, [width, height, isDark, data, xLabel, yLabel, barColor, edgeColor, xScaleType, yScaleType, verticalLines])
 
   const chartData = useMemo(() => {
-    const xValues = (data.bins || []).filter(v => Number.isFinite(v))
-    const yValues = (data.counts || []).filter(v => Number.isFinite(v))
+    const rawX = data.bins || []
+    const rawY = data.counts || []
     
-    // Ensure arrays have the same length
-    const minLength = Math.min(xValues.length, yValues.length)
-    return [
-      xValues.slice(0, minLength), 
-      yValues.slice(0, minLength)
-    ] as uPlot.AlignedData
-  }, [data])
-
-  useEffect(() => {
-    if (!chartReady || !uPlotInstanceRef.current || !data.bins || data.bins.length === 0) {
-      return
+    // Filter data based on scale type requirements
+    const filteredData: Array<[number, number]> = []
+    const minLength = Math.min(rawX.length, rawY.length)
+    
+    for (let i = 0; i < minLength; i++) {
+      const x = rawX[i]
+      const y = rawY[i]
+      
+      // Skip invalid values
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+      
+      // For log scales, skip non-positive values
+      if (xScaleType === "log" && x <= 0) continue
+      if (yScaleType === "log" && y <= 0) continue
+      
+      filteredData.push([x, y])
     }
+    
+    // Separate back into x and y arrays
+    const xValues = filteredData.map(([x]) => x)
+    const yValues = filteredData.map(([, y]) => y)
+    
+    return [xValues, yValues] as uPlot.AlignedData
+  }, [data, xScaleType, yScaleType])
 
-    const u = uPlotInstanceRef.current
-    const xVals = data.bins || []
-    const edges = data.bin_edges || []
-
-    const calcLinearPadding = (minVal: number, maxVal: number) => {
-      const range = maxVal - minVal
-      const padding = range > 0 ? range * 0.05 : Math.abs(maxVal) * 0.05 || 1
-      return { min: Math.max(0, minVal - padding), max: maxVal + padding }
-    }
-
-    const applyXScale = (minVal: number, maxVal: number) => {
-      if (xScaleType === "linear") {
-        u.setScale("x", calcLinearPadding(minVal, maxVal))
-      } else if (xScaleType === "log" && minVal > 0) {
-        const padding = 0.1
-        u.setScale("x", {
-          min: minVal / (1 + padding),
-          max: maxVal * (1 + padding),
-        })
-      }
-    }
-
-    if (edges.length >= 2) {
-      const validEdges = edges.filter(v => Number.isFinite(v) && (xScaleType !== "log" || v > 0))
-      if (validEdges.length >= 2) {
-        applyXScale(Math.min(...validEdges), Math.max(...validEdges))
-      }
-    } else if (xVals.length >= 2) {
-      const validX = xVals.filter(v => Number.isFinite(v) && (xScaleType !== "log" || v > 0))
-      if (validX.length >= 2) {
-        applyXScale(Math.min(...validX), Math.max(...validX))
-      }
-    }
-
-    const yVals = data.counts || []
-    if (yVals.length > 0) {
-      const maxCount = Math.max(...yVals)
-      const positiveCounts = yVals.filter(v => Number.isFinite(v) && v > 0)
-      if (yScaleType === "log") {
-        // For log scale, ensure minimum is at least 1 to avoid negative bars
-        const minPositive = positiveCounts.length > 0 ? Math.min(...positiveCounts) : 1
-        const effectiveMin = Math.max(1, minPositive * 0.5)
-        const effectiveMax = Math.max(10, maxCount * 1.5)
-        u.setScale("y", {
-          min: effectiveMin,
-          max: effectiveMax,
-        })
-      } else {
-        u.setScale("y", { min: 0, max: Math.max(1, maxCount * 1.1) })
-      }
-    }
-  }, [chartReady, data, xScaleType, yScaleType])
+  // Note: Manual scale updates removed - the component remounts on scale changes
+  // via the key prop, so scale configuration in opts is sufficient
 
   const hasData = data.bins && data.bins.length > 0 && data.counts && data.counts.length > 0
 
@@ -334,6 +354,19 @@ export function UPlotHistogram({
     return (
       <div ref={containerRef} className={`flex items-center justify-center ${className}`} style={{ height }}>
         <p className="text-sm text-muted-foreground">No data available</p>
+      </div>
+    )
+  }
+
+  // Check if filtered data is empty (e.g., all values were negative/zero for log scale)
+  const hasValidData = chartData[0].length > 0 && chartData[1].length > 0
+
+  if (!hasValidData) {
+    return (
+      <div ref={containerRef} className={`flex items-center justify-center ${className}`} style={{ height }}>
+        <p className="text-sm text-muted-foreground">
+          No valid data for {xScaleType === "log" ? "log X" : "linear X"} / {yScaleType === "log" ? "log Y" : "linear Y"} scale
+        </p>
       </div>
     )
   }
@@ -350,3 +383,5 @@ export function UPlotHistogram({
     </div>
   )
 }
+
+

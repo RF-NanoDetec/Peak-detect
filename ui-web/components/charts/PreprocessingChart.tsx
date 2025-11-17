@@ -26,6 +26,9 @@ interface PreprocessingChartProps {
     width_heights?: number[]
   } | null
   previewData?: DataPreviewResponse | null
+  prominenceThreshold?: number
+  distance?: number
+  widthMs?: string
 }
 
 type NumericArray = number[] | Float32Array | Float64Array
@@ -102,6 +105,9 @@ export function PreprocessingChart({
   peakIntervals = [],
   peakProperties = null,
   previewData = null,
+  prominenceThreshold,
+  distance,
+  widthMs,
 }: PreprocessingChartProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -582,6 +588,63 @@ export function PreprocessingChart({
     ))
   }, [peakProperties?.widths, timeResolution])
 
+  // Calculate vertical lines for histograms
+  const histogramVerticalLines = useMemo(() => {
+    const lines: {
+      amplitude: Array<{ value: number; color?: string; label?: string }>
+      width: Array<{ value: number; color?: string; label?: string }>
+      interval: Array<{ value: number; color?: string; label?: string }>
+    } = {
+      amplitude: [],
+      width: [],
+      interval: [],
+    }
+
+    // Amplitude histogram: prominence threshold
+    if (prominenceThreshold != null && Number.isFinite(prominenceThreshold)) {
+      lines.amplitude.push({
+        value: prominenceThreshold,
+        color: "#ef4444",
+        label: "Threshold",
+      })
+    }
+
+    // Width histogram: min and max width in ms
+    if (widthMs) {
+      const [minStr, maxStr] = widthMs.split(',')
+      const minWidth = parseFloat(minStr)
+      const maxWidth = parseFloat(maxStr)
+      
+      if (Number.isFinite(minWidth)) {
+        lines.width.push({
+          value: minWidth,
+          color: "#ef4444",
+          label: "Min",
+        })
+      }
+      
+      if (Number.isFinite(maxWidth)) {
+        lines.width.push({
+          value: maxWidth,
+          color: "#ef4444",
+          label: "Max",
+        })
+      }
+    }
+
+    // Interval histogram: distance in ms
+    if (distance != null && Number.isFinite(distance) && timeResolution != null && Number.isFinite(timeResolution)) {
+      const distanceMs = distance * timeResolution * 1000
+      lines.interval.push({
+        value: distanceMs,
+        color: "#ef4444",
+        label: "Min Distance",
+      })
+    }
+
+    return lines
+  }, [prominenceThreshold, distance, widthMs, timeResolution])
+
   // Fetch histogram data when peaks are detected
   useEffect(() => {
     if (peakAmplitudes.length === 0) {
@@ -1016,6 +1079,7 @@ export function PreprocessingChart({
                           yScaleType={histogramScales.amplitude.yScale}
                           height={220}
                           className="w-full"
+                          verticalLines={histogramVerticalLines.amplitude}
                         />
                       </div>
                     ) : (
@@ -1040,6 +1104,7 @@ export function PreprocessingChart({
                           yScaleType={histogramScales.width.yScale}
                           height={220}
                           className="w-full"
+                          verticalLines={histogramVerticalLines.width}
                         />
                       </div>
                     ) : (
@@ -1064,6 +1129,7 @@ export function PreprocessingChart({
                           yScaleType={histogramScales.interval.yScale}
                           height={220}
                           className="w-full"
+                          verticalLines={histogramVerticalLines.interval}
                         />
                       </div>
                     ) : (
