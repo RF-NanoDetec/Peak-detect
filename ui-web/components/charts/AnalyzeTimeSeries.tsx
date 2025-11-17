@@ -249,6 +249,10 @@ export function AnalyzeTimeSeries({
     [],
   )
 
+  const handleResetZoom = useCallback(() => {
+    setSharedXRange(null)
+  }, [])
+
   if (!peakTimes.length || !peakAmplitudes.length) {
     return (
       <div className={`flex items-center justify-center h-full ${className}`}>
@@ -288,6 +292,7 @@ export function AnalyzeTimeSeries({
           height={200}
           xRange={sharedXRange || undefined}
           onXRangeChange={handleSharedRangeChange}
+          onResetZoom={handleResetZoom}
           yScaleType={ampScale}
           yRange={amplitudeRange || undefined}
         />
@@ -322,6 +327,7 @@ export function AnalyzeTimeSeries({
           height={200}
           xRange={sharedXRange || undefined}
           onXRangeChange={handleSharedRangeChange}
+          onResetZoom={handleResetZoom}
           yScaleType={widthScale}
           yRange={widthRange || undefined}
         />
@@ -344,6 +350,7 @@ export function AnalyzeTimeSeries({
             height={220}
             xRange={sharedXRange || undefined}
             onXRangeChange={handleSharedRangeChange}
+            onResetZoom={handleResetZoom}
             yScaleType="linear"
             yRange={throughputBarRange || undefined}
             enableYAxisZoom={true}

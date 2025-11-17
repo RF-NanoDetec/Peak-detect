@@ -102,6 +102,13 @@ export function UPlotHistogram({
       yScaleBase.distr = SCALE_DISTRIBUTIONS.LOG
       yScaleBase.clamp = (_self, val) => Math.max(val, 1)
       yScaleBase.log = 10
+      yScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
+        let min = Number.isFinite(dataMin) ? dataMin : NaN
+        let max = Number.isFinite(dataMax) ? dataMax : NaN
+        if (!Number.isFinite(min) || min <= 0) min = 1
+        if (!Number.isFinite(max) || max <= min) max = min * 10
+        return [min, max]
+      }
     } else {
       yScaleBase.auto = false
       yScaleBase.min = 0
@@ -339,7 +346,7 @@ export function UPlotHistogram({
 
   return (
     <div ref={containerRef} className={className} style={{ minHeight: 0 }}>
-      <UplotReact options={opts} data={chartData} />
+      <UplotReact key={`${xScaleType}-${yScaleType}`} options={opts} data={chartData} />
     </div>
   )
 }

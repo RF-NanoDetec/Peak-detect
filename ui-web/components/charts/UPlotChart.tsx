@@ -55,45 +55,126 @@ const formatAxisNumber = (value: number | null | undefined): string => {
 type TimeUnit = "min" | "s" | "ms"
 
 // Format x-axis ticks for time (input values are minutes)
-const formatTimeAxisTicks = (u: uPlot, vals: number[]): string[] => {
+const formatTimeAxisTicks = (
+  u: uPlot, 
+  vals: number[], 
+  offsetInfoRef: React.MutableRefObject<{ offset: number; unit: TimeUnit; decimals?: number } | null>
+): string[] => {
   const xMin = u.scales.x.min ?? (vals.length ? vals[0] : 0)
   const xMax = u.scales.x.max ?? (vals.length ? vals[vals.length - 1] : xMin)
   const spanMin = Math.max(0, (xMax ?? 0) - (xMin ?? 0))
+  const spanSec = spanMin * 60 // Convert span to seconds
   const stepMin = vals.length >= 2
     ? Math.max(0, vals[1] - vals[0])
     : (spanMin > 0 ? spanMin / Math.max(vals.length - 1, 1) : 0)
   const stepSec = stepMin * 60
 
   let unit: TimeUnit
-  if (stepSec < 1) {
+  if (spanSec < 1) {
+    // If visible range is less than 1 second, use milliseconds
     unit = "ms"
   } else if (spanMin < 1) {
+    // If visible range is less than 1 minute but >= 1 second, use seconds
     unit = "s"
   } else {
     unit = "min"
   }
 
-  if (unit === "min") {
-    const decimals =
-      stepMin >= 10 ? 0 :
-      stepMin >= 1 ? 0 :
-      stepMin >= 0.1 ? 1 : 2
-    return vals.map(v => (Number.isFinite(v) ? v.toFixed(decimals) : ""))
+  // Convert values to display unit and check if any exceed 100
+  const convertedVals = vals.map(v => {
+    if (!Number.isFinite(v)) return NaN
+    if (unit === "min") return v
+    if (unit === "s") return v * 60
+    return v * 60000 // ms
+  })
+  
+  const finiteVals = convertedVals.filter(v => Number.isFinite(v))
+  const minVal = finiteVals.length > 0 ? Math.min(...finiteVals) : 0
+  const maxVal = finiteVals.length > 0 ? Math.max(...finiteVals) : 0
+  
+  // For milliseconds, determine decimal places based on step size to avoid duplicates
+  const stepMs = stepMin * 60000
+  let msDecimals = 0
+  if (unit === "ms") {
+    if (stepMs < 0.01) {
+      msDecimals = 3  // 0.001 ms precision
+    } else if (stepMs < 0.1) {
+      msDecimals = 2  // 0.01 ms precision
+    } else if (stepMs < 1) {
+      msDecimals = 1  // 0.1 ms precision
+    } else {
+      msDecimals = 0  // Integer ms
+    }
   }
-
-  if (unit === "s") {
-    const decimals = stepSec >= 5 ? 0 : 1
+  
+  // Use relative display if any value exceeds 100
+  const useRelative = maxVal > 100 || minVal > 100
+  
+  if (useRelative) {
+    // Store offset info for annotation (include decimals for ms formatting)
+    offsetInfoRef.current = { 
+      offset: minVal, 
+      unit,
+      decimals: unit === "ms" ? msDecimals : undefined
+    }
+    
+    // Return relative values
+    if (unit === "min") {
+      const decimals =
+        stepMin >= 10 ? 0 :
+        stepMin >= 1 ? 0 :
+        stepMin >= 0.1 ? 1 : 2
+      return vals.map(v => {
+        if (!Number.isFinite(v)) return ""
+        const relative = v - minVal
+        return relative.toFixed(decimals)
+      })
+    }
+    
+    if (unit === "s") {
+      const decimals = stepSec >= 5 ? 0 : 1
+      return vals.map(v => {
+        if (!Number.isFinite(v)) return ""
+        const s = v * 60
+        const relative = s - minVal
+        return relative.toFixed(decimals)
+      })
+    }
+    
+    // ms
     return vals.map(v => {
-      const s = v * 60
-      return Number.isFinite(s) ? s.toFixed(decimals) : ""
+      if (!Number.isFinite(v)) return ""
+      const ms = v * 60000
+      const relative = ms - minVal
+      return relative.toFixed(msDecimals)
+    })
+  } else {
+    // Clear offset info when not using relative display
+    offsetInfoRef.current = null
+    
+    // Original absolute display
+    if (unit === "min") {
+      const decimals =
+        stepMin >= 10 ? 0 :
+        stepMin >= 1 ? 0 :
+        stepMin >= 0.1 ? 1 : 2
+      return vals.map(v => (Number.isFinite(v) ? v.toFixed(decimals) : ""))
+    }
+
+    if (unit === "s") {
+      const decimals = stepSec >= 5 ? 0 : 1
+      return vals.map(v => {
+        const s = v * 60
+        return Number.isFinite(s) ? s.toFixed(decimals) : ""
+      })
+    }
+
+    // ms - use appropriate decimal places based on step size
+    return vals.map(v => {
+      const ms = v * 60000
+      return Number.isFinite(ms) ? ms.toFixed(msDecimals) : ""
     })
   }
-
-  // ms
-  return vals.map(v => {
-    const ms = v * 60000
-    return Number.isFinite(ms) ? Math.round(ms).toString() : ""
-  })
 }
 
 export function UPlotChart({
@@ -117,6 +198,7 @@ export function UPlotChart({
 }: UPlotChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const uPlotInstanceRef = useRef<uPlot | null>(null)
+  const offsetInfoRef = useRef<{ offset: number; unit: TimeUnit; decimals?: number } | null>(null)
   const [width, setWidth] = useState<number>(800)
   const [mounted, setMounted] = useState(false)
   const { theme } = useTheme()
@@ -149,11 +231,13 @@ export function UPlotChart({
     const currentXMin = (xRange?.min ?? (xData.length ? xData[0] : 0))
     const currentXMax = (xRange?.max ?? (xData.length ? xData[xData.length - 1] : 0))
     const visibleSpanMin = Math.max(0, currentXMax - currentXMin)
-    const approxStepSec = (visibleSpanMin > 0 ? (visibleSpanMin / 10) * 60 : 0)
+    const visibleSpanSec = visibleSpanMin * 60
     let timeUnitLabel: TimeUnit = "min"
-    if (approxStepSec < 1) {
+    if (visibleSpanSec < 1) {
+      // If visible range is less than 1 second, use milliseconds
       timeUnitLabel = "ms"
     } else if (visibleSpanMin < 1) {
+      // If visible range is less than 1 minute but >= 1 second, use seconds
       timeUnitLabel = "s"
     } else {
       timeUnitLabel = "min"
@@ -185,6 +269,15 @@ export function UPlotChart({
     return {
       width,
       height,
+      cursor: {
+        drag: {
+          x: false,
+          y: false,
+        },
+        sync: {
+          key: Math.random().toString(),
+        },
+      },
       scales: {
 				x: { 
 					time: false,
@@ -211,7 +304,7 @@ export function UPlotChart({
           font: axisFont,
           labelFont: axisLabelFont,
           size: 50,
-          values: (u: uPlot, vals: number[]) => formatTimeAxisTicks(u, vals),
+          values: (u: uPlot, vals: number[]) => formatTimeAxisTicks(u, vals, offsetInfoRef),
         },
         {
           stroke: axisColor,
@@ -272,31 +365,6 @@ export function UPlotChart({
                 ;(item as HTMLElement).style.color = legendTextColor
               })
             }
-
-            // Prevent drag-to-pan by blocking mouse drag behavior
-            let isDragging = false
-            over.addEventListener("mousedown", (e: MouseEvent) => {
-              // Track when drag starts (left mouse button)
-              if (e.button === 0) {
-                isDragging = false
-              }
-            })
-
-            over.addEventListener("mousemove", (e: MouseEvent) => {
-              // Prevent drag-to-pan when left mouse button is pressed and dragging
-              if (e.buttons === 1) {
-                if (!isDragging) {
-                  isDragging = true
-                }
-                // Prevent the default drag behavior that would cause panning
-                e.preventDefault()
-                e.stopPropagation()
-              }
-            })
-
-            over.addEventListener("mouseup", () => {
-              isDragging = false
-            })
 
             // Wheel zoom
             over.addEventListener("wheel", (e: WheelEvent) => {
@@ -360,18 +428,35 @@ export function UPlotChart({
             }, { passive: false })
 
             // Double-click to reset zoom
-            over.addEventListener("dblclick", () => {
+            over.addEventListener("dblclick", (e: MouseEvent) => {
+              e.preventDefault()
+              e.stopPropagation()
+              
               if (onResetZoom) {
                 onResetZoom()
               } else {
+                // Calculate full data range for x-axis
+                const xMin = xData.length > 0 ? xData[0] : 0
+                const xMax = xData.length > 0 ? xData[xData.length - 1] : 1
+                
+                // If xRange is controlled, update parent state first to trigger re-render
+                if (onXRangeChange) {
+                  onXRangeChange({ min: xMin, max: xMax })
+                }
+                
                 // Reset x-axis
-                u.setScale("x", { min: xData[0], max: xData[xData.length - 1] })
-                // Reset y-axis
-                const baseY = (series && series.length > 0 ? series[0].data : []) as number[]
-                const finiteY = baseY.filter(v => typeof v === "number" && Number.isFinite(v))
-                if (finiteY.length > 0) {
-                  const yMin = Math.min(...finiteY)
-                  const yMax = Math.max(...finiteY)
+                u.setScale("x", { min: xMin, max: xMax })
+                
+                // Reset y-axis - gather all finite values from all series
+                const allYValues: number[] = []
+                series.forEach(s => {
+                  const yVals = Array.from(s.data).filter(v => typeof v === "number" && Number.isFinite(v)) as number[]
+                  allYValues.push(...yVals)
+                })
+                
+                if (allYValues.length > 0) {
+                  const yMin = Math.min(...allYValues)
+                  const yMax = Math.max(...allYValues)
                   u.setScale("y", { min: yMin, max: yMax })
                 }
               }
@@ -505,6 +590,38 @@ export function UPlotChart({
 								ctx.lineTo(xpx, y1px)
 								ctx.stroke()
 							})
+							ctx.restore()
+						}
+
+						// Draw offset annotation when using relative display
+						if (offsetInfoRef.current) {
+							const { offset, unit, decimals } = offsetInfoRef.current
+							ctx.save()
+							
+							// Format the offset value
+							let offsetText = ""
+							if (unit === "ms") {
+								const msDecimals = decimals ?? 0
+								offsetText = `+ ${offset.toFixed(msDecimals)} ms`
+							} else if (unit === "s") {
+								offsetText = `+ ${offset.toFixed(1)} s`
+							} else {
+								offsetText = `+ ${offset.toFixed(2)} min`
+							}
+							
+							// Style the annotation
+							ctx.font = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
+							ctx.fillStyle = isDark ? "rgba(248,250,252,0.75)" : "rgba(15,23,42,0.60)"
+							ctx.textAlign = "left"
+							ctx.textBaseline = "bottom"
+							
+							// Position at left edge of plot area, just above the x-axis
+							const plotLeft = u.bbox.left
+							const plotBottom = u.bbox.top + u.bbox.height
+							const xPos = plotLeft + 5
+							const yPos = plotBottom - 3
+							
+							ctx.fillText(offsetText, xPos, yPos)
 							ctx.restore()
 						}
           }
