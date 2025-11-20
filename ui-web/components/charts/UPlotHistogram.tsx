@@ -348,6 +348,25 @@ export function UPlotHistogram({
   // Note: Manual scale updates removed - the component remounts on scale changes
   // via the key prop, so scale configuration in opts is sufficient
 
+  // Create a stable key that includes vertical line values for forcing re-renders when needed
+  const verticalLineSignature = useMemo(
+    () => verticalLines.map(line => `${line.value}-${line.label ?? ""}-${line.color ?? ""}`).join("|"),
+    [verticalLines]
+  )
+  const chartKey = `${xScaleType}-${yScaleType}-vlines-${verticalLineSignature}`
+
+  // Force redraw when vertical threshold lines change
+  useEffect(() => {
+    if (uPlotInstanceRef.current && chartReady) {
+      // Use requestAnimationFrame to ensure redraw happens on next paint cycle
+      requestAnimationFrame(() => {
+        if (uPlotInstanceRef.current) {
+          uPlotInstanceRef.current.redraw()
+        }
+      })
+    }
+  }, [verticalLines, chartReady])
+
   const hasData = data.bins && data.bins.length > 0 && data.counts && data.counts.length > 0
 
   if (!hasData) {
@@ -379,7 +398,7 @@ export function UPlotHistogram({
 
   return (
     <div ref={containerRef} className={className} style={{ minHeight: 0 }}>
-      <UplotReact key={`${xScaleType}-${yScaleType}`} options={opts} data={chartData} />
+      <UplotReact key={chartKey} options={opts} data={chartData} />
     </div>
   )
 }

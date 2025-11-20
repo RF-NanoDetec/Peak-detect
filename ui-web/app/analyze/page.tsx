@@ -9,6 +9,7 @@ import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { AnalyzeTimeSeries } from "@/components/charts/AnalyzeTimeSeries"
+import { ExportControl } from "@/components/shared/ExportControl"
 
 export default function AnalyzePage() {
   const router = useRouter()
@@ -73,6 +74,7 @@ export default function AnalyzePage() {
                   </div>
                 </div>
               </div>
+              <ExportControl />
             </>
           )}
         </div>

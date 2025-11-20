@@ -411,10 +411,10 @@ export default function LoadDataPage() {
                     Detector dead time <span className="font-mono">T_D</span> (default: 43 ns).
                     <br />
                     <span className="text-xs">Correction factor:</span>
-                    <div className="my-1">
-                      <BlockMath math="\frac{1}{1 - R \times T_D}" />
-                    </div>
                   </p>
+                  <div className="my-1">
+                    <BlockMath math="\frac{1}{1 - R \times T_D}" />
+                  </div>
                 </div>
               )}
             </CardContent>

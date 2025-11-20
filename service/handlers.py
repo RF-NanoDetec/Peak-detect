@@ -25,6 +25,7 @@ from core.service_functions import (
     analyze_double_peaks_pure,
     export_peaks_to_csv_data,
     export_double_peaks_to_csv_data,
+    export_unified_peaks_data,
 )
 from core.data_analysis import analyze_time_resolved_pure
 from core.data_utils import decimate_for_plot
@@ -170,8 +171,9 @@ async def upload_files(
             for file in files:
                 temp_path = os.path.join(temp_dir, file.filename or "upload.txt")
                 with open(temp_path, 'wb') as f:
-                    content = await file.read()
-                    f.write(content)
+                    # Read in chunks to avoid loading entire file into memory at once
+                    while content := await file.read(1024 * 1024):  # 1MB chunks
+                        f.write(content)
                 temp_paths.append(temp_path)
         
         # Parse protocol JSON if provided
@@ -951,6 +953,86 @@ def generate_histograms(
         raise HTTPException(status_code=500, detail=f"Error calculating histogram data: {str(e)}")
 
 
+@router.post("/double/histograms")
+def generate_double_peak_histograms(
+    payload: Dict[str, Any],
+    store: InMemoryStore = Depends(get_store)
+) -> Dict[str, Any]:
+    """
+    Calculate histogram data for double peak pair metrics.
+    
+    Returns histogram bins and counts for uPlot rendering.
+    Accepts distance_ms, pair_prom_ratio, pair_width_ratio, prom_over_amp arrays.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    distance_ms = payload.get('distance_ms', [])
+    pair_prom_ratio = payload.get('pair_prom_ratio', [])
+    pair_width_ratio = payload.get('pair_width_ratio', [])
+    prom_over_amp = payload.get('prom_over_amp', [])
+    config = payload.get('config') or {}
+    
+    if len(distance_ms) == 0 and len(prom_over_amp) == 0:
+        return {
+            "distance": {"bins": [], "counts": []},
+            "pairPromRatio": {"bins": [], "counts": []},
+            "pairWidthRatio": {"bins": [], "counts": []},
+            "promOverAmp": {"bins": [], "counts": []},
+            "message": "No pair data provided"
+        }
+    
+    try:
+        from service.plotting import calculate_histogram_bins
+        
+        metrics_config: Dict[str, Any] = config.get("metrics", {})
+        range_overrides = config.get("range_overrides", {}) or {}
+        bin_count = config.get("bin_count")
+        
+        def metric_hist(values, metric_key: str):
+            try:
+                numeric_values = [v for v in values if isinstance(v, (int, float)) and not np.isnan(v)]
+                if len(numeric_values) == 0:
+                    logger.debug(f"No valid numeric values for {metric_key} histogram")
+                    return {"bins": [], "counts": []}
+                
+                metric_cfg = metrics_config.get(metric_key, {})
+                x_scale = metric_cfg.get("xScale") or metric_cfg.get("x_scale") or "linear"
+                range_override = range_overrides.get(metric_key) or metric_cfg.get("range") or metric_cfg.get("range_override")
+                
+                logger.debug(f"Calculating {metric_key} histogram: {len(numeric_values)} values, scale={x_scale}, bins={bin_count}")
+                
+                return calculate_histogram_bins(
+                    numeric_values,
+                    bin_count=bin_count,
+                    range_override=range_override,
+                    log_scale=x_scale == "log",
+                )
+            except Exception as e:
+                logger.error(f"Error calculating {metric_key} histogram: {e}", exc_info=True)
+                return {"bins": [], "counts": []}
+        
+        distance_hist = metric_hist(distance_ms, "distance")
+        pair_prom_hist = metric_hist(pair_prom_ratio, "pairPromRatio")
+        pair_width_hist = metric_hist(pair_width_ratio, "pairWidthRatio")
+        prom_amp_hist = metric_hist(prom_over_amp, "promOverAmp")
+        
+        logger.info(f"Generated double peak histograms: distance={len(distance_hist['bins'])} bins, "
+                   f"pairProm={len(pair_prom_hist['bins'])} bins, pairWidth={len(pair_width_hist['bins'])} bins, "
+                   f"promOverAmp={len(prom_amp_hist['bins'])} bins")
+        
+        return {
+            "distance": distance_hist,
+            "pairPromRatio": pair_prom_hist,
+            "pairWidthRatio": pair_width_hist,
+            "promOverAmp": prom_amp_hist,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating double peak histogram data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error calculating histogram data: {str(e)}")
+
+
 @router.get("/cache/stats")
 def get_cache_stats() -> Dict[str, Any]:
     """Get cache statistics for monitoring performance improvements."""
@@ -1348,3 +1430,157 @@ def export_plot_image(
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename=plot.{format}"}
     )
+
+
+@router.post("/export/unified")
+def export_unified(
+    payload: Dict[str, Any],
+    store: InMemoryStore = Depends(get_store)
+):
+    """
+    Unified export for peaks data with optional metadata and double peak masking.
+    """
+    import logging
+    import pandas as pd
+    from io import StringIO, BytesIO
+    
+    logger = logging.getLogger(__name__)
+    
+    result_id = payload.get('resultId')
+    filtered_result_id = payload.get('filteredResultId')
+    double_peak_analysis = payload.get('double_peak_analysis')
+    metadata = payload.get('metadata', {})
+    export_format = payload.get('format', 'csv').lower()
+    include_metadata = payload.get('include_metadata', False)
+    filter_double_peaks = payload.get('filter_double_peaks', False)
+    
+    if not result_id:
+        raise HTTPException(status_code=400, detail="resultId required")
+        
+    # Get base data
+    base = store.get_result(result_id)
+    if not base:
+        raise HTTPException(status_code=404, detail="Result not found")
+        
+    time_values = base["time"]
+    time_resolution = base["meta"].get("time_resolution", 1e-4)
+    
+    # Get peaks and properties
+    # If passed in payload, use them. Otherwise detect.
+    peaks = payload.get('peaks')
+    properties = payload.get('properties')
+    double_peak_params = payload.get('double_peak_params')
+    
+    if peaks is None:
+        # Re-run detection
+        prominence_threshold = payload.get('prominence_threshold', 20.0)
+        distance = payload.get('distance', 30)
+        rel_height = payload.get('rel_height', 0.8)
+        width_ms = payload.get('width_ms', '0.1,200')
+        prominence_ratio = payload.get('prominence_ratio', 0.8)
+        
+        # Get amplitude (filtered or original)
+        if filtered_result_id:
+            filtered_result = store.get_result(filtered_result_id)
+            if filtered_result:
+                amplitude = filtered_result["amplitude"]
+            else:
+                amplitude = base["amplitude"]
+        else:
+            amplitude = base["amplitude"]
+            
+        # Convert width
+        if isinstance(width_ms, str):
+            width_values = width_ms.strip().split(',')
+        else:
+            width_values = [str(v) for v in width_ms]
+        sampling_rate = 1.0 / time_resolution
+        width_p = [int(float(value.strip()) * sampling_rate / 1000) for value in width_values]
+        
+        peaks, properties = find_peaks_with_window(
+            amplitude,
+            width=width_p,
+            prominence=prominence_threshold,
+            distance=distance,
+            rel_height=rel_height,
+            prominence_ratio=prominence_ratio,
+        )
+    else:
+        peaks = np.array(peaks)
+        # Ensure properties are numpy arrays
+        if properties:
+            for key in properties:
+                if not isinstance(properties[key], np.ndarray):
+                    properties[key] = np.array(properties[key])
+        else:
+            properties = {}
+            
+    # If double peak analysis is missing but we have params, run it
+    if not double_peak_analysis and double_peak_params:
+        double_peak_analysis = analyze_double_peaks_pure(
+            peaks=peaks,
+            properties=properties,
+            time_resolution=time_resolution,
+            min_distance=double_peak_params.get('min_distance', 0.001),
+            max_distance=double_peak_params.get('max_distance', 0.100),
+            min_amp_ratio=double_peak_params.get('min_amp_ratio', 0.1),
+            max_amp_ratio=double_peak_params.get('max_amp_ratio', 10.0),
+            min_width_ratio=double_peak_params.get('min_width_ratio', 0.1),
+            max_width_ratio=double_peak_params.get('max_width_ratio', 10.0),
+        )
+        
+    # Generate DataFrame
+    df = export_unified_peaks_data(
+        time_values, 
+        peaks, 
+        properties, 
+        time_resolution, 
+        double_peak_analysis, 
+        filter_double_peaks
+    )
+    
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No data to export")
+        
+    # Handle Export Format
+    if export_format == 'xlsx':
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            if include_metadata and metadata:
+                # Write metadata to a separate sheet
+                meta_df = pd.DataFrame(list(metadata.items()), columns=['Parameter', 'Value'])
+                meta_df.to_excel(writer, sheet_name='Metadata', index=False)
+                
+            df.to_excel(writer, sheet_name='Peaks', index=False)
+            
+        output.seek(0)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "peaks_analysis.xlsx"
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    else: # CSV or TXT
+        output = StringIO()
+        
+        if include_metadata and metadata:
+            # Write metadata as comments
+            for k, v in metadata.items():
+                output.write(f"# {k}: {v}\n")
+            output.write("\n")
+            
+        sep = ',' if export_format == 'csv' else '\t'
+        df.to_csv(output, index=False, sep=sep)
+        output.seek(0)
+        
+        media_type = "text/csv" if export_format == 'csv' else "text/plain"
+        ext = "csv" if export_format == 'csv' else "txt"
+        filename = f"peaks_analysis.{ext}"
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
