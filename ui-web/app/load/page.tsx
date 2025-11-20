@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, type ReactNode } from "react"
-import { FileUp, FolderOpen, Clock, Loader2, Upload } from "lucide-react"
+import { FileUp, FolderOpen, Clock, Loader2, Upload, Info, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,12 @@ import { parseFilePreview, type LocalPreviewResult } from "@/lib/localDataParser
 import type { ProtocolInfo } from "@/lib/types"
 import { BlockMath } from "react-katex"
 import "katex/dist/katex.min.css"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 const sessionHandleCache = new Map<string, FileSystemFileHandle[]>()
 const sessionFileCache = new Map<string, File[]>() 
@@ -587,92 +593,72 @@ function LoadLandingHero({ onSelectFiles, recentFiles, onRecentClick, loading, r
     .filter((group): group is string[] => Array.isArray(group) && group.length > 0)
   const topRecents = validRecents.slice(0, 4)
 
-  const steps = [
-    {
-      title: 'Select files',
-      description: 'Pick your .txt, .xls or .xlsx measurement files',
-    },
-    {
-      title: 'Set acquisition parameters',
-      description: 'Adjust time resolution or photon correction as needed',
-    },
-    {
-      title: 'Document the protocol',
-      description: 'Capture setup details directly below',
-    },
-  ]
-
   return (
-    <div className="rounded-2xl border bg-card/80 shadow-sm p-8">
-      <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6">
-          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            <FileUp className="h-3.5 w-3.5" />
-            Ready to load data
+    <div className="space-y-8 max-w-2xl mx-auto pt-8">
+      {/* Main Load Area */}
+      <div className="text-center space-y-6">
+        <div className="space-y-2">
+          <div className="inline-flex items-center justify-center p-3 rounded-full bg-primary/10 mb-2">
+            <Upload className="h-6 w-6 text-primary" />
           </div>
-          <div className="space-y-2">
-            <h3 className="text-2xl font-semibold tracking-tight">Peaks in time‑series: load, preprocess, detect</h3>
-            <p className="text-sm text-muted-foreground">
-              Upload your measurement files, preview the signal, and run preprocessing. Then detect peaks and choose the right segment and peak width. Especially suited for low‑signal fluorescence data.
-            </p>
+          <h3 className="text-2xl font-semibold tracking-tight">Load Measurement Data</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Import your time-series data files (.txt, .xls, .xlsx) to begin the analysis workflow.
+          </p>
+        </div>
+        
+        <Button size="lg" onClick={onSelectFiles} disabled={loading} className="min-w-[200px]">
+          Select Files
+        </Button>
+
+        <div className="grid grid-cols-3 gap-4 text-left pt-4 max-w-lg mx-auto">
+          <div className="p-3 rounded-lg border bg-card/50">
+            <div className="font-medium text-sm mb-1 flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+              Load
+            </div>
+            <p className="text-[10px] text-muted-foreground">Import raw data files</p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={onSelectFiles} disabled={loading}>
-              <Upload className="h-4 w-4 mr-2" />
-              Select Files
-            </Button>
-            {topRecents.length > 0 && (
-              <Button
-                variant="ghost"
-                onClick={() => onRecentClick(topRecents[0])}
+          <div className="p-3 rounded-lg border bg-card/50">
+            <div className="font-medium text-sm mb-1 flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+              Process
+            </div>
+            <p className="text-[10px] text-muted-foreground">Filter & detect peaks</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card/50">
+            <div className="font-medium text-sm mb-1 flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+              Analyze
+            </div>
+            <p className="text-[10px] text-muted-foreground">View metrics & export</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Sessions */}
+      {topRecents.length > 0 && (
+        <div className="space-y-4 pt-8 border-t">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            Recent Sessions
+          </div>
+
+          <div className="grid gap-2">
+            {topRecents.map((group, idx) => (
+              <button
+                key={`${group.join('|')}-${idx}`}
+                className="group w-full flex items-center justify-between rounded-lg border bg-card/50 px-4 py-3 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                onClick={() => onRecentClick(group)}
                 disabled={loading}
               >
-                <Clock className="h-4 w-4 mr-2" />
-                Load last session
-              </Button>
-            )}
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {steps.map((step) => (
-              <div key={step.title} className="rounded-xl border bg-background/70 p-4">
-                <p className="text-sm font-semibold">{step.title}</p>
-                <p className="text-xs text-muted-foreground mt-1">{step.description}</p>
-              </div>
+                <span className="truncate font-medium">{renderRecentLabel(group)}</span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+              </button>
             ))}
           </div>
         </div>
-
-        <div className="rounded-xl border bg-background/70 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">Recent sessions</p>
-            <span className="text-xs text-muted-foreground">
-              {topRecents.length > 0 ? 'Tap to auto-select' : 'No history yet'}
-            </span>
-          </div>
-
-          {topRecents.length > 0 ? (
-            <div className="space-y-2">
-              {topRecents.map((group, idx) => (
-                <button
-                  key={`${group.join('|')}-${idx}`}
-                  className="w-full rounded-lg border px-3 py-2 text-left text-sm hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => onRecentClick(group)}
-                  disabled={loading}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="truncate">{renderRecentLabel(group)}</div>
-                    <span className="text-xs text-muted-foreground">#{idx + 1}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Load a group of files and we will keep it here for one-click access next time.
-            </p>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   )
 }

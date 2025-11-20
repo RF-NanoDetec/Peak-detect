@@ -5,6 +5,9 @@ import dynamic from "next/dynamic"
 import { useTheme } from "@/hooks/use-theme"
 import uPlot from "uplot"
 
+import { Camera } from "lucide-react"
+import { Button } from "@/components/ui/button"
+
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
 
 interface HistogramData {
@@ -372,6 +375,19 @@ export function UPlotHistogram({
     }
   }, [verticalLines, chartReady])
 
+  const handleExportImage = () => {
+    const u = uPlotInstanceRef.current
+    if (!u) return
+    
+    const canvas = u.ctx.canvas
+    const link = document.createElement("a")
+    link.download = `histogram-${Date.now()}.png`
+    link.href = canvas.toDataURL("image/png")
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const hasData = data.bins && data.bins.length > 0 && data.counts && data.counts.length > 0
 
   if (!hasData) {
@@ -402,8 +418,20 @@ export function UPlotHistogram({
   }
 
   return (
-    <div ref={containerRef} className={className} style={{ minHeight: 0 }}>
+    <div ref={containerRef} className={`${className} group relative`} style={{ minHeight: 0 }}>
       <UplotReact key={chartKey} options={opts} data={chartData} />
+      
+      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <Button
+          variant="secondary"
+          size="icon"
+          className="h-8 w-8 bg-background/80 backdrop-blur-sm shadow-sm border"
+          onClick={handleExportImage}
+          title="Save Image"
+        >
+          <Camera className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   )
 }

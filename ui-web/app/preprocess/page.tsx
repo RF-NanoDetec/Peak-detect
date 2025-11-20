@@ -14,6 +14,7 @@ import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useWebSocket } from "@/hooks/use-websocket"
 import { useRouter } from "next/navigation"
 import { useResultsStore } from "@/lib/stores/resultsStore"
+import { InfoTooltip } from "@/components/ui/info-tooltip"
 
 export default function PreprocessPage() {
   const router = useRouter()
@@ -158,7 +159,10 @@ export default function PreprocessPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
-                <label className="text-xs font-medium">Filter</label>
+                <label className="text-xs font-medium">
+                  Filter
+                  <InfoTooltip content="Digital filters remove noise from the signal. Butterworth is good for general noise reduction, while Savitzky-Golay preserves peak shape better." />
+                </label>
                 <select 
                   className="w-full px-3 py-2 rounded-md border bg-background text-xs"
                   value={params.filter_type}
@@ -181,7 +185,10 @@ export default function PreprocessPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-xs font-medium">Cutoff Frequency (Hz)</label>
+                  <label className="text-xs font-medium">
+                    Cutoff Frequency (Hz)
+                    <InfoTooltip content="Frequencies above this value are attenuated. Lower values remove more noise but may broaden narrow peaks." />
+                  </label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -214,7 +221,10 @@ export default function PreprocessPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-medium">Order</label>
+                  <label className="text-xs font-medium">
+                    Order
+                    <InfoTooltip content="Steepness of the filter roll-off. Higher order means sharper cutoff but may introduce ringing artifacts." />
+                  </label>
                   <Input
                     type="number"
                     value={params.butter_order}
@@ -233,7 +243,10 @@ export default function PreprocessPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-xs font-medium">Window Length</label>
+                  <label className="text-xs font-medium">
+                    Window Length
+                    <InfoTooltip content="Number of points used for the polynomial fit. Must be odd. Larger windows smooth more but may reduce peak height." />
+                  </label>
                   <Input
                     type="number"
                     value={params.savgol_window}
@@ -242,7 +255,10 @@ export default function PreprocessPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-medium">Polynomial Order</label>
+                  <label className="text-xs font-medium">
+                    Polynomial Order
+                    <InfoTooltip content="Degree of the polynomial. Higher order preserves sharper features but smooths less." />
+                  </label>
                   <Input
                     type="number"
                     value={params.savgol_polyorder}
@@ -277,7 +293,8 @@ export default function PreprocessPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">
-                    Prominence Threshold
+                    Prominence
+                    <InfoTooltip content="Vertical distance between the peak and its lowest contour line. Measures how much a peak stands out from the surrounding baseline." />
                   </label>
                   <Input
                     type="number"
@@ -314,7 +331,10 @@ export default function PreprocessPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Min Distance (samples)</label>
+                  <label className="text-xs font-medium">
+                    Min Distance (samples)
+                    <InfoTooltip content="Minimum horizontal distance (in samples) required between neighboring peaks." />
+                  </label>
                   <Input
                     type="number"
                     value={params.distance}
@@ -323,7 +343,10 @@ export default function PreprocessPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Width Min (ms)</label>
+                  <label className="text-xs font-medium">
+                    Width Min (ms)
+                    <InfoTooltip content="Minimum allowed peak width at the specified relative height. Peaks narrower than this are discarded." />
+                  </label>
                   <Input
                     type="number"
                     value={params.width_ms.split(',')[0]}
@@ -337,7 +360,10 @@ export default function PreprocessPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Width Max (ms)</label>
+                  <label className="text-xs font-medium">
+                    Width Max (ms)
+                    <InfoTooltip content="Maximum allowed peak width. Peaks wider than this are discarded (often slow drifts or artifacts)." />
+                  </label>
                   <Input
                     type="number"
                     value={params.width_ms.split(',')[1]}
@@ -351,7 +377,10 @@ export default function PreprocessPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Rel Height</label>
+                  <label className="text-xs font-medium">
+                    Rel Height
+                    <InfoTooltip content="Relative height at which peak width is measured (0.5 = half height, 1.0 = base)." />
+                  </label>
                   <div className="relative">
                     <Input
                       type="number"
@@ -366,7 +395,10 @@ export default function PreprocessPage() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Prominence Ratio</label>
+                  <label className="text-xs font-medium">
+                    Prominence Ratio
+                    <InfoTooltip content="Ratio of a peak's prominence to its absolute amplitude. Filters out baseline noise that mimics peaks." />
+                  </label>
                   <div className="relative">
                     <Input
                       type="number"

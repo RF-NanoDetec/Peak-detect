@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { useTheme } from "@/hooks/use-theme"
 import uPlot from "uplot"
+import { Camera } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
 
@@ -303,7 +305,7 @@ export function UPlotChart({
   useEffect(() => {
     const u = uPlotInstanceRef.current
     if (!u || !onLassoComplete) return
-
+    
     const over = u.over
     if (!over) return
 
@@ -827,7 +829,7 @@ export function UPlotChart({
                 if (!s.bar) return
                 const yVals = (u.data[sIdx + 1] as (number | null | undefined)[]) || []
                 if (!xVals.length || !yVals.length) return
-
+                
                 ctx.save()
                 ctx.fillStyle = s.color
                 ctx.strokeStyle = s.color
@@ -1155,6 +1157,19 @@ export function UPlotChart({
     }
   }, [data, xRange]) // Update when data or xRange changes
 
+  const handleExportImage = () => {
+    const u = uPlotInstanceRef.current
+    if (!u) return
+    
+    const canvas = u.ctx.canvas
+    const link = document.createElement("a")
+    link.download = `chart-${Date.now()}.png`
+    link.href = canvas.toDataURL("image/png")
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (!xData.length || !series.length) {
     return (
       <div ref={containerRef} className={`flex items-center justify-center ${className}`} style={{ height }}>
@@ -1171,9 +1186,21 @@ export function UPlotChart({
   }
 
   return (
-    <div ref={containerRef} className={className} style={{ minHeight: 0, position: "relative" }}>
+    <div ref={containerRef} className={`${className} group relative`} style={{ minHeight: 0 }}>
       <UplotReact options={opts} data={data} />
       
+      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <Button
+          variant="secondary"
+          size="icon"
+          className="h-8 w-8 bg-background/80 backdrop-blur-sm shadow-sm border"
+          onClick={handleExportImage}
+          title="Save Image"
+        >
+          <Camera className="h-4 w-4" />
+        </Button>
+      </div>
+
       {/* Tooltip for peak width */}
       {hoveredSegment && mousePos && (
         <div

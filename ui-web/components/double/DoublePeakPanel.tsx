@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
 import type { PairMetrics } from "./metrics"
 import type { DoublePeakThresholds } from "./types"
+import { InfoTooltip } from "@/components/ui/info-tooltip"
 
 interface DoublePeakPanelProps {
   metrics: PairMetrics
@@ -126,7 +127,10 @@ export function DoublePeakPanel({
       {/* Distance Constraint */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Distance (ms)</CardTitle>
+          <CardTitle className="text-base">
+            Distance (ms)
+            <InfoTooltip content="Time separation between two peaks in a potential pair. Peaks too close or too far apart are not considered pairs." />
+          </CardTitle>
           <CardDescription>Distance between consecutive peaks</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -176,7 +180,10 @@ export function DoublePeakPanel({
       {/* Pair Prominence Ratio */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Pair Prominence Ratio</CardTitle>
+          <CardTitle className="text-base">
+            Pair Prominence Ratio
+            <InfoTooltip content="Ratio of the second peak's prominence to the first peak's prominence. Used to identify pairs with similar (or specific dissimilar) intensities." />
+          </CardTitle>
           <CardDescription>Prom[i+1] / Prom[i] for consecutive peaks</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -226,7 +233,10 @@ export function DoublePeakPanel({
       {/* Pair Width Ratio */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Pair Width Ratio</CardTitle>
+          <CardTitle className="text-base">
+            Pair Width Ratio
+            <InfoTooltip content="Ratio of the second peak's width to the first peak's width. Ensures the pair components have comparable shapes." />
+          </CardTitle>
           <CardDescription>Width[i+1] / Width[i] for consecutive peaks</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -276,7 +286,10 @@ export function DoublePeakPanel({
       {/* Per-Peak Prominence/Amplitude Ratio */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Prominence / Amplitude</CardTitle>
+          <CardTitle className="text-base">
+            Prominence / Amplitude
+            <InfoTooltip content="Ratio of prominence to amplitude for each peak. Helps distinguish valid peaks from baseline fluctuations." />
+          </CardTitle>
           <CardDescription>Per-peak prominence-to-amplitude ratio</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -325,4 +338,3 @@ export function DoublePeakPanel({
     </div>
   )
 }
-

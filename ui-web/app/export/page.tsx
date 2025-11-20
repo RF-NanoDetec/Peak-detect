@@ -5,7 +5,6 @@ import { Download, Loader2 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import { apiClient } from "@/lib/apiClient"
 import { useDataStore } from "@/lib/stores/dataStore"
@@ -18,8 +17,6 @@ export default function ExportPage() {
   const { doublePeakResults } = useResultsStore()
   
   const [loading, setLoading] = useState<string | null>(null)
-  const [imageFormat, setImageFormat] = useState<'png' | 'svg' | 'pdf' | 'jpg'>('png')
-  const [imageDpi, setImageDpi] = useState(300)
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = window.URL.createObjectURL(blob)
@@ -81,30 +78,6 @@ export default function ExportPage() {
     }
   }
 
-  const handleExportPlot = async () => {
-    if (!resultId) {
-      toast.error("Please load data first")
-      return
-    }
-
-    setLoading('plot')
-    try {
-      const blob = await apiClient.exportPlotImage(
-        resultId,
-        filteredResultId || undefined,
-        imageFormat,
-        imageDpi
-      )
-      downloadBlob(blob, `plot.${imageFormat}`)
-      toast.success('Plot exported successfully')
-    } catch (error: any) {
-      console.error('Failed to export plot:', error)
-      toast.error(error.response?.data?.detail || 'Failed to export plot')
-    } finally {
-      setLoading(null)
-    }
-  }
-
   return (
     <PageShell>
       <PageControls>
@@ -112,7 +85,7 @@ export default function ExportPage() {
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Export</h2>
             <p className="text-sm text-muted-foreground">
-              Export analysis results and visualizations
+              Export analysis results
             </p>
           </div>
 
@@ -149,60 +122,6 @@ export default function ExportPage() {
                   <Download className="h-4 w-4 mr-2" />
                 )}
                 Export Double Peak Data
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Image Export</CardTitle>
-              <CardDescription>
-                Save plots and visualizations
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Format</label>
-                <select 
-                  className="w-full px-3 py-2 rounded-md border bg-background text-sm"
-                  value={imageFormat}
-                  onChange={(e) => setImageFormat(e.target.value as any)}
-                >
-                  <option value="png">PNG</option>
-                  <option value="jpg">JPEG</option>
-                  <option value="svg">SVG</option>
-                  <option value="pdf">PDF</option>
-                </select>
-              </div>
-              {(imageFormat === 'png' || imageFormat === 'jpg') && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">DPI</label>
-                  <Input
-                    type="number"
-                    value={imageDpi}
-                    onChange={(e) => setImageDpi(parseInt(e.target.value))}
-                    step="50"
-                    min="72"
-                    max="600"
-                  />
-                </div>
-              )}
-              <Button 
-                className="w-full"
-                onClick={handleExportPlot}
-                disabled={loading !== null || !resultId}
-              >
-                {loading === 'plot' ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export Current Plot
-                  </>
-                )}
               </Button>
             </CardContent>
           </Card>
@@ -256,4 +175,3 @@ export default function ExportPage() {
     </PageShell>
   )
 }
-

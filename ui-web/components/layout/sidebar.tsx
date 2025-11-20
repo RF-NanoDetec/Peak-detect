@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation"
 import { 
   FileUp, 
   Filter, 
-  Activity, 
   BarChart3, 
   GitBranch, 
   Download, 
@@ -30,7 +29,7 @@ const steps = [
   },
   {
     id: "analyze",
-    label: "Analyze",
+    label: "Analyze & Export",
     icon: BarChart3,
     href: "/analyze",
     section: "core"
@@ -137,4 +136,3 @@ export function Sidebar() {
     </aside>
   )
 }
-

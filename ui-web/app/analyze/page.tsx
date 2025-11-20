@@ -26,9 +26,9 @@ export default function AnalyzePage() {
       <PageControls>
         <div className="space-y-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Analyze</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">Analyze & Export</h2>
             <p className="text-sm text-muted-foreground">
-              Time series and distributions of detected peaks
+              Time series analysis and data export
             </p>
           </div>
 
@@ -106,7 +106,7 @@ export default function AnalyzePage() {
                   Complete peak detection to view analysis results
                 </p>
               </div>
-              <Button onClick={() => router.push('/detect')}>
+              <Button onClick={() => router.push('/preprocess')}>
                 Detect Peaks
               </Button>
             </div>
