@@ -469,6 +469,26 @@ export function UPlotChart({
     return () => ro.disconnect()
   }, [])
 
+  // Extract series config (ignoring data) to prevent unnecessary re-initializations
+  const seriesConfig = useMemo(() => {
+    return series.map(s => ({
+      label: s.label,
+      color: s.color,
+      width: s.width,
+      dash: s.dash,
+      points: s.points,
+      pointSize: s.pointSize,
+      bar: s.bar,
+      barWidth: s.barWidth
+    }))
+  }, [series])
+
+  // Use ref for widthSegments to access in draw hook without triggering options recreation
+  const widthSegmentsRef = useRef(widthSegments)
+  useEffect(() => {
+    widthSegmentsRef.current = widthSegments
+  }, [widthSegments])
+
   const opts: uPlot.Options = useMemo(() => {
     const gridColor = isDark ? "rgba(248,250,252,0.10)" : "rgba(15,23,42,0.06)"
     const axisColor = isDark ? "rgba(248,250,252,0.88)" : "rgba(15,23,42,0.65)"
@@ -476,8 +496,9 @@ export function UPlotChart({
     const axisLabelFont = "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif"
 
     // Dynamic x-axis label unit based on current visible span (xData is in minutes)
-    const currentXMin = (xRange?.min ?? (xData.length ? xData[0] : 0))
-    const currentXMax = (xRange?.max ?? (xData.length ? xData[xData.length - 1] : 0))
+    // Use xRange if available, otherwise fallback to basic defaults to avoid xData dependency
+    const currentXMin = xRange?.min ?? 0
+    const currentXMax = xRange?.max ?? 10 // Arbitrary default if no range/data, will be updated by scale
     const visibleSpanMin = Math.max(0, currentXMax - currentXMin)
     const visibleSpanSec = visibleSpanMin * 60
     let timeUnitLabel: TimeUnit = "min"
@@ -572,12 +593,12 @@ export function UPlotChart({
       },
       series: [
         {}, // x axis
-        ...series.map(s => ({
+        ...seriesConfig.map(s => ({
           label: s.label,
           stroke: s.color,
           // Only suppress lines when custom scatter styling is enabled for this chart
           width: s.bar ? 0 : (customScatter && s.points ? 0 : (s.width ?? 1.5)),
-					dash: s.dash,
+          dash: s.dash,
           points: s.points ? {
             // Hide default points only when we render custom ones ourselves
             show: customScatter ? false : true,
@@ -726,7 +747,8 @@ export function UPlotChart({
                 return
               }
               
-              if (!widthSegments || widthSegments.length === 0) {
+              const segments = widthSegmentsRef.current
+              if (!segments || segments.length === 0) {
                 setHoveredSegment(null)
                 return
               }
@@ -745,8 +767,8 @@ export function UPlotChart({
               
               // Check each width segment
               let found = false
-              for (let i = 0; i < widthSegments.length; i += 1) {
-                const seg = widthSegments[i]
+              for (let i = 0; i < segments.length; i += 1) {
+                const seg = segments[i]
                 const x0px = u.valToPos(seg.x0, "x", true)
                 const x1px = u.valToPos(seg.x1, "x", true)
                 const ypx = u.valToPos(seg.y, "y", true)
@@ -799,9 +821,9 @@ export function UPlotChart({
 						}
 
             // Draw bar-style series (e.g., throughput histogram over time)
-            if (series && series.length > 0) {
+            if (seriesConfig && seriesConfig.length > 0) {
               const xVals = (u.data[0] as number[]) || []
-              series.forEach((s, sIdx) => {
+              seriesConfig.forEach((s, sIdx) => {
                 if (!s.bar) return
                 const yVals = (u.data[sIdx + 1] as (number | null | undefined)[]) || []
                 if (!xVals.length || !yVals.length) return
@@ -858,11 +880,12 @@ export function UPlotChart({
             }
 
 						// Draw width segments (horizontal segments at given y between x0-x1 with vertical caps)
-						if (widthSegments && widthSegments.length > 0) {
+            const segments = widthSegmentsRef.current
+						if (segments && segments.length > 0) {
 							ctx.save()
 							const capHeight = 8 // Height of vertical caps in pixels
 							
-							widthSegments.forEach((seg, idx) => {
+							segments.forEach((seg, idx) => {
 								const x0px = Math.round(u.valToPos(seg.x0, "x", true))
 								const x1px = Math.round(u.valToPos(seg.x1, "x", true))
 								const ypx = Math.round(u.valToPos(seg.y, "y", true))
@@ -1002,10 +1025,12 @@ export function UPlotChart({
 						}
 
 						// Custom point rendering with three states (Double Peak only)
-						const firstSeries = series.find(s => s.points)
-						if (customScatter && firstSeries && xData.length > 0) {
+            // Use u.data instead of xData from closure to avoid stale data
+            const currentXData = u.data[0] as number[]
+						const firstSeries = seriesConfig.find(s => s.points)
+						if (customScatter && firstSeries && currentXData && currentXData.length > 0) {
 							ctx.save()
-                            // Clip to plot area to avoid drawing outside
+							// Clip to plot area to avoid drawing outside
                             ctx.beginPath();
                             ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
                             ctx.clip();
@@ -1036,9 +1061,20 @@ export function UPlotChart({
                             const yMin = u.bbox.top - 10;
                             const yMax = u.bbox.top + u.bbox.height + 10;
 
-							for (let i = 0; i < xData.length; i++) {
-								const xVal = xData[i]
-								const yVal = firstSeries.data[i]
+                            // Find index of first series with points
+                            // We need the actual y-values which are in u.data
+                            // u.data[0] is x, u.data[1] is first series, etc.
+                            // Find the index in seriesConfig corresponding to the points series
+                            const seriesIdx = seriesConfig.findIndex(s => s.points)
+                            if (seriesIdx === -1) {
+                                ctx.restore()
+                                return
+                            }
+                            const yValues = u.data[seriesIdx + 1] as number[]
+
+							for (let i = 0; i < currentXData.length; i++) {
+								const xVal = currentXData[i]
+								const yVal = yValues[i]
 								if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue
 								
 								const xPx = u.valToPos(xVal, "x", true)
@@ -1096,7 +1132,7 @@ export function UPlotChart({
         ]
       }
 		}
-	}, [width, height, isDark, series, xLabel, yLabel, xData, onResetZoom, widthSegments, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, yRange, legend, enableYAxisZoom])
+	}, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, yRange, legend, enableYAxisZoom])
 
   const data = useMemo(() => {
     const result: any[] = [xData]

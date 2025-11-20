@@ -437,6 +437,7 @@ export default function PreprocessPage() {
             prominenceThreshold={params.prominence_threshold}
             distance={params.distance}
             widthMs={params.width_ms}
+            initialHistograms={detectionResults?.histograms}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">

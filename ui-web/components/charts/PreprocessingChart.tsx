@@ -29,6 +29,11 @@ interface PreprocessingChartProps {
   prominenceThreshold?: number
   distance?: number
   widthMs?: string
+  initialHistograms?: {
+    amplitude: { bins: number[]; counts: number[]; bin_edges?: number[] }
+    width: { bins: number[]; counts: number[]; bin_edges?: number[] }
+    interval: { bins: number[]; counts: number[]; bin_edges?: number[] }
+  } | null
 }
 
 type NumericArray = number[] | Float32Array | Float64Array
@@ -108,6 +113,7 @@ export function PreprocessingChart({
   prominenceThreshold,
   distance,
   widthMs,
+  initialHistograms,
 }: PreprocessingChartProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -116,7 +122,7 @@ export function PreprocessingChart({
     amplitude: { bins: number[]; counts: number[]; bin_edges?: number[] }
     width: { bins: number[]; counts: number[]; bin_edges?: number[] }
     interval: { bins: number[]; counts: number[]; bin_edges?: number[] }
-  } | null>(null)
+  } | null>(initialHistograms || null)
   const [histogramLoading, setHistogramLoading] = useState(false)
   const [histogramScales, setHistogramScales] = useState<Record<HistogramMetricKey, HistogramAxisConfig>>({
     amplitude: { ...defaultAxisConfig },
@@ -658,6 +664,11 @@ export function PreprocessingChart({
 
   // Fetch histogram data when peaks are detected
   useEffect(() => {
+    if (initialHistograms && !histogramConfig.focusLowRange) {
+      setHistogramData(initialHistograms)
+      return
+    }
+
     const prominenceValues = cleanNumbers(peakProperties?.prominences || [])
 
     if (prominenceValues.length === 0) {
@@ -667,6 +678,8 @@ export function PreprocessingChart({
 
     const fetchHistogram = async () => {
       setHistogramLoading(true)
+      const startTime = performance.now()
+      console.log(`Starting histogram fetch for ${prominenceValues.length} peaks`)
       try {
         const intervalValues = peakIntervals || []
         const focusRanges = histogramConfig.focusLowRange
@@ -699,6 +712,9 @@ export function PreprocessingChart({
             metrics: histogramScales,
           }
         )
+        
+        const endTime = performance.now()
+        console.log(`Histogram fetch completed in ${(endTime - startTime).toFixed(2)}ms`)
         
         // Validate histogram data before setting
         const isValidHistogram = (hist: any) => {

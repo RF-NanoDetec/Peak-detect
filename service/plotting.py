@@ -5,6 +5,7 @@ Generates static images for web display.
 OPTIMIZED: Uses smart decimation for faster rendering while preserving visual quality.
 """
 
+import time
 import io
 import base64
 from typing import Any, Dict
@@ -436,6 +437,7 @@ def calculate_histogram_bins(
     bins_requested = int(bin_count) if bin_count else _estimate_bin_count(data_array)
     bins_requested = max(5, min(500, bins_requested))
     
+    start_time = time.time()
     logger.debug(f"Calculating histogram: {len(data_array)} data points, {bins_requested} bins, "
                  f"log_scale={log_scale}")
     
@@ -457,6 +459,10 @@ def calculate_histogram_bins(
     bin_centers = np.nan_to_num(bin_centers, nan=0.0, posinf=0.0, neginf=0.0)
     counts = np.nan_to_num(counts, nan=0.0, posinf=0.0, neginf=0.0)
     bins = np.nan_to_num(bins, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    elapsed = time.time() - start_time
+    if elapsed > 0.1:
+        logger.info(f"Histogram calculation took {elapsed:.4f}s for {len(data_array)} points")
     
     return {
         "bins": bin_centers.tolist(),

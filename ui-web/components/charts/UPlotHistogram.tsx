@@ -217,6 +217,7 @@ export function UPlotHistogram({
         ],
         draw: [
           (u: uPlot) => {
+            const startTime = performance.now()
             const ctx = u.ctx
             const xValues = (u.data[0] as number[]) || []
             const yValues = (u.data[1] as number[]) || []
@@ -309,6 +310,10 @@ export function UPlotHistogram({
                 }
               })
               ctx.restore()
+            }
+            const endTime = performance.now()
+            if (endTime - startTime > 5) {
+              console.log(`[UPlotHistogram] draw took ${(endTime - startTime).toFixed(2)}ms`)
             }
           },
         ],

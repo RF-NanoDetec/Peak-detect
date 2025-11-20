@@ -595,6 +595,7 @@ def detect_run(payload: DetectPeaksRequest, store: InMemoryStore = Depends(get_s
             mean_width = 0.0
             peak_times = []
             peak_heights = []
+            widths_ms = []
             logger.info("PEAK DETECTION: No peaks found")
     
     # Compute detailed width properties for drawing (left/right bounds and width height)
@@ -636,6 +637,22 @@ def detect_run(payload: DetectPeaksRequest, store: InMemoryStore = Depends(get_s
     # Convert intervals from seconds to milliseconds for consistency
     intervals_ms = [float(i * 1000) for i in intervals] if len(intervals) > 0 else []
 
+    # Pre-calculate histograms to avoid round-trip
+    from service.plotting import generate_peak_histogram_data
+    histograms = generate_peak_histogram_data(
+        peak_heights,
+        widths_ms,
+        intervals_ms,
+        config={
+            "metrics": {
+                "amplitude": {"xScale": "log"},
+                "width": {"xScale": "log"},
+                "interval": {"xScale": "log"}
+            },
+            "bin_count": 60
+        }
+    )
+
     return {
         "count": len(peaks_list),
         "peaks": peaks_list,  # Indices (for reference)
@@ -654,7 +671,8 @@ def detect_run(payload: DetectPeaksRequest, store: InMemoryStore = Depends(get_s
             "left_ips": prop_left_ips.tolist(),
             "right_ips": prop_right_ips.tolist(),
             "width_heights": prop_width_heights.tolist(),
-        }
+        },
+        "histograms": histograms
     }
 
 
@@ -923,6 +941,10 @@ def generate_histograms(
     peak_intervals_ms = payload.get('peak_intervals_ms', [])
     config = payload.get('config') or {}
     
+    import time
+    start_time = time.time()
+    logger.info(f"Generating histograms for {len(peak_amplitudes)} peaks")
+    
     if len(peak_amplitudes) == 0:
         return {
             "amplitude": {"bins": [], "counts": []},
@@ -946,6 +968,9 @@ def generate_histograms(
                 "width": {"bins": [], "counts": []},
                 "interval": {"bins": [], "counts": []}
             }
+        
+        elapsed = time.time() - start_time
+        logger.info(f"Histogram generation completed in {elapsed:.4f}s")
         
         return hist_data
     except Exception as e:
