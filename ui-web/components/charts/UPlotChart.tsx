@@ -715,8 +715,10 @@ export function UPlotChart({
                 onResetZoom()
               } else {
                 // Calculate full data range for x-axis
-                const xMin = xData.length > 0 ? xData[0] : 0
-                const xMax = xData.length > 0 ? xData[xData.length - 1] : 1
+                // u.data[0] is x-axis data
+                const xSeries = u.data[0] as number[]
+                const xMin = xSeries && xSeries.length > 0 ? xSeries[0] : 0
+                const xMax = xSeries && xSeries.length > 0 ? xSeries[xSeries.length - 1] : 1
                 
                 // If xRange is controlled, update parent state first to trigger re-render
                 if (onXRangeChange) {
@@ -727,16 +729,23 @@ export function UPlotChart({
                 u.setScale("x", { min: xMin, max: xMax })
                 
                 // Reset y-axis - gather all finite values from all series
+                // u.data contains all series data
                 const allYValues: number[] = []
-                series.forEach(s => {
-                  const yVals = Array.from(s.data).filter(v => typeof v === "number" && Number.isFinite(v)) as number[]
-                  allYValues.push(...yVals)
-                })
+                // Skip index 0 (x-axis)
+                for (let i = 1; i < u.data.length; i++) {
+                  const sData = u.data[i] as (number | null | undefined)[]
+                  const validVals = sData.filter(v => typeof v === "number" && Number.isFinite(v)) as number[]
+                  allYValues.push(...validVals)
+                }
                 
                 if (allYValues.length > 0) {
                   const yMin = Math.min(...allYValues)
                   const yMax = Math.max(...allYValues)
-                  u.setScale("y", { min: yMin, max: yMax })
+                  // Add slight padding
+                  const padding = (yMax - yMin) * 0.05
+                  u.setScale("y", { min: yMin - padding, max: yMax + padding })
+                } else {
+                  u.setScale("y", { min: 0, max: 100 })
                 }
               }
             })
@@ -809,18 +818,18 @@ export function UPlotChart({
         ,
         draw: [
           (u: uPlot) => {
-						const ctx = u.ctx
-						
-						// Update legend text color for dark mode (runs on every draw to catch theme changes)
-						const legendEl = u.root.querySelector('.u-legend')
-						if (legendEl) {
-							const legendTextColor = isDark ? "rgba(248,250,252,0.95)" : "#1f2937"
-							;(legendEl as HTMLElement).style.color = legendTextColor
-							const legendItems = legendEl.querySelectorAll('.u-legend-item')
-							legendItems.forEach((item) => {
-								;(item as HTMLElement).style.color = legendTextColor
-							})
-						}
+            const ctx = u.ctx
+            
+            // Update legend text color for dark mode (runs on every draw to catch theme changes)
+            const legendEl = u.root.querySelector('.u-legend')
+            if (legendEl) {
+              const legendTextColor = isDark ? "rgba(248,250,252,0.95)" : "#1f2937"
+              ;(legendEl as HTMLElement).style.color = legendTextColor
+              const legendItems = legendEl.querySelectorAll('.u-legend-item')
+              legendItems.forEach((item) => {
+                ;(item as HTMLElement).style.color = legendTextColor
+              })
+            }
 
             // Draw bar-style series (e.g., throughput histogram over time)
             if (seriesConfig && seriesConfig.length > 0) {
@@ -881,260 +890,263 @@ export function UPlotChart({
               })
             }
 
-						// Draw width segments (horizontal segments at given y between x0-x1 with vertical caps)
+            // Draw width segments (horizontal segments at given y between x0-x1 with vertical caps)
             const segments = widthSegmentsRef.current
-						if (segments && segments.length > 0) {
-							ctx.save()
-							const capHeight = 8 // Height of vertical caps in pixels
-							
-							segments.forEach((seg, idx) => {
-								const x0px = Math.round(u.valToPos(seg.x0, "x", true))
-								const x1px = Math.round(u.valToPos(seg.x1, "x", true))
-								const ypx = Math.round(u.valToPos(seg.y, "y", true))
-								
-								// Check if this segment is hovered
-								const isHovered = hoveredSegment?.index === idx
-								
-								// Set styling - highlight if hovered
-								ctx.lineWidth = isHovered ? 3 : 2
-								ctx.strokeStyle = isHovered 
-									? (isDark ? "#fbbf24" : "#f59e0b")  // Brighter when hovered
-									: (isDark ? "#f59e0b" : "#d97706")
-								
-								// Draw horizontal line
-								ctx.beginPath()
-								ctx.moveTo(x0px, ypx)
-								ctx.lineTo(x1px, ypx)
-								ctx.stroke()
-								
-								// Draw left vertical cap
-								ctx.beginPath()
-								ctx.moveTo(x0px, ypx - capHeight / 2)
-								ctx.lineTo(x0px, ypx + capHeight / 2)
-								ctx.stroke()
-								
-								// Draw right vertical cap
-								ctx.beginPath()
-								ctx.moveTo(x1px, ypx - capHeight / 2)
-								ctx.lineTo(x1px, ypx + capHeight / 2)
-								ctx.stroke()
-							})
-							ctx.restore()
-						}
+            if (segments && segments.length > 0) {
+              ctx.save()
+              const capHeight = 8 // Height of vertical caps in pixels
+              
+              segments.forEach((seg, idx) => {
+                const x0px = Math.round(u.valToPos(seg.x0, "x", true))
+                const x1px = Math.round(u.valToPos(seg.x1, "x", true))
+                const ypx = Math.round(u.valToPos(seg.y, "y", true))
+                
+                // Check if this segment is hovered
+                const isHovered = hoveredSegment?.index === idx
+                
+                // Set styling - improve visibility and color
+                ctx.lineWidth = isHovered ? 3 : 2
+                // Use a more distinct color for width bars (e.g., teal/cyan instead of orange)
+                // Default: Teal-500 (#14b8a6) / Teal-400 (#2dd4bf)
+                const baseColor = isDark ? "#2dd4bf" : "#0d9488"
+                const hoverColor = isDark ? "#5eead4" : "#0f766e"
+                
+                ctx.strokeStyle = isHovered ? hoverColor : baseColor
+                
+                // Draw horizontal line
+                ctx.beginPath()
+                ctx.moveTo(x0px, ypx)
+                ctx.lineTo(x1px, ypx)
+                ctx.stroke()
+                
+                // Draw left vertical cap
+                ctx.beginPath()
+                ctx.moveTo(x0px, ypx - capHeight / 2)
+                ctx.lineTo(x0px, ypx + capHeight / 2)
+                ctx.stroke()
+                
+                // Draw right vertical cap
+                ctx.beginPath()
+                ctx.moveTo(x1px, ypx - capHeight / 2)
+                ctx.lineTo(x1px, ypx + capHeight / 2)
+                ctx.stroke()
+              })
+              ctx.restore()
+            }
 
-						// Draw horizontal threshold lines across full plot
-						if (hLines && hLines.length > 0) {
-							ctx.save()
-							hLines.forEach(line => {
-								const ypx = Math.round(u.valToPos(line.y, "y", true))
-								const x0px = Math.round(u.valToPos(u.scales.x.min!, "x", true))
-								const x1px = Math.round(u.valToPos(u.scales.x.max!, "x", true))
-								ctx.beginPath()
-								ctx.setLineDash(line.dash ?? [6, 6])
-								ctx.lineWidth = 1.5
-								ctx.strokeStyle = line.color ?? (isDark ? "#f97316" : "#ea580c")
-								ctx.moveTo(x0px, ypx)
-								ctx.lineTo(x1px, ypx)
-								ctx.stroke()
-								
-								// Draw label if provided
-								if (line.label) {
-									ctx.save()
-									ctx.setLineDash([])
-									ctx.fillStyle = line.color ?? (isDark ? "#f97316" : "#ea580c")
-									ctx.font = "600 10px 'Inter', 'Segoe UI', system-ui, sans-serif"
-									ctx.textAlign = "right"
-									ctx.textBaseline = "bottom"
-									ctx.fillText(line.label, x1px - 5, ypx - 3)
-									ctx.restore()
-								}
-							})
-							ctx.restore()
-						}
+            // Draw horizontal threshold lines across full plot
+            if (hLines && hLines.length > 0) {
+              ctx.save()
+              hLines.forEach(line => {
+                const ypx = Math.round(u.valToPos(line.y, "y", true))
+                const x0px = Math.round(u.valToPos(u.scales.x.min!, "x", true))
+                const x1px = Math.round(u.valToPos(u.scales.x.max!, "x", true))
+                ctx.beginPath()
+                ctx.setLineDash(line.dash ?? [6, 6])
+                ctx.lineWidth = 1.5
+                ctx.strokeStyle = line.color ?? (isDark ? "#f97316" : "#ea580c")
+                ctx.moveTo(x0px, ypx)
+                ctx.lineTo(x1px, ypx)
+                ctx.stroke()
+                
+                // Draw label if provided
+                if (line.label) {
+                  ctx.save()
+                  ctx.setLineDash([])
+                  ctx.fillStyle = line.color ?? (isDark ? "#f97316" : "#ea580c")
+                  ctx.font = "600 10px 'Inter', 'Segoe UI', system-ui, sans-serif"
+                  ctx.textAlign = "right"
+                  ctx.textBaseline = "bottom"
+                  ctx.fillText(line.label, x1px - 5, ypx - 3)
+                  ctx.restore()
+                }
+              })
+              ctx.restore()
+            }
 
-						// Draw vertical threshold lines across full plot
-						if (vLines && vLines.length > 0) {
-							ctx.save()
-							vLines.forEach(line => {
-								const xpx = Math.round(u.valToPos(line.x, "x", true))
-								const y0px = Math.round(u.valToPos(u.scales.y.min!, "y", true))
-								const y1px = Math.round(u.valToPos(u.scales.y.max!, "y", true))
-								ctx.beginPath()
-								ctx.setLineDash(line.dash ?? [6, 6])
-								ctx.lineWidth = 1.5
-								ctx.strokeStyle = line.color ?? (isDark ? "#f97316" : "#ea580c")
-								ctx.moveTo(xpx, y0px)
-								ctx.lineTo(xpx, y1px)
-								ctx.stroke()
-							})
-							ctx.restore()
-						}
+            // Draw vertical threshold lines across full plot
+            if (vLines && vLines.length > 0) {
+              ctx.save()
+              vLines.forEach(line => {
+                const xpx = Math.round(u.valToPos(line.x, "x", true))
+                const y0px = Math.round(u.valToPos(u.scales.y.min!, "y", true))
+                const y1px = Math.round(u.valToPos(u.scales.y.max!, "y", true))
+                ctx.beginPath()
+                ctx.setLineDash(line.dash ?? [6, 6])
+                ctx.lineWidth = 1.5
+                ctx.strokeStyle = line.color ?? (isDark ? "#f97316" : "#ea580c")
+                ctx.moveTo(xpx, y0px)
+                ctx.lineTo(xpx, y1px)
+                ctx.stroke()
+              })
+              ctx.restore()
+            }
 
-						// Draw offset annotation when using relative display
-						if (offsetInfoRef.current) {
-							const { offset, unit, decimals } = offsetInfoRef.current
-							ctx.save()
-							
-							// Format the offset value
-							let offsetText = ""
-							if (unit === "ms") {
-								const msDecimals = decimals ?? 0
-								offsetText = `+ ${offset.toFixed(msDecimals)} ms`
-							} else if (unit === "s") {
-								offsetText = `+ ${offset.toFixed(1)} s`
-							} else {
-								offsetText = `+ ${offset.toFixed(2)} min`
-							}
-							
-							// Style the annotation
-							ctx.font = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
-							ctx.fillStyle = isDark ? "rgba(248,250,252,0.75)" : "rgba(15,23,42,0.60)"
-							ctx.textAlign = "left"
-							ctx.textBaseline = "bottom"
-							
-							// Position at left edge of plot area, just above the x-axis
-							const plotLeft = u.bbox.left
-							const plotBottom = u.bbox.top + u.bbox.height
-							const xPos = plotLeft + 5
-							const yPos = plotBottom - 3
-							
-							ctx.fillText(offsetText, xPos, yPos)
-							ctx.restore()
-						}
+            // Draw offset annotation when using relative display
+            if (offsetInfoRef.current) {
+              const { offset, unit, decimals } = offsetInfoRef.current
+              ctx.save()
+              
+              // Format the offset value
+              let offsetText = ""
+              if (unit === "ms") {
+                const msDecimals = decimals ?? 0
+                offsetText = `+ ${offset.toFixed(msDecimals)} ms`
+              } else if (unit === "s") {
+                offsetText = `+ ${offset.toFixed(1)} s`
+              } else {
+                offsetText = `+ ${offset.toFixed(2)} min`
+              }
+              
+              // Style the annotation
+              ctx.font = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
+              ctx.fillStyle = isDark ? "rgba(248,250,252,0.75)" : "rgba(15,23,42,0.60)"
+              ctx.textAlign = "left"
+              ctx.textBaseline = "bottom"
+              
+              // Position at left edge of plot area, just above the x-axis
+              const plotLeft = u.bbox.left
+              const plotBottom = u.bbox.top + u.bbox.height
+              const xPos = plotLeft + 5
+              const yPos = plotBottom - 3
+              
+              ctx.fillText(offsetText, xPos, yPos)
+              ctx.restore()
+            }
 
-						// Draw lasso path if drawing
+            // Draw lasso path if drawing
             const lassoPath = lassoPathRef.current
             const isDrawingLasso = isDrawingLassoRef.current
             
-						if (lassoPath.length > 1) {
-							ctx.save()
-							ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
-							ctx.lineWidth = 2
-							ctx.setLineDash([5, 3])
-							ctx.beginPath()
-							ctx.moveTo(lassoPath[0].x, lassoPath[0].y)
-							for (let i = 1; i < lassoPath.length; i++) {
-								ctx.lineTo(lassoPath[i].x, lassoPath[i].y)
-							}
-							if (isDrawingLasso) {
-								ctx.stroke()
-							} else {
-								// Close the path when complete
-								ctx.closePath()
-								ctx.stroke()
-							}
-							ctx.restore()
-						}
+            if (lassoPath.length > 1) {
+              ctx.save()
+              ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
+              ctx.lineWidth = 2
+              ctx.setLineDash([5, 3])
+              ctx.beginPath()
+              ctx.moveTo(lassoPath[0].x, lassoPath[0].y)
+              for (let i = 1; i < lassoPath.length; i++) {
+                ctx.lineTo(lassoPath[i].x, lassoPath[i].y)
+              }
+              if (isDrawingLasso) {
+                ctx.stroke()
+              } else {
+                // Close the path when complete
+                ctx.closePath()
+                ctx.stroke()
+              }
+              ctx.restore()
+            }
 
-						// Custom point rendering with three states (Double Peak only)
+            // Custom point rendering with three states (Double Peak only)
             // Use u.data instead of xData from closure to avoid stale data
             const currentXData = u.data[0] as number[]
-						const firstSeries = seriesConfig.find(s => s.points)
-						if (customScatter && firstSeries && currentXData && currentXData.length > 0) {
-							ctx.save()
-							// Clip to plot area to avoid drawing outside
-                            ctx.beginPath();
-                            ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
-                            ctx.clip();
-							
-                            // Use cached sets for performance
-                            const filteredSet = filteredSetRef.current
-                            const selectedSet = selectedSetRef.current
-                            
-							const hasFilters = filteredSet && filteredSet.size < xData.length
-                            
-                            // Optimization: Group points by style to minimize state changes and draw calls
-                            // 1. Selected (Light Blue, Large)
-                            // 2. Normal (Default, Medium)
-                            // 3. Filtered (Dim, Small)
-                            
-                            // We use path recording for batch rendering
-                            const selectedPath = new Path2D();
-                            const normalPath = new Path2D();
-                            const filteredPath = new Path2D();
-                            
-                            let hasSelected = false;
-                            let hasNormal = false;
-                            let hasFiltered = false;
-                            
-                            // Viewport culling bounds
-                            const xMin = u.bbox.left - 10; // Add margin for point radius
-                            const xMax = u.bbox.left + u.bbox.width + 10;
-                            const yMin = u.bbox.top - 10;
-                            const yMax = u.bbox.top + u.bbox.height + 10;
+            const firstSeries = seriesConfig.find(s => s.points)
+            if (customScatter && firstSeries && currentXData && currentXData.length > 0) {
+              ctx.save()
+              // Clip to plot area to avoid drawing outside
+              ctx.beginPath();
+              ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+              ctx.clip();
+              
+              // Use cached sets for performance
+              const filteredSet = filteredSetRef.current
+              const selectedSet = selectedSetRef.current
+              
+              const hasFilters = filteredSet && filteredSet.size < xData.length
+              
+              // Optimization: Group points by style to minimize state changes and draw calls
+              // 1. Selected (Light Blue, Large)
+              // 2. Normal (Default, Medium)
+              // 3. Filtered (Dim, Small)
+              
+              // We use path recording for batch rendering
+              const selectedPath = new Path2D();
+              const normalPath = new Path2D();
+              const filteredPath = new Path2D();
+              
+              let hasSelected = false;
+              let hasNormal = false;
+              let hasFiltered = false;
+              
+              // Viewport culling bounds
+              const xMin = u.bbox.left - 10; // Add margin for point radius
+              const xMax = u.bbox.left + u.bbox.width + 10;
+              const yMin = u.bbox.top - 10;
+              const yMax = u.bbox.top + u.bbox.height + 10;
 
-                            // Find index of first series with points
-                            // We need the actual y-values which are in u.data
-                            // u.data[0] is x, u.data[1] is first series, etc.
-                            // Find the index in seriesConfig corresponding to the points series
-                            const seriesIdx = seriesConfig.findIndex(s => s.points)
-                            if (seriesIdx === -1) {
-                                ctx.restore()
-                                return
-                            }
-                            const yValues = u.data[seriesIdx + 1] as number[]
+              // Find index of first series with points
+              // We need the actual y-values which are in u.data
+              // u.data[0] is x, u.data[1] is first series, etc.
+              // Find the index in seriesConfig corresponding to the points series
+              const seriesIdx = seriesConfig.findIndex(s => s.points)
+              if (seriesIdx === -1) {
+                ctx.restore()
+                return
+              }
+              const yValues = u.data[seriesIdx + 1] as number[]
 
-							for (let i = 0; i < currentXData.length; i++) {
-								const xVal = currentXData[i]
-								const yVal = yValues[i]
-								if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue
-								
-								const xPx = u.valToPos(xVal, "x", true)
-								const yPx = u.valToPos(yVal as number, "y", true)
-								
-                                // Skip points outside viewport
-                                if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue;
+              for (let i = 0; i < currentXData.length; i++) {
+                const xVal = currentXData[i]
+                const yVal = yValues[i]
+                if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue
+                
+                const xPx = u.valToPos(xVal, "x", true)
+                const yPx = u.valToPos(yVal as number, "y", true)
+                
+                // Skip points outside viewport
+                if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue;
 
-								const isSelected = selectedSet?.has(i)
-								const passesFilter = !hasFilters || filteredSet?.has(i)
-                                
-                                if (isSelected) {
-                                    selectedPath.moveTo(xPx + 6, yPx);
-                                    selectedPath.arc(xPx, yPx, 6, 0, 2 * Math.PI);
-                                    hasSelected = true;
-                                } else if (!passesFilter) {
-                                    filteredPath.moveTo(xPx + 3, yPx);
-                                    filteredPath.arc(xPx, yPx, 3, 0, 2 * Math.PI);
-                                    hasFiltered = true;
-                                } else {
-                                    normalPath.moveTo(xPx + 4, yPx);
-                                    normalPath.arc(xPx, yPx, 4, 0, 2 * Math.PI);
-                                    hasNormal = true;
-                                }
-							}
-							
-                            // Draw batches
-                            if (hasFiltered) {
-                                ctx.fillStyle = isDark ? "rgba(100, 100, 100, 0.15)" : "rgba(150, 150, 150, 0.15)"
-                                ctx.strokeStyle = isDark ? "rgba(100, 100, 100, 0.2)" : "rgba(150, 150, 150, 0.2)"
-                                ctx.lineWidth = 0.5
-                                ctx.fill(filteredPath)
-                                ctx.stroke(filteredPath)
-                            }
-                            
-                            if (hasNormal) {
-                                ctx.fillStyle = isDark ? "rgba(203, 213, 225, 0.6)" : "rgba(15, 23, 42, 0.6)"
-                                ctx.strokeStyle = isDark ? "rgba(203, 213, 225, 0.8)" : "rgba(15, 23, 42, 0.8)"
-                                ctx.lineWidth = 1
-                                ctx.fill(normalPath)
-                                ctx.stroke(normalPath)
-                            }
-                            
-                            if (hasSelected) {
-                                ctx.fillStyle = isDark ? "rgba(96, 165, 250, 0.8)" : "rgba(59, 130, 246, 0.8)"
-                                ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
-                                ctx.lineWidth = 2
-                                ctx.fill(selectedPath)
-                                ctx.stroke(selectedPath)
-                            }
-							
-							ctx.restore()
-						}
+                const isSelected = selectedSet?.has(i)
+                const passesFilter = !hasFilters || filteredSet?.has(i)
+                
+                if (isSelected) {
+                  selectedPath.moveTo(xPx + 6, yPx);
+                  selectedPath.arc(xPx, yPx, 6, 0, 2 * Math.PI);
+                  hasSelected = true;
+                } else if (!passesFilter) {
+                  filteredPath.moveTo(xPx + 3, yPx);
+                  filteredPath.arc(xPx, yPx, 3, 0, 2 * Math.PI);
+                  hasFiltered = true;
+                } else {
+                  normalPath.moveTo(xPx + 4, yPx);
+                  normalPath.arc(xPx, yPx, 4, 0, 2 * Math.PI);
+                  hasNormal = true;
+                }
+              }
+              
+              // Draw batches
+              if (hasFiltered) {
+                ctx.fillStyle = isDark ? "rgba(100, 100, 100, 0.15)" : "rgba(150, 150, 150, 0.15)"
+                ctx.strokeStyle = isDark ? "rgba(100, 100, 100, 0.2)" : "rgba(150, 150, 150, 0.2)"
+                ctx.lineWidth = 0.5
+                ctx.fill(filteredPath)
+                ctx.stroke(filteredPath)
+              }
+              
+              if (hasNormal) {
+                ctx.fillStyle = isDark ? "rgba(203, 213, 225, 0.6)" : "rgba(15, 23, 42, 0.6)"
+                ctx.strokeStyle = isDark ? "rgba(203, 213, 225, 0.8)" : "rgba(15, 23, 42, 0.8)"
+                ctx.lineWidth = 1
+                ctx.fill(normalPath)
+                ctx.stroke(normalPath)
+              }
+              
+              if (hasSelected) {
+                ctx.fillStyle = isDark ? "rgba(96, 165, 250, 0.8)" : "rgba(59, 130, 246, 0.8)"
+                ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
+                ctx.lineWidth = 2
+                ctx.fill(selectedPath)
+                ctx.stroke(selectedPath)
+              }
+              
+              ctx.restore()
+            }
           }
         ]
       }
-		}
-	}, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, yRange, legend, enableYAxisZoom])
+    }
+  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, yRange, legend, enableYAxisZoom])
 
   const data = useMemo(() => {
     const result: any[] = [xData]
@@ -1201,7 +1213,7 @@ export function UPlotChart({
         </Button>
       </div>
 
-      {/* Tooltip for peak width */}
+      {/* Tooltip for peak width - styled to match legend (bottom) instead of top left float */}
       {hoveredSegment && mousePos && (
         <div
           className="pointer-events-none absolute z-50 px-2 py-1 text-xs font-medium rounded shadow-lg border"
@@ -1213,8 +1225,9 @@ export function UPlotChart({
             borderColor: isDark ? "rgba(71, 85, 105, 0.5)" : "rgba(203, 213, 225, 0.8)",
           }}
         >
-          <div className="whitespace-nowrap">
-            Peak width (ms): {hoveredSegment.width.toFixed(3)}
+          <div className="whitespace-nowrap flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-teal-500"></div>
+            Peak width: {hoveredSegment.width.toFixed(3)} ms
           </div>
         </div>
       )}

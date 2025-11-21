@@ -804,34 +804,37 @@ export function PreprocessingChart({
   const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
     const metricConfig = histogramScales[metric]
     return (
-      <>
-        {/* X scale controls – snug to bottom-right near X axis */}
-        <div className="absolute bottom-1 right-1 flex items-center gap-1 rounded border bg-background/80 px-1 py-0.5 text-[9px] shadow-sm">
-          {histogramScaleOptions.map((option) => (
-            <button
-              key={`${metric}-${option.value}`}
-              type="button"
-              className={axisButtonClass(metricConfig.xScale === option.value)}
-              onClick={() => updateXAxisScale(metric, option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
+      <div className="absolute inset-0 pointer-events-none">
+        {/* Controls container with pointer-events-auto */}
+        <div className="relative w-full h-full">
+          {/* X scale controls – bottom-right */}
+          <div className="absolute bottom-8 right-2 flex items-center gap-1 pointer-events-auto bg-background/80 backdrop-blur-sm rounded border shadow-sm p-0.5">
+            {histogramScaleOptions.map((option) => (
+              <button
+                key={`${metric}-${option.value}`}
+                type="button"
+                className={axisButtonClass(metricConfig.xScale === option.value)}
+                onClick={() => updateXAxisScale(metric, option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {/* Y scale controls – top-left */}
+          <div className="absolute top-2 left-14 flex items-center gap-1 pointer-events-auto bg-background/80 backdrop-blur-sm rounded border shadow-sm p-0.5">
+            {histogramYScaleOptions.map((option) => (
+              <button
+                key={`${metric}-y-${option.value}`}
+                type="button"
+                className={axisButtonClass(metricConfig.yScale === option.value)}
+                onClick={() => updateYAxisScale(metric, option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
-        {/* Y scale controls – snug to top-left near Y axis */}
-        <div className="absolute top-1 left-1 flex items-center gap-1 rounded border bg-background/80 px-1 py-0.5 text-[9px] shadow-sm">
-          {histogramYScaleOptions.map((option) => (
-            <button
-              key={`${metric}-y-${option.value}`}
-              type="button"
-              className={axisButtonClass(metricConfig.yScale === option.value)}
-              onClick={() => updateYAxisScale(metric, option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </>
+      </div>
     )
   }, [histogramScales, updateXAxisScale, updateYAxisScale])
 
@@ -949,11 +952,8 @@ export function PreprocessingChart({
             </p>
             {widthSegments && widthSegments.length > 0 && (
               <p className="text-[10px] text-muted-foreground flex items-center gap-2">
-                <span
-                  className="inline-block h-[6px] w-5 rounded-full"
-                  style={{ backgroundColor: isDark ? "#f59e0b" : "#d97706" }}
-                />
-                <span>Orange bars: peak width (ms). Hover a bar to see the width.</span>
+                <span className="inline-block w-2 h-2 rounded-full bg-teal-500"></span>
+                <span>Teal bars: peak width (ms). Hover a bar to see the width.</span>
               </p>
             )}
           </>

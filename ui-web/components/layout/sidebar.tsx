@@ -8,7 +8,8 @@ import {
   BarChart3, 
   GitBranch, 
   Download, 
-  Settings 
+  Settings,
+  Activity
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -64,18 +65,23 @@ export function Sidebar() {
   const advancedSteps = steps.filter(s => s.section === "advanced")
 
   return (
-    <aside className="w-60 border-r bg-card flex flex-col">
-      <div className="p-4 border-b">
-        <h2 className="text-lg font-semibold">Peak Analysis</h2>
-        <p className="text-xs text-muted-foreground">Workflow</p>
+    <aside className="w-64 border-r bg-card/50 backdrop-blur-sm flex flex-col">
+      <div className="h-14 flex items-center px-6 border-b">
+        <div className="flex items-center gap-2 font-semibold">
+          {/* Icon removed as requested */}
+          {/* <div className="flex items-center justify-center h-6 w-6 rounded bg-primary text-primary-foreground">
+            <Activity className="h-4 w-4" />
+          </div> */}
+          <span>Peak Analysis</span>
+        </div>
       </div>
       
-      <nav className="flex-1 p-3 space-y-6 overflow-y-auto">
+      <nav className="flex-1 px-4 py-6 space-y-8 overflow-y-auto">
         {/* Core Steps */}
         <div>
-          <div className="px-3 mb-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Core
+          <div className="px-2 mb-3">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">
+              Workflow
             </p>
           </div>
           <div className="space-y-1">
@@ -88,13 +94,13 @@ export function Sidebar() {
                   key={step.id}
                   href={step.href}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all",
                     isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      ? "bg-secondary text-secondary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   )}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className={cn("h-4 w-4", isActive ? "text-primary" : "text-muted-foreground")} />
                   <span>{step.label}</span>
                 </Link>
               )
@@ -104,9 +110,9 @@ export function Sidebar() {
 
         {/* Advanced Steps */}
         <div>
-          <div className="px-3 mb-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Advanced
+          <div className="px-2 mb-3">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">
+              Tools
             </p>
           </div>
           <div className="space-y-1">
@@ -119,13 +125,13 @@ export function Sidebar() {
                   key={step.id}
                   href={step.href}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all",
                     isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      ? "bg-secondary text-secondary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   )}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className={cn("h-4 w-4", isActive ? "text-primary" : "text-muted-foreground")} />
                   <span>{step.label}</span>
                 </Link>
               )

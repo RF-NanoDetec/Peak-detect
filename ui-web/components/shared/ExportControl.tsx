@@ -2,12 +2,12 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { Download } from "lucide-react"
+import { Download, Loader2 } from "lucide-react"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
+import { toast } from "sonner"
 
 interface ExportControlProps {
   hasDoublePeakAnalysis?: boolean
@@ -33,12 +33,15 @@ export function ExportControl({ hasDoublePeakAnalysis, doublePeakAnalysis, doubl
   const { params } = useParamsStore()
 
   const handleExport = async () => {
-    if (!resultId) return
+    if (!resultId) {
+       toast.error("No data to export")
+       return
+    }
 
     setIsExporting(true)
     try {
       const metadata: Record<string, any> = {
-        "Protocol": "Standard", // TODO: Get actual protocol if available
+        "Protocol": "Standard", 
         "Time Resolution": params.time_resolution,
         "Filter Type": params.filter_type,
         "Filter Cutoff": params.filter_cutoff_freq,
@@ -67,14 +70,12 @@ export function ExportControl({ hasDoublePeakAnalysis, doublePeakAnalysis, doubl
         format,
         include_metadata: includeMetadata,
         filter_double_peaks: filterDoublePeaks,
-        // Pass detection params to ensure consistency if re-detection needed
         prominence_threshold: params.prominence_threshold,
         distance: params.distance,
         rel_height: params.rel_height,
         width_ms: params.width_ms,
         prominence_ratio: params.prominence_ratio,
         time_resolution: params.time_resolution,
-        // Pass existing peaks to avoid re-detection if possible
         peaks: detectionResults?.peaks,
         properties: detectionResults?.properties
       }
@@ -98,59 +99,67 @@ export function ExportControl({ hasDoublePeakAnalysis, doublePeakAnalysis, doubl
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
+      
+      toast.success(`Exported successfully as ${format.toUpperCase()}`)
     } catch (error) {
       console.error("Export error:", error)
+      toast.error("Failed to export data")
     } finally {
       setIsExporting(false)
     }
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Download className="h-4 w-4" />
-          Export Data
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Format</label>
-          <div className="flex gap-2">
-            {(["csv", "txt", "xlsx"] as const).map((f) => (
-              <Button
-                key={f}
-                variant={format === f ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFormat(f)}
-                className="flex-1 uppercase"
-              >
-                {f}
-              </Button>
-            ))}
-          </div>
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground">Format</label>
+        <div className="flex gap-2">
+          {(["csv", "txt", "xlsx"] as const).map((f) => (
+            <Button
+              key={f}
+              variant={format === f ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFormat(f)}
+              className="flex-1 uppercase text-xs h-8"
+            >
+              {f}
+            </Button>
+          ))}
         </div>
+      </div>
 
+      <div className="space-y-3 pt-1">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">Include Metadata</label>
+          <label className="text-xs font-medium text-muted-foreground">Include Metadata</label>
           <Switch checked={includeMetadata} onCheckedChange={setIncludeMetadata} />
         </div>
 
         {hasDoublePeakAnalysis && (
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">Filter Double Peaks Only</label>
+            <label className="text-xs font-medium text-muted-foreground">Double Peaks Only</label>
             <Switch checked={filterDoublePeaks} onCheckedChange={setFilterDoublePeaks} />
           </div>
         )}
+      </div>
 
-        <Button 
-          className="w-full" 
-          onClick={handleExport} 
-          disabled={isExporting || !resultId}
-        >
-          {isExporting ? "Exporting..." : "Download"}
-        </Button>
-      </CardContent>
-    </Card>
+      <Button 
+        className="w-full mt-2" 
+        onClick={handleExport} 
+        disabled={isExporting || !resultId}
+        size="sm"
+      >
+        {isExporting ? (
+          <>
+             <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+             Exporting...
+          </>
+        ) : (
+          <>
+             <Download className="h-3 w-3 mr-2" />
+             Download
+          </>
+        )}
+      </Button>
+    </div>
   )
 }

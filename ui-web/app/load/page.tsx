@@ -1,30 +1,21 @@
 "use client"
 
-import { useState, useRef, useEffect, type ReactNode } from "react"
-import { FileUp, FolderOpen, Clock, Loader2, Upload, Info, ChevronRight } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
+import { useState, useRef, useEffect } from "react"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
+
+import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
+import { LoadControls } from "@/components/load/LoadControls"
+import { LoadView } from "@/components/load/LoadView"
+
 import { apiClient } from "@/lib/apiClient"
 import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useProtocolStore } from "@/lib/stores/protocolStore"
 import { useResultsStore } from "@/lib/stores/resultsStore"
-import { useRouter } from "next/navigation"
 import { parseFilePreview, type LocalPreviewResult } from "@/lib/localDataParser"
-import type { ProtocolInfo } from "@/lib/types"
-import { BlockMath } from "react-katex"
-import "katex/dist/katex.min.css"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 
+// File handling helpers
 const sessionHandleCache = new Map<string, FileSystemFileHandle[]>()
 const sessionFileCache = new Map<string, File[]>() 
 
@@ -89,7 +80,7 @@ export default function LoadDataPage() {
   const previewTask = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
-  const { setResultId, setFiles, setMeta, setPreviewData, setFilteredResultId, clearData, recentFiles, addRecentFiles } = useDataStore()
+  const { setResultId, setFiles, setMeta, setPreviewData, clearData, recentFiles, addRecentFiles } = useDataStore()
   const { params, updateParam } = useParamsStore()
   const { photonCorrection, protocol, setApplyCorrection, setDeadTimeNs, updateProtocol } = useProtocolStore()
   const { clearResults } = useResultsStore()
@@ -122,7 +113,6 @@ export default function LoadDataPage() {
     fileInputRef.current?.click()
   }
   
-  // Helper to select files using File System Access API (stores handles for future restoration)
   const selectFilesWithHandles = async (): Promise<File[] | null> => {
     if (!('showOpenFilePicker' in window)) {
       return null
@@ -145,7 +135,6 @@ export default function LoadDataPage() {
       cacheSessionFiles(files, handles)
       return files
     } catch (error: any) {
-      // User cancelled or error occurred
       if (error.name !== 'AbortError') {
         console.error('Error selecting files:', error)
       }
@@ -193,12 +182,9 @@ export default function LoadDataPage() {
 
     setLoading(true)
     try {
-      // RESET ALL STATE: Clear all previous data, peaks, filters, and analysis results
-      // This ensures we start fresh with the new sample
-      clearResults() // Clear all detection, analysis, and double peak results
-      clearData() // Clear all data-related state (resultId, filteredResultId, previews, etc.)
+      clearResults()
+      clearData()
       
-      // Upload files to backend with correction and protocol options
       const response = await apiClient.uploadFiles(selectedFiles, params.time_resolution, {
         applyDeadTimeCorrection: photonCorrection.applyCorrection,
         deadTimeNs: photonCorrection.deadTimeNs,
@@ -209,30 +195,25 @@ export default function LoadDataPage() {
       setFiles(response.meta.files)
       setMeta(response.meta)
       
-      // Add to recent files (as a group)
       const fileNames = selectedFiles.map(f => f.name)
       addRecentFiles(fileNames)
       cacheSessionFiles(selectedFiles)
 
-      // Fetch preview data
       const previewData = await apiClient.getDataPreview(response.resultId)
       setPreviewData(previewData)
 
       toast.success(`Loaded ${response.meta.total_files} file(s) successfully`)
       
-      // Navigate to preprocess after short delay
       setTimeout(() => router.push('/preprocess'), 500)
     } catch (error: any) {
       console.error('Failed to load files:', error)
       
-      // Handle different error formats
       let errorMessage = 'Failed to load files'
       if (error.response?.data) {
         const data = error.response.data
         if (typeof data.detail === 'string') {
           errorMessage = data.detail
         } else if (Array.isArray(data.detail)) {
-          // FastAPI validation errors
           errorMessage = data.detail.map((err: any) => 
             `${err.loc?.join('.')}: ${err.msg}`
           ).join(', ')
@@ -291,518 +272,43 @@ export default function LoadDataPage() {
   return (
     <PageShell>
       <PageControls>
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Load Data</h2>
-            <p className="text-sm text-muted-foreground">
-              Select files to begin analysis
-            </p>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">File Selection</CardTitle>
-              <CardDescription>
-                Choose files from your computer
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".txt,.xls,.xlsx"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              <div className="flex gap-2">
-                <Button 
-                  className="flex-1" 
-                  variant="outline"
-                  onClick={openFileSelectionFlow}
-                  disabled={loading}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Select Files
-                </Button>
-              </div>
-              {selectedFiles.length > 0 && (
-                <div className="text-sm space-y-1">
-                  <p className="font-medium">{selectedFiles.length} file(s) selected:</p>
-                  <div className="max-h-32 overflow-y-auto space-y-1">
-                    {selectedFiles.map((file, idx) => (
-                      <div key={idx} className="text-xs text-muted-foreground truncate" title={file.name}>
-                        • {file.name}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Button 
-            className="w-full" 
-            onClick={handleLoadFiles}
-            disabled={loading || selectedFiles.length === 0}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Loading...
-              </>
-            ) : (
-              <>
-                <FileUp className="h-4 w-4 mr-2" />
-                Load Files
-              </>
-            )}
-          </Button>
-
-          
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">File Settings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Time Resolution (milliseconds)</label>
-                <Input
-                  type="number"
-                  placeholder="0.1"
-                  value={timeResolutionMs}
-                  onChange={(e) => handleTimeResolutionChange(parseFloat(e.target.value))}
-                  step="0.01"
-                  min="0.001"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Time resolution in milliseconds per sample (default: 0.1 ms)
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Photon Counter Correction</CardTitle>
-              <CardDescription>
-                Correct for detector non-linearity due to dead time
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <label className="text-sm font-medium">Apply dead-time correction</label>
-                  <p className="text-xs text-muted-foreground">
-                    Compensates for photon counter blind time
-                  </p>
-                </div>
-                <Switch
-                  checked={photonCorrection.applyCorrection}
-                  onCheckedChange={setApplyCorrection}
-                />
-              </div>
-              {photonCorrection.applyCorrection && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Dead time (nanoseconds)</label>
-                  <Input
-                    type="number"
-                    value={photonCorrection.deadTimeNs}
-                    onChange={(e) => setDeadTimeNs(parseFloat(e.target.value) || 43.0)}
-                    step="1"
-                    min="1"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Detector dead time <span className="font-mono">T_D</span> (default: 43 ns).
-                    <br />
-                    <span className="text-xs">Correction factor:</span>
-                  </p>
-                  <div className="my-1">
-                    <BlockMath math="\frac{1}{1 - R \times T_D}" />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".txt,.xls,.xlsx"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+        <LoadControls
+          selectedFiles={selectedFiles}
+          loading={loading}
+          timeResolutionMs={timeResolutionMs}
+          onTimeResolutionChange={handleTimeResolutionChange}
+          photonCorrection={photonCorrection}
+          setApplyCorrection={setApplyCorrection}
+          setDeadTimeNs={setDeadTimeNs}
+          onFileSelect={handleFileSelect}
+          onSelectClick={openFileSelectionFlow}
+          onLoadClick={handleLoadFiles}
+        />
       </PageControls>
 
       <PageVisualization>
-        <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-5xl mx-auto space-y-6">
-            {selectedFiles.length === 0 ? (
-              <LoadLandingHero
-                onSelectFiles={openFileSelectionFlow}
-                recentFiles={recentFiles}
-                onRecentClick={handleRecentFilesClick}
-                loading={loading}
-                renderRecentLabel={formatRecentFileDisplay}
-              />
-            ) : (
-              <LocalPreviewPanel
-                loading={previewLoading}
-                error={previewError}
-                preview={localPreview}
-                fileCount={selectedFiles.length}
-                onSelectFiles={openFileSelectionFlow}
-              />
-            )}
-
-            <ProtocolInformationCard protocol={protocol} updateProtocol={updateProtocol} />
-          </div>
-        </div>
+        <LoadView
+          selectedFiles={selectedFiles}
+          loading={loading}
+          previewLoading={previewLoading}
+          previewError={previewError}
+          localPreview={localPreview}
+          protocol={protocol}
+          updateProtocol={updateProtocol}
+          onSelectFiles={openFileSelectionFlow}
+          recentFiles={recentFiles}
+          onRecentClick={handleRecentFilesClick}
+          renderRecentLabel={formatRecentFileDisplay}
+        />
       </PageVisualization>
     </PageShell>
   )
-}
-
-interface LocalPreviewPanelProps {
-  loading: boolean
-  error: string | null
-  preview: LocalPreviewResult | null
-  fileCount: number
-  onSelectFiles: () => void
-}
-
-function LocalPreviewPanel({ loading, error, preview, fileCount, onSelectFiles }: LocalPreviewPanelProps) {
-  const header =
-    preview && preview.columns.length > 0
-      ? preview.columns
-      : preview?.sampleRows[0]?.map((_, idx) => `Column ${idx + 1}`) ?? []
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-semibold">Local Data Preview</h3>
-          <p className="text-sm text-muted-foreground">
-            Client-side parsing powered by uDSV. Showing first file ({fileCount} selected).
-          </p>
-        </div>
-        <Button variant="outline" onClick={onSelectFiles} size="sm">
-          <FolderOpen className="h-4 w-4 mr-2" />
-          Choose Different Files
-        </Button>
-      </div>
-
-      <div className="rounded-2xl border bg-card/80 shadow-sm p-6 min-h-[320px]">
-        {loading && (
-          <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground gap-2">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            Parsing preview with uDSV...
-          </div>
-        )}
-
-        {!loading && error && (
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
-            <p className="text-base font-semibold">Preview failed</p>
-            <p className="text-sm text-muted-foreground">{error}</p>
-            <Button variant="outline" size="sm" onClick={onSelectFiles}>
-              Try Selecting Files Again
-            </Button>
-          </div>
-        )}
-
-        {!loading && !error && preview && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold">{preview.fileName}</p>
-                <p className="text-xs text-muted-foreground">
-                  Parsed {preview.rowsParsed.toLocaleString()} rows in {preview.durationMs.toFixed(1)} ms
-                  {preview.truncated && ' (preview limited for speed)'}
-                </p>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Powered by <a href="https://github.com/leeoniya/uDSV" target="_blank" rel="noreferrer" className="underline">uDSV</a>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-              <div className="rounded-lg border bg-background/40 p-3">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Points Parsed</p>
-                <p className="text-lg font-semibold">{preview.rowsParsed.toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border bg-background/40 p-3">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Time Range</p>
-                <p className="text-lg font-semibold">
-                  {formatRange(preview.stats.minTime, preview.stats.maxTime, 's')}
-                </p>
-              </div>
-              <div className="rounded-lg border bg-background/40 p-3">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Amplitude Range</p>
-                <p className="text-lg font-semibold">
-                  {formatRange(preview.stats.minAmplitude, preview.stats.maxAmplitude)}
-                </p>
-              </div>
-              <div className="rounded-lg border bg-background/40 p-3">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Parse Duration</p>
-                <p className="text-lg font-semibold">{preview.durationMs.toFixed(1)} ms</p>
-              </div>
-            </div>
-
-            {preview.sampleRows.length > 0 ? (
-              <div className="overflow-auto rounded-lg border">
-                <table className="min-w-full divide-y divide-border text-sm">
-                  <thead className="bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      {header.map((column, idx) => (
-                        <th key={idx} className="px-3 py-2 whitespace-nowrap font-medium">
-                          {column || `Column ${idx + 1}`}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border bg-background/60">
-                    {preview.sampleRows.map((row, rowIdx) => (
-                      <tr key={rowIdx}>
-                        {row.map((value, colIdx) => (
-                          <td key={colIdx} className="px-3 py-2 whitespace-nowrap">
-                            {value || '-'}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground border rounded-lg p-4 text-center">
-                No rows parsed from the selected file.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-interface LoadLandingHeroProps {
-  onSelectFiles: () => void
-  recentFiles: string[][]
-  onRecentClick: (fileGroup: string[]) => void
-  loading: boolean
-  renderRecentLabel: (fileGroup: string[]) => ReactNode
-}
-
-function LoadLandingHero({ onSelectFiles, recentFiles, onRecentClick, loading, renderRecentLabel }: LoadLandingHeroProps) {
-  const validRecents = recentFiles
-    .filter((group): group is string[] => Array.isArray(group) && group.length > 0)
-  const topRecents = validRecents.slice(0, 4)
-
-  return (
-    <div className="space-y-8 max-w-2xl mx-auto pt-8">
-      {/* Main Load Area */}
-      <div className="text-center space-y-6">
-        <div className="space-y-2">
-          <div className="inline-flex items-center justify-center p-3 rounded-full bg-primary/10 mb-2">
-            <Upload className="h-6 w-6 text-primary" />
-          </div>
-          <h3 className="text-2xl font-semibold tracking-tight">Load Measurement Data</h3>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Import your time-series data files (.txt, .xls, .xlsx) to begin the analysis workflow.
-          </p>
-        </div>
-        
-        <Button size="lg" onClick={onSelectFiles} disabled={loading} className="min-w-[200px]">
-          Select Files
-        </Button>
-
-        <div className="grid grid-cols-3 gap-4 text-left pt-4 max-w-lg mx-auto">
-          <div className="p-3 rounded-lg border bg-card/50">
-            <div className="font-medium text-sm mb-1 flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-              Load
-            </div>
-            <p className="text-[10px] text-muted-foreground">Import raw data files</p>
-          </div>
-          <div className="p-3 rounded-lg border bg-card/50">
-            <div className="font-medium text-sm mb-1 flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-              Process
-            </div>
-            <p className="text-[10px] text-muted-foreground">Filter & detect peaks</p>
-          </div>
-          <div className="p-3 rounded-lg border bg-card/50">
-            <div className="font-medium text-sm mb-1 flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-              Analyze
-            </div>
-            <p className="text-[10px] text-muted-foreground">View metrics & export</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Sessions */}
-      {topRecents.length > 0 && (
-        <div className="space-y-4 pt-8 border-t">
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            Recent Sessions
-          </div>
-
-          <div className="grid gap-2">
-            {topRecents.map((group, idx) => (
-              <button
-                key={`${group.join('|')}-${idx}`}
-                className="group w-full flex items-center justify-between rounded-lg border bg-card/50 px-4 py-3 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-                onClick={() => onRecentClick(group)}
-                disabled={loading}
-              >
-                <span className="truncate font-medium">{renderRecentLabel(group)}</span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface ProtocolInformationCardProps {
-  protocol: ProtocolInfo
-  updateProtocol: <K extends keyof ProtocolInfo>(key: K, value: ProtocolInfo[K]) => void
-}
-
-function ProtocolInformationCard({ protocol, updateProtocol }: ProtocolInformationCardProps) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Protocol Information</CardTitle>
-        <CardDescription>
-          Keep experiment metadata with the dataset for future reference.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Measurement Date</label>
-            <Input
-              type="date"
-              value={protocol.measurement_date || ''}
-              onChange={(e) => updateProtocol('measurement_date', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Start Time</label>
-            <Input
-              type="time"
-              value={protocol.start_time || ''}
-              onChange={(e) => updateProtocol('start_time', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Setup</label>
-          <Input
-            placeholder="e.g., Prototype, Old Ladom"
-            value={protocol.setup || ''}
-            onChange={(e) => updateProtocol('setup', e.target.value)}
-            className="text-sm"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Sample Number</label>
-            <Input
-              placeholder="Sample ID"
-              value={protocol.sample_number || ''}
-              onChange={(e) => updateProtocol('sample_number', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Particle</label>
-            <Input
-              placeholder="Particle type"
-              value={protocol.particle || ''}
-              onChange={(e) => updateProtocol('particle', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Concentration</label>
-          <Input
-            placeholder="Particle concentration"
-            value={protocol.concentration || ''}
-            onChange={(e) => updateProtocol('concentration', e.target.value)}
-            className="text-sm"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Buffer</label>
-            <Input
-              placeholder="Buffer solution"
-              value={protocol.buffer || ''}
-              onChange={(e) => updateProtocol('buffer', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Buffer Conc.</label>
-            <Input
-              placeholder="Buffer concentration"
-              value={protocol.buffer_concentration || ''}
-              onChange={(e) => updateProtocol('buffer_concentration', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium">ND Filter</label>
-            <Input
-              placeholder="Filter value"
-              value={protocol.nd_filter || ''}
-              onChange={(e) => updateProtocol('nd_filter', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Laser Power</label>
-            <Input
-              placeholder="Power setting"
-              value={protocol.laser_power || ''}
-              onChange={(e) => updateProtocol('laser_power', e.target.value)}
-              className="text-sm"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Stamp</label>
-          <Input
-            placeholder="e.g., triple-block"
-            value={protocol.stamp || ''}
-            onChange={(e) => updateProtocol('stamp', e.target.value)}
-            className="text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Notes</label>
-          <Input
-            placeholder="Additional observations"
-            value={protocol.notes || ''}
-            onChange={(e) => updateProtocol('notes', e.target.value)}
-            className="text-sm"
-          />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function formatRange(min: number | null, max: number | null, unit?: string) {
-  if (min === null || max === null) {
-    return '-'
-  }
-  const suffix = unit ? ` ${unit}` : ''
-  return `${min.toLocaleString()} - ${max.toLocaleString()}${suffix}`
 }

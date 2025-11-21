@@ -4,6 +4,7 @@ import { Settings } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { useTheme } from "@/hooks/use-theme"
+import { Input } from "@/components/ui/input"
 
 export default function PreferencesPage() {
   const { theme, toggleTheme } = useTheme()
@@ -61,23 +62,26 @@ export default function PreferencesPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Time Resolution</label>
-                <input
+                <label className="text-sm font-medium">Time Resolution (ms)</label>
+                <Input
                   type="number"
-                  className="w-full px-3 py-2 rounded-md border bg-background text-sm"
-                  placeholder="0.0001"
-                  defaultValue="0.0001"
-                  step="0.0001"
+                  placeholder="0.1"
+                  defaultValue="0.1"
+                  step="0.01"
+                  min="0.001"
                 />
+                <p className="text-[10px] text-muted-foreground">Default: 0.1 milliseconds</p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Recent Files Limit</label>
-                <input
+                <Input
                   type="number"
-                  className="w-full px-3 py-2 rounded-md border bg-background text-sm"
                   placeholder="10"
                   defaultValue="10"
+                  min="1"
+                  max="50"
                 />
+                <p className="text-[10px] text-muted-foreground">Number of recent sessions to keep</p>
               </div>
             </CardContent>
           </Card>
@@ -118,4 +122,3 @@ export default function PreferencesPage() {
     </PageShell>
   )
 }
-

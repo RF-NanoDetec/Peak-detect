@@ -15,12 +15,12 @@ export function Topbar() {
           <Image 
             src={theme === 'dark' ? '/logo-dark.svg' : '/logo-light.svg'}
             alt="Peak Analysis Tool Logo"
-            width={120}
-            height={90}
-            className="h-10 w-auto"
+            width={70}
+            height={53}
+            className="h-6 w-auto"
             priority
           />
-          <h1 className="text-lg font-semibold leading-tight">Peak Analysis Tool</h1>
+          <h1 className="text-base font-semibold leading-tight">Peak Analysis Tool</h1>
         </div>
       </div>
 
@@ -41,4 +41,3 @@ export function Topbar() {
     </header>
   )
 }
-
