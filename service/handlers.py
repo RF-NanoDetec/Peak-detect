@@ -1488,7 +1488,9 @@ def export_unified(
         raise HTTPException(status_code=404, detail="Result not found")
         
     time_values = base["time"]
-    time_resolution = base["meta"].get("time_resolution", 1e-4)
+    # Use time_resolution from payload if provided, otherwise fallback to base meta
+    # This ensures consistency with frontend which uses params.time_resolution
+    time_resolution = payload.get("time_resolution") or base["meta"].get("time_resolution", 1e-4)
     
     # Get peaks and properties
     # If passed in payload, use them. Otherwise detect.
@@ -1565,7 +1567,19 @@ def export_unified(
     )
     
     if df.empty:
-        raise HTTPException(status_code=404, detail="No data to export")
+        # Instead of 404, return empty file with headers to avoid confusion
+        # If export_unified_peaks_data returns empty DF, it might not have columns set if it returned early
+        if 'Time (s)' not in df.columns:
+             # Define standard columns
+             df = pd.DataFrame(columns=[
+                 'Time (s)', 'Amplitude', 'Width (ms)', 'Width (samples)', 
+                 'Interval (s)', 'Is Double Peak'
+             ])
+             
+             # If filtering for double peaks was requested, ensure columns match
+             if filter_double_peaks:
+                  # Add specific columns if needed or just rely on empty
+                  pass
         
     # Handle Export Format
     if export_format == 'xlsx':

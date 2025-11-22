@@ -8,6 +8,7 @@ import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { toast } from "sonner"
+import { apiClient } from "@/lib/apiClient"
 
 interface ExportControlProps {
   hasDoublePeakAnalysis?: boolean
@@ -80,17 +81,8 @@ export function ExportControl({ hasDoublePeakAnalysis, doublePeakAnalysis, doubl
         properties: detectionResults?.properties
       }
 
-      const response = await fetch("/api/export/unified", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
+      const blob = await apiClient.exportUnified(payload)
 
-      if (!response.ok) throw new Error("Export failed")
-
-      const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
