@@ -92,14 +92,6 @@ const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
 
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
 
-const computeLowRange = (values: number[], percentile = 0.35): [number, number] | null => {
-  const filtered = values.filter((v) => Number.isFinite(v))
-  if (filtered.length === 0) return null
-  const sorted = [...filtered].sort((a, b) => a - b)
-  const upperIndex = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * percentile)))
-  return [sorted[0], sorted[upperIndex]]
-}
-
 export function PreprocessingChart({ 
   resultId, 
   filteredResultId, 
@@ -131,10 +123,8 @@ export function PreprocessingChart({
   })
   const [histogramConfig, setHistogramConfig] = useState<{
     binCount: number
-    focusLowRange: boolean
   }>({
     binCount: 60,
-    focusLowRange: false,
   })
   const updateXAxisScale = useCallback((metric: HistogramMetricKey, value: AxisScaleOption) => {
     setHistogramScales((prev) => ({
@@ -158,12 +148,6 @@ export function PreprocessingChart({
     setHistogramConfig((prev) => ({
       ...prev,
       binCount: value,
-    }))
-  }, [])
-  const toggleFocusLowRange = useCallback(() => {
-    setHistogramConfig((prev) => ({
-      ...prev,
-      focusLowRange: !prev.focusLowRange,
     }))
   }, [])
   
@@ -664,11 +648,6 @@ export function PreprocessingChart({
 
   // Fetch histogram data when peaks are detected
   useEffect(() => {
-    if (initialHistograms && !histogramConfig.focusLowRange) {
-      setHistogramData(initialHistograms)
-      return
-    }
-
     const prominenceValues = cleanNumbers(peakProperties?.prominences || [])
 
     if (prominenceValues.length === 0) {
@@ -682,33 +661,15 @@ export function PreprocessingChart({
       console.log(`Starting histogram fetch for ${prominenceValues.length} peaks`)
       try {
         const intervalValues = peakIntervals || []
-        const focusRanges = histogramConfig.focusLowRange
-          ? {
-              amplitude: computeLowRange(prominenceValues),
-              width: computeLowRange(widthsMs),
-              interval: computeLowRange(intervalValues),
-            }
-          : undefined
-
-        const normalizedRanges = focusRanges
-          ? (Object.entries(focusRanges).reduce((acc, [key, range]) => {
-              if (range) {
-                acc[key as HistogramMetricKey] = range
-              }
-              return acc
-            }, {} as Partial<Record<HistogramMetricKey, [number, number]>>))
-          : undefined
-        const rangeOverrides = normalizedRanges && Object.keys(normalizedRanges).length > 0
-          ? normalizedRanges
-          : undefined
-
+        
         const response = await apiClient.generateHistograms(
-          prominenceValues,
-          widthsMs,
-          intervalValues,
+          {
+            peakAmplitudes: prominenceValues,
+            peakWidthsMs: widthsMs,
+            peakIntervalsMs: intervalValues,
+          },
           {
             binCount: histogramConfig.binCount,
-            rangeOverrides,
             metrics: histogramScales,
           }
         )
@@ -1092,15 +1053,6 @@ export function PreprocessingChart({
                     className="flex-1 min-w-[140px] accent-primary/80 h-1.5 rounded-lg cursor-pointer"
                   />
                   <span className="text-xs text-primary font-semibold w-10 text-right">{histogramConfig.binCount}</span>
-                  <label className="ml-auto flex items-center gap-2 text-[11px] font-medium cursor-pointer whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 rounded border cursor-pointer"
-                      checked={histogramConfig.focusLowRange}
-                      onChange={toggleFocusLowRange}
-                    />
-                    <span>Focus low range</span>
-                  </label>
                 </div>
               </div>
               {histogramLoading ? (
