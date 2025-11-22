@@ -271,6 +271,21 @@ export default function LoadDataPage() {
 
   return (
     <PageShell>
+      <PageVisualization>
+        <LoadView
+          selectedFiles={selectedFiles}
+          loading={loading}
+          previewLoading={previewLoading}
+          previewError={previewError}
+          localPreview={localPreview}
+          protocol={protocol}
+          updateProtocol={updateProtocol}
+          onSelectFiles={openFileSelectionFlow}
+          recentFiles={recentFiles}
+          onRecentClick={handleRecentFilesClick}
+          renderRecentLabel={formatRecentFileDisplay}
+        />
+      </PageVisualization>
       <PageControls>
         <input
           ref={fileInputRef}
@@ -293,22 +308,6 @@ export default function LoadDataPage() {
           onLoadClick={handleLoadFiles}
         />
       </PageControls>
-
-      <PageVisualization>
-        <LoadView
-          selectedFiles={selectedFiles}
-          loading={loading}
-          previewLoading={previewLoading}
-          previewError={previewError}
-          localPreview={localPreview}
-          protocol={protocol}
-          updateProtocol={updateProtocol}
-          onSelectFiles={openFileSelectionFlow}
-          recentFiles={recentFiles}
-          onRecentClick={handleRecentFilesClick}
-          renderRecentLabel={formatRecentFileDisplay}
-        />
-      </PageVisualization>
     </PageShell>
   )
 }

@@ -80,6 +80,22 @@ export default function ExportPage() {
 
   return (
     <PageShell>
+      <PageVisualization>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center space-y-4 max-w-md">
+            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <Download className="h-8 w-8 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">Ready to Export</h3>
+              <p className="text-sm text-muted-foreground mt-2">
+                Choose export options from the left panel. Peak information and plots can be exported
+                in various formats for use in publications and reports.
+              </p>
+            </div>
+          </div>
+        </div>
+      </PageVisualization>
       <PageControls>
         <div className="space-y-4">
           <div>
@@ -155,23 +171,6 @@ export default function ExportPage() {
           </Card>
         </div>
       </PageControls>
-
-      <PageVisualization>
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center space-y-4 max-w-md">
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <Download className="h-8 w-8 text-primary" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold">Ready to Export</h3>
-              <p className="text-sm text-muted-foreground mt-2">
-                Choose export options from the left panel. Peak information and plots can be exported
-                in various formats for use in publications and reports.
-              </p>
-            </div>
-          </div>
-        </div>
-      </PageVisualization>
     </PageShell>
   )
 }

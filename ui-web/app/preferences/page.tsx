@@ -11,6 +11,21 @@ export default function PreferencesPage() {
 
   return (
     <PageShell>
+      <PageVisualization>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center space-y-4 max-w-md">
+            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <Settings className="h-8 w-8 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">Application Settings</h3>
+              <p className="text-sm text-muted-foreground mt-2">
+                Configure your preferences from the left panel
+              </p>
+            </div>
+          </div>
+        </div>
+      </PageVisualization>
       <PageControls>
         <div className="space-y-4">
           <div>
@@ -103,22 +118,6 @@ export default function PreferencesPage() {
           </Card>
         </div>
       </PageControls>
-
-      <PageVisualization>
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center space-y-4 max-w-md">
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <Settings className="h-8 w-8 text-primary" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold">Application Settings</h3>
-              <p className="text-sm text-muted-foreground mt-2">
-                Configure your preferences from the left panel
-              </p>
-            </div>
-          </div>
-        </div>
-      </PageVisualization>
     </PageShell>
   )
 }

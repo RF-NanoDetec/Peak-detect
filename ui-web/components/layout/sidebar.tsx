@@ -65,14 +65,14 @@ export function Sidebar() {
   const advancedSteps = steps.filter(s => s.section === "advanced")
 
   return (
-    <aside className="w-64 border-r bg-card/50 backdrop-blur-sm flex flex-col">
+    <aside className="w-64 border-r bg-muted/40 backdrop-blur-sm flex flex-col">
       <div className="h-14 flex items-center px-6 border-b">
         <div className="flex items-center gap-2 font-semibold">
           {/* Icon removed as requested */}
           {/* <div className="flex items-center justify-center h-6 w-6 rounded bg-primary text-primary-foreground">
             <Activity className="h-4 w-4" />
           </div> */}
-          <span>Peak Analysis</span>
+          <span>Time Trace Peak Detection</span>
         </div>
       </div>
       

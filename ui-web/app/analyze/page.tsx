@@ -21,16 +21,6 @@ export default function AnalyzePage() {
 
   return (
     <PageShell>
-      <PageControls>
-        <AnalyzeControls
-          hasResults={hasResults}
-          binWidthSeconds={binWidthSeconds}
-          setBinWidthSeconds={setBinWidthSeconds}
-          rollingMeanWindow={rollingMeanWindow}
-          setRollingMeanWindow={setRollingMeanWindow}
-        />
-      </PageControls>
-
       <PageVisualization>
         <AnalyzeView
           hasResults={hasResults}
@@ -41,6 +31,15 @@ export default function AnalyzePage() {
           onDetectPeaks={() => router.push('/preprocess')}
         />
       </PageVisualization>
+      <PageControls>
+        <AnalyzeControls
+          hasResults={hasResults}
+          binWidthSeconds={binWidthSeconds}
+          setBinWidthSeconds={setBinWidthSeconds}
+          rollingMeanWindow={rollingMeanWindow}
+          setRollingMeanWindow={setRollingMeanWindow}
+        />
+      </PageControls>
     </PageShell>
   )
 }

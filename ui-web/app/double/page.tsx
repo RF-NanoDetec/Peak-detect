@@ -86,6 +86,35 @@ export default function DoublePeakPage() {
 
   return (
     <PageShell>
+      <PageVisualization>
+        {hasData ? (
+          <div className="flex-1 p-4 overflow-auto">
+            <DoublePeakScatter
+              metrics={fullMetrics}
+              thresholds={thresholds}
+              selectedIndices={selectedIndices}
+              onSelectedIndicesChange={setSelectedIndices}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="text-center space-y-4 max-w-md">
+              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <GitBranch className="h-8 w-8 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">No Pair Data</h3>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Run peak detection to analyze consecutive peak pairs
+                </p>
+              </div>
+              <Button onClick={() => router.push('/preprocess')}>
+                Go to Process & Detect
+              </Button>
+            </div>
+          </div>
+        )}
+      </PageVisualization>
       <PageControls>
         <div className="space-y-4">
           <div>
@@ -146,36 +175,6 @@ export default function DoublePeakPage() {
           )}
         </div>
       </PageControls>
-
-      <PageVisualization>
-        {hasData ? (
-          <div className="flex-1 p-4 overflow-auto">
-            <DoublePeakScatter
-              metrics={fullMetrics}
-              thresholds={thresholds}
-              selectedIndices={selectedIndices}
-              onSelectedIndicesChange={setSelectedIndices}
-            />
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="text-center space-y-4 max-w-md">
-              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <GitBranch className="h-8 w-8 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold">No Pair Data</h3>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Run peak detection to analyze consecutive peak pairs
-                </p>
-              </div>
-              <Button onClick={() => router.push('/preprocess')}>
-                Go to Process & Detect
-              </Button>
-            </div>
-          </div>
-        )}
-      </PageVisualization>
     </PageShell>
   )
 }

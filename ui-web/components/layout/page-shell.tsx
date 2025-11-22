@@ -23,7 +23,7 @@ export function PageControls({ children, className }: PageControlsProps) {
   return (
     <div
       className={cn(
-        "w-[420px] shrink-0 border-r bg-background p-4 space-y-4 overflow-y-auto flex flex-col min-h-0 min-w-0",
+        "w-[420px] shrink-0 border-l bg-muted/20 p-4 space-y-4 overflow-y-auto flex flex-col min-h-0 min-w-0",
         className
       )}
       style={{ width: '420px' }}

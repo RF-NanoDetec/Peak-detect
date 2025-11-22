@@ -143,6 +143,16 @@ export default function PreprocessPage() {
 
   return (
     <PageShell>
+      <PageVisualization>
+        <PreprocessView
+          resultId={resultId}
+          filteredResultId={filteredResultId}
+          params={params}
+          detectionResults={detectionResults}
+          previewData={previewData}
+          onLoadData={() => router.push('/load')}
+        />
+      </PageVisualization>
       <PageControls>
         <PreprocessControls
           params={params}
@@ -159,17 +169,6 @@ export default function PreprocessPage() {
           setProminenceInput={setProminenceInput}
         />
       </PageControls>
-
-      <PageVisualization>
-        <PreprocessView
-          resultId={resultId}
-          filteredResultId={filteredResultId}
-          params={params}
-          detectionResults={detectionResults}
-          previewData={previewData}
-          onLoadData={() => router.push('/load')}
-        />
-      </PageVisualization>
     </PageShell>
   )
 }
