@@ -21,9 +21,11 @@ A robust web-based application for scientific peak analysis in time series data.
 - **Data Export**: Save results as CSV/Excel files including all experiment metadata.
 - **Standalone Deployment**: Single executable with embedded web UI.
 
-## 📖 User Manual
+## 📚 Documentation
 
-For detailed usage instructions, please refer to the [User Manual](docs/USER_MANUAL.md).
+- **[User Interface Guide](docs/user_interface.md)**: Step-by-step walkthrough of the application workflow with UI snapshots.
+- **[Mathematical Reference](docs/mathematical_reference.md)**: Detailed explanation of algorithms, physics corrections, and formulas.
+- **[User Manual](docs/USER_MANUAL.md)**: Additional detailed instructions.
 
 ## 🔧 Installation
 

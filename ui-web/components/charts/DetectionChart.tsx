@@ -19,9 +19,9 @@ export function DetectionChart({
   previewData,
   resultId,
   filteredResultId,
-  peakTimes = [], 
-  peakAmplitudes = [], 
-  className = "" 
+  peakTimes = [],
+  peakAmplitudes = [],
+  className = ""
 }: DetectionChartProps) {
   const { theme } = useTheme()
   const isDark = theme === "dark"
@@ -88,6 +88,7 @@ export function DetectionChart({
 
   // Build series: signal line + optional peak scatter
   const series = useMemo(() => {
+    console.time("Peak Series Generation")
     const result: Series[] = [
       {
         label: "Signal",
@@ -101,10 +102,35 @@ export function DetectionChart({
     if (peakX.length > 0) {
       // Create a sparse array matching xData length, with peaks at correct indices
       const peakDataSparse = new Array(xData.length).fill(null)
+
+      // Optimization: Use binary search to find indices instead of linear scan
+      // This reduces complexity from O(N*M) to O(M*logN) where N=data points, M=peaks
+      const findClosestIndex = (arr: number[], target: number) => {
+        let left = 0
+        let right = arr.length - 1
+        if (arr.length === 0) return -1
+        if (target <= arr[0]) return 0
+        if (target >= arr[right]) return right
+
+        while (left <= right) {
+          const mid = (left + right) >> 1
+          if (arr[mid] === target) return mid
+          if (arr[mid] < target) left = mid + 1
+          else right = mid - 1
+        }
+
+        // Check neighbors
+        if (left >= arr.length) return right
+        if (right < 0) return left
+        return (Math.abs(arr[left] - target) < Math.abs(arr[right] - target)) ? left : right
+      }
+
       peakX.forEach((px, i) => {
-        // Find closest index in xData
-        const idx = xData.findIndex(x => Math.abs(x - px) < 0.001)
-        if (idx !== -1) {
+        // Find closest index in xData using binary search
+        const idx = findClosestIndex(xData, px)
+
+        // Only add if it's actually close enough (within 0.001 min approx 60ms)
+        if (idx !== -1 && Math.abs(xData[idx] - px) < 0.001) {
           peakDataSparse[idx] = peakY[i]
         }
       })
@@ -118,6 +144,7 @@ export function DetectionChart({
         pointSize: 4,
       })
     }
+    console.timeEnd("Peak Series Generation")
 
     return result
   }, [xData, yData, peakX, peakY, isDark])
@@ -148,7 +175,7 @@ export function DetectionChart({
           </p>
         )}
       </div>
-      
+
       {/* uPlot chart */}
       <div className="flex-1 px-4 pb-6" style={{ minHeight: 0 }}>
         <UPlotChart

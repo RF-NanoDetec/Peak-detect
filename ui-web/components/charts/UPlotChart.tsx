@@ -6,6 +6,7 @@ import { useTheme } from "@/hooks/use-theme"
 import uPlot from "uplot"
 import { Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
 
@@ -18,12 +19,12 @@ export type Series = {
   data: NumberArray
   points?: boolean
   pointSize?: number
-	dash?: number[]
+  dash?: number[]
   bar?: boolean
   barWidth?: number
 }
 
-export type WidthSegment = { 
+export type WidthSegment = {
   x0: number
   x1: number
   y: number
@@ -39,21 +40,21 @@ interface UPlotChartProps {
   height?: number
   onResetZoom?: () => void
   widthSegments?: WidthSegment[]
-	hLines?: { y: number; color?: string; dash?: number[]; label?: string }[]
-	vLines?: { x: number; color?: string; dash?: number[]; label?: string }[]
-	xRange?: { min: number; max: number } | null
-	onXRangeChange?: (range: { min: number; max: number }) => void
-	xScaleType?: "linear" | "log"
-	yScaleType?: "linear" | "log"
-	yRange?: { min: number; max: number } | null
-	legend?: boolean
-	enableYAxisZoom?: boolean
-	enableLasso?: boolean
-	onLassoComplete?: (selectedIndices: number[]) => void
-	selectedIndices?: number[]
-	pointColors?: string[] // Per-point colors for scatter plots
-	filteredIndices?: number[] // Indices that pass filters (for dimming others)
-	customScatter?: boolean // Enable custom scatter rendering (Double Peak only)
+  hLines?: { y: number; color?: string; dash?: number[]; label?: string }[]
+  vLines?: { x: number; color?: string; dash?: number[]; label?: string }[]
+  xRange?: { min: number; max: number } | null
+  onXRangeChange?: (range: { min: number; max: number }) => void
+  xScaleType?: "linear" | "log"
+  yScaleType?: "linear" | "log"
+  yRange?: { min: number; max: number } | null
+  legend?: boolean
+  enableYAxisZoom?: boolean
+  enableLasso?: boolean
+  onLassoComplete?: (selectedIndices: number[]) => void
+  selectedIndices?: number[]
+  pointColors?: string[] // Per-point colors for scatter plots
+  filteredIndices?: number[] // Indices that pass filters (for dimming others)
+  customScatter?: boolean // Enable custom scatter rendering (Double Peak only)
 }
 
 const formatAxisNumber = (value: number | null | undefined): string => {
@@ -75,7 +76,7 @@ function isPointInPolygon(x: number, y: number, polygon: { x: number; y: number 
     const yi = polygon[i].y
     const xj = polygon[j].x
     const yj = polygon[j].y
-    
+
     const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)
     if (intersect) inside = !inside
   }
@@ -86,8 +87,8 @@ type TimeUnit = "min" | "s" | "ms"
 
 // Format x-axis ticks for time (input values are minutes)
 const formatTimeAxisTicks = (
-  u: uPlot, 
-  vals: number[], 
+  u: uPlot,
+  vals: number[],
   offsetInfoRef: React.MutableRefObject<{ offset: number; unit: TimeUnit; decimals?: number } | null>
 ): string[] => {
   const xMin = u.scales.x.min ?? (vals.length ? vals[0] : 0)
@@ -117,11 +118,11 @@ const formatTimeAxisTicks = (
     if (unit === "s") return v * 60
     return v * 60000 // ms
   })
-  
+
   const finiteVals = convertedVals.filter(v => Number.isFinite(v))
   const minVal = finiteVals.length > 0 ? Math.min(...finiteVals) : 0
   const maxVal = finiteVals.length > 0 ? Math.max(...finiteVals) : 0
-  
+
   // For milliseconds, determine decimal places based on step size to avoid duplicates
   const stepMs = stepMin * 60000
   let msDecimals = 0
@@ -136,31 +137,31 @@ const formatTimeAxisTicks = (
       msDecimals = 0  // Integer ms
     }
   }
-  
+
   // Use relative display if any value exceeds 100
   const useRelative = maxVal > 100 || minVal > 100
-  
+
   if (useRelative) {
     // Store offset info for annotation (include decimals for ms formatting)
-    offsetInfoRef.current = { 
-      offset: minVal, 
+    offsetInfoRef.current = {
+      offset: minVal,
       unit,
       decimals: unit === "ms" ? msDecimals : undefined
     }
-    
+
     // Return relative values
     if (unit === "min") {
       const decimals =
         stepMin >= 10 ? 0 :
-        stepMin >= 1 ? 0 :
-        stepMin >= 0.1 ? 1 : 2
+          stepMin >= 1 ? 0 :
+            stepMin >= 0.1 ? 1 : 2
       return vals.map(v => {
         if (!Number.isFinite(v)) return ""
         const relative = v - minVal
         return relative.toFixed(decimals)
       })
     }
-    
+
     if (unit === "s") {
       const decimals = stepSec >= 5 ? 0 : 1
       return vals.map(v => {
@@ -170,7 +171,7 @@ const formatTimeAxisTicks = (
         return relative.toFixed(decimals)
       })
     }
-    
+
     // ms
     return vals.map(v => {
       if (!Number.isFinite(v)) return ""
@@ -181,13 +182,13 @@ const formatTimeAxisTicks = (
   } else {
     // Clear offset info when not using relative display
     offsetInfoRef.current = null
-    
+
     // Original absolute display
     if (unit === "min") {
       const decimals =
         stepMin >= 10 ? 0 :
-        stepMin >= 1 ? 0 :
-        stepMin >= 0.1 ? 1 : 2
+          stepMin >= 1 ? 0 :
+            stepMin >= 0.1 ? 1 : 2
       return vals.map(v => (Number.isFinite(v) ? v.toFixed(decimals) : ""))
     }
 
@@ -216,39 +217,44 @@ export function UPlotChart({
   height = 400,
   onResetZoom,
   widthSegments,
-	hLines,
-	vLines,
-	xRange,
-	onXRangeChange,
-	xScaleType = "linear",
-	yScaleType = "linear",
-	yRange,
-	legend = true,
-	enableYAxisZoom = false,
-	enableLasso = false,
-	onLassoComplete,
-	selectedIndices = [],
-	pointColors,
-	filteredIndices,
-	customScatter = false,
+  hLines,
+  vLines,
+  xRange,
+  onXRangeChange,
+  xScaleType = "linear",
+  yScaleType = "linear",
+  yRange,
+  legend = true,
+  enableYAxisZoom = false,
+  enableLasso = false,
+  onLassoComplete,
+  selectedIndices = [],
+  pointColors,
+  filteredIndices,
+  customScatter = false,
 }: UPlotChartProps) {
+  useEffect(() => {
+    console.log("UPlotChart: Mounted/Updated", { xDataLength: xData.length, seriesCount: series.length })
+  }, [xData.length, series.length])
+
   const containerRef = useRef<HTMLDivElement | null>(null)
   const uPlotInstanceRef = useRef<uPlot | null>(null)
   const offsetInfoRef = useRef<{ offset: number; unit: TimeUnit; decimals?: number } | null>(null)
   const [width, setWidth] = useState<number>(800)
   const [mounted, setMounted] = useState(false)
   const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number } | null>(null)
+  const [hoveredDataPoint, setHoveredDataPoint] = useState<{ x: number; values: { label: string; value: number | null | undefined; color: string }[] } | null>(null)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
-  
+
   // Refs for lasso state to avoid re-renders/re-initialization
   const lassoPathRef = useRef<{ x: number; y: number }[]>([])
   const isDrawingLassoRef = useRef(false)
-  
+
   // Refs for props to access in uPlot hooks without recreating options
   const selectedIndicesRef = useRef(selectedIndices)
   const filteredIndicesRef = useRef(filteredIndices)
   const enableLassoRef = useRef(enableLasso)
-  
+
   // Cache Sets for performance in draw loop
   const filteredSetRef = useRef<Set<number> | null>(null)
   const selectedSetRef = useRef<Set<number> | null>(null)
@@ -260,12 +266,12 @@ export function UPlotChart({
   selectedIndicesRef.current = selectedIndices
   filteredIndicesRef.current = filteredIndices
   enableLassoRef.current = enableLasso
-  
+
   // Update Sets when arrays change (shallow comparison is enough if references change)
   useMemo(() => {
     filteredSetRef.current = filteredIndices ? new Set(filteredIndices) : null
   }, [filteredIndices])
-  
+
   useMemo(() => {
     selectedSetRef.current = selectedIndices && selectedIndices.length > 0 ? new Set(selectedIndices) : null
   }, [selectedIndices])
@@ -305,7 +311,7 @@ export function UPlotChart({
   useEffect(() => {
     const u = uPlotInstanceRef.current
     if (!u || !onLassoComplete) return
-    
+
     const over = u.over
     if (!over) return
 
@@ -324,16 +330,16 @@ export function UPlotChart({
       const canvas = u.ctx.canvas
       const canvasRect = canvas.getBoundingClientRect()
       const transform = u.ctx.getTransform()
-      
+
       // Calculate scaling factors between physical pixels and CSS pixels
       // This handles high DPI displays and browser zoom levels
       const pixelRatioX = canvas.width / canvasRect.width
       const pixelRatioY = canvas.height / canvasRect.height
-      
+
       // Adjust for any transform applied to the context (uPlot usually scales by dpr)
       const scaleX = transform.a
       const scaleY = transform.d
-      
+
       return {
         x: (clientX - canvasRect.left) * pixelRatioX / scaleX,
         y: (clientY - canvasRect.top) * pixelRatioY / scaleY,
@@ -381,7 +387,7 @@ export function UPlotChart({
       drawing = true
       pointerId = e.pointerId
       lassoPathLocal = [getLocalCoords(e.clientX, e.clientY)]
-      
+
       isDrawingLassoRef.current = true
       lassoPathRef.current = [...lassoPathLocal]
       u.redraw(false, false)
@@ -398,7 +404,7 @@ export function UPlotChart({
       e.preventDefault()
       const point = getLocalCoords(e.clientX, e.clientY)
       lassoPathLocal.push(point)
-      
+
       lassoPathRef.current = [...lassoPathLocal]
       u.redraw(false, false)
     }
@@ -440,10 +446,10 @@ export function UPlotChart({
       window.removeEventListener("pointerup", handlePointerUp)
       window.removeEventListener("pointercancel", handlePointerCancel)
       over.removeEventListener("contextmenu", handleContextMenu)
-      
+
       isDrawingLassoRef.current = false
       lassoPathRef.current = []
-      
+
       try {
         if (pointerId !== null) {
           over.releasePointerCapture(pointerId)
@@ -519,22 +525,22 @@ export function UPlotChart({
     const yLogConfig: Partial<uPlot.Scale> =
       yScaleType === "log"
         ? {
-            distr: 3 as const,
-            log: 10,
-            clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
-            range: (_u: uPlot, dataMin: number, dataMax: number) => {
-              let min = yRange?.min ?? dataMin
-              let max = yRange?.max ?? dataMax
+          distr: 3 as const,
+          log: 10,
+          clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
+          range: (_u: uPlot, dataMin: number, dataMax: number) => {
+            let min = yRange?.min ?? dataMin
+            let max = yRange?.max ?? dataMax
 
-              if (!Number.isFinite(min) || min <= 0) {
-                min = 1e-3
-              }
-              if (!Number.isFinite(max) || max <= min) {
-                max = min * 10
-              }
-              return [min, max]
-            },
-          }
+            if (!Number.isFinite(min) || min <= 0) {
+              min = 1e-3
+            }
+            if (!Number.isFinite(max) || max <= min) {
+              max = min * 10
+            }
+            return [min, max]
+          },
+        }
         : {}
 
     return {
@@ -550,21 +556,21 @@ export function UPlotChart({
         },
       },
       scales: {
-				x: { 
-					time: false,
-					...(xScaleType === "log"
+        x: {
+          time: false,
+          ...(xScaleType === "log"
             ? {
-                distr: 3 as const,
-                log: 10,
-                clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
-              }
+              distr: 3 as const,
+              log: 10,
+              clamp: (_self: uPlot, val: number) => Math.max(val, 1e-9),
+            }
             : {}),
-					...(xRange ? { min: xRange.min, max: xRange.max } : {}),
-				},
-				y: { 
-					...(yRange ? { auto: false, min: yRange.min, max: yRange.max } : { auto: true }),
+          ...(xRange ? { min: xRange.min, max: xRange.max } : {}),
+        },
+        y: {
+          ...(yRange ? { auto: false, min: yRange.min, max: yRange.max } : { auto: true }),
           ...yLogConfig,
-				},
+        },
       },
       axes: [
         {
@@ -589,7 +595,7 @@ export function UPlotChart({
         },
       ],
       legend: {
-				show: !!legend,
+        show: !!legend,
         stroke: isDark ? "rgba(248,250,252,0.95)" : "#1f2937",
         fill: isDark ? "rgba(0,0,0,0)" : "rgba(255,255,255,0)",
       },
@@ -601,6 +607,17 @@ export function UPlotChart({
           // Only suppress lines when custom scatter styling is enabled for this chart
           width: s.bar ? 0 : (customScatter && s.points ? 0 : (s.width ?? 1.5)),
           dash: s.dash,
+          fill: (self: uPlot, seriesIdx: number) => {
+            const ctx = self.ctx
+            const { top, height } = self.bbox
+            if (!Number.isFinite(top) || !Number.isFinite(height)) {
+              return null
+            }
+            const gradient = ctx.createLinearGradient(0, top, 0, top + height)
+            gradient.addColorStop(0, isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)")
+            gradient.addColorStop(1, "rgba(0,0,0,0)")
+            return gradient
+          },
           points: s.points ? {
             // Hide default points only when we render custom ones ourselves
             show: customScatter ? false : true,
@@ -611,55 +628,72 @@ export function UPlotChart({
         })),
       ],
       hooks: {
-				setScale: [
-					(u: uPlot, key: string) => {
-						if (key === "x" && onXRangeChange) {
-							const min = u.scales.x.min!
-							const max = u.scales.x.max!
-							if (Number.isFinite(min) && Number.isFinite(max)) {
-								onXRangeChange({ min, max })
-							}
-						}
-					}
-				],
+        setScale: [
+          (u: uPlot, key: string) => {
+            if (key === "x" && onXRangeChange) {
+              const min = u.scales.x.min!
+              const max = u.scales.x.max!
+              if (Number.isFinite(min) && Number.isFinite(max)) {
+                onXRangeChange({ min, max })
+              }
+            }
+          }
+        ],
+        setCursor: [
+          (u: uPlot) => {
+            const idx = u.cursor.idx
+            if (idx != null && idx >= 0) {
+              const xVal = u.data[0][idx]
+              const values = seriesConfig.map((s, i) => ({
+                label: s.label,
+                value: u.data[i + 1][idx],
+                color: s.color
+              })).filter(v => v.value != null && Number.isFinite(v.value))
+
+              if (values.length > 0) {
+                setHoveredDataPoint({ x: xVal, values })
+              } else {
+                setHoveredDataPoint(null)
+              }
+            } else {
+              setHoveredDataPoint(null)
+            }
+          }
+        ],
         ready: [
           (u: uPlot) => {
             uPlotInstanceRef.current = u
             const over = u.over
-            
+
             // Style legend text for dark mode
             const legendEl = u.root.querySelector('.u-legend')
             if (legendEl) {
               const legendTextColor = isDark ? "rgba(248,250,252,0.95)" : "#1f2937"
-              ;(legendEl as HTMLElement).style.color = legendTextColor
-              // Also style individual legend items
+                ; (legendEl as HTMLElement).style.color = legendTextColor
               const legendItems = legendEl.querySelectorAll('.u-legend-item')
               legendItems.forEach((item) => {
-                ;(item as HTMLElement).style.color = legendTextColor
+                ; (item as HTMLElement).style.color = legendTextColor
               })
             }
 
             // Wheel zoom (disabled when lasso is active)
             over.addEventListener("wheel", (e: WheelEvent) => {
-              // Don't zoom when lasso is active
               if (enableLassoRef.current) return
-              
+
               e.preventDefault()
               const rect = over.getBoundingClientRect()
               const leftPx = e.clientX - rect.left
               const topPx = e.clientY - rect.top
-              
+
               if (enableYAxisZoom && e.shiftKey) {
-                // Shift+scroll: zoom y-axis
                 const yVal = u.posToVal(topPx, "y")
-                const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85
                 const min = u.scales.y.min!
                 const max = u.scales.y.max!
                 const nyMin = yVal - (yVal - min) * factor
                 const nyMax = yVal + (max - yVal) * factor
                 u.setScale("y", { min: nyMin, max: nyMax })
               } else if (enableYAxisZoom) {
-                // When y-axis zoom is enabled, zoom the axis closer to the mouse
                 const plotLeft = u.bbox.left
                 const plotTop = u.bbox.top
                 const plotWidth = u.bbox.width
@@ -668,23 +702,21 @@ export function UPlotChart({
                 const distToRight = (plotLeft + plotWidth) - leftPx
                 const distToTop = topPx - plotTop
                 const distToBottom = (plotTop + plotHeight) - topPx
-                
+
                 const minDistX = Math.min(distToLeft, distToRight)
                 const minDistY = Math.min(distToTop, distToBottom)
-                
+
                 if (minDistY < minDistX) {
-                  // Zoom y-axis
                   const yVal = u.posToVal(topPx, "y")
-                  const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                  const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85
                   const min = u.scales.y.min!
                   const max = u.scales.y.max!
                   const nyMin = yVal - (yVal - min) * factor
                   const nyMax = yVal + (max - yVal) * factor
                   u.setScale("y", { min: nyMin, max: nyMax })
                 } else {
-                  // Zoom x-axis
                   const xVal = u.posToVal(leftPx, "x")
-                  const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                  const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85
                   const min = u.scales.x.min!
                   const max = u.scales.x.max!
                   const nxMin = xVal - (xVal - min) * factor
@@ -692,9 +724,8 @@ export function UPlotChart({
                   u.setScale("x", { min: nxMin, max: nxMax })
                 }
               } else {
-                // Default: zoom x-axis only
                 const xVal = u.posToVal(leftPx, "x")
-                const factor = e.deltaY < 0 ? 0.75 : 1 / 0.75
+                const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85
                 const min = u.scales.x.min!
                 const max = u.scales.x.max!
                 const nxMin = xVal - (xVal - min) * factor
@@ -703,45 +734,36 @@ export function UPlotChart({
               }
             }, { passive: false })
 
-            // Double-click to reset zoom (disabled when lasso is active)
+            // Double-click to reset zoom
             over.addEventListener("dblclick", (e: MouseEvent) => {
-              // Don't reset zoom when lasso is active
               if (enableLassoRef.current) return
-              
+
               e.preventDefault()
               e.stopPropagation()
-              
+
               if (onResetZoom) {
                 onResetZoom()
               } else {
-                // Calculate full data range for x-axis
-                // u.data[0] is x-axis data
                 const xSeries = u.data[0] as number[]
                 const xMin = xSeries && xSeries.length > 0 ? xSeries[0] : 0
                 const xMax = xSeries && xSeries.length > 0 ? xSeries[xSeries.length - 1] : 1
-                
-                // If xRange is controlled, update parent state first to trigger re-render
+
                 if (onXRangeChange) {
                   onXRangeChange({ min: xMin, max: xMax })
                 }
-                
-                // Reset x-axis
+
                 u.setScale("x", { min: xMin, max: xMax })
-                
-                // Reset y-axis - gather all finite values from all series
-                // u.data contains all series data
+
                 const allYValues: number[] = []
-                // Skip index 0 (x-axis)
                 for (let i = 1; i < u.data.length; i++) {
                   const sData = u.data[i] as (number | null | undefined)[]
                   const validVals = sData.filter(v => typeof v === "number" && Number.isFinite(v)) as number[]
                   allYValues.push(...validVals)
                 }
-                
+
                 if (allYValues.length > 0) {
                   const yMin = Math.min(...allYValues)
                   const yMax = Math.max(...allYValues)
-                  // Add slight padding
                   const padding = (yMax - yMin) * 0.05
                   u.setScale("y", { min: yMin - padding, max: yMax + padding })
                 } else {
@@ -750,41 +772,36 @@ export function UPlotChart({
               }
             })
 
-            // Mouse move for width segment hover detection (disabled when lasso is active)
+            // Mouse move for width segment hover detection
             over.addEventListener("mousemove", (e: MouseEvent) => {
-              // Don't show hover tooltips when lasso is active
               if (enableLassoRef.current) {
                 setHoveredSegment(null)
                 return
               }
-              
+
               const segments = widthSegmentsRef.current
               if (!segments || segments.length === 0) {
                 setHoveredSegment(null)
                 return
               }
-              
+
               const overRect = over.getBoundingClientRect()
               const containerRect = containerRef.current?.getBoundingClientRect()
               const mouseX = e.clientX - overRect.left
               const mouseY = e.clientY - overRect.top
 
-              // Position relative to the React container so the tooltip follows correctly
               const containerX = containerRect ? e.clientX - containerRect.left : mouseX
               const containerY = containerRect ? e.clientY - containerRect.top : mouseY
-              
-              // Store mouse position for tooltip (container-relative)
+
               setMousePos({ x: containerX, y: containerY })
-              
-              // Check each width segment
+
               let found = false
               for (let i = 0; i < segments.length; i += 1) {
                 const seg = segments[i]
                 const x0px = u.valToPos(seg.x0, "x", true)
                 const x1px = u.valToPos(seg.x1, "x", true)
                 const ypx = u.valToPos(seg.y, "y", true)
-                
-                // Generous hitbox around the segment
+
                 const hoverThresholdY = 8
                 const hoverPaddingX = 5
                 if (
@@ -792,53 +809,50 @@ export function UPlotChart({
                   mouseX <= x1px + hoverPaddingX &&
                   Math.abs(mouseY - ypx) <= hoverThresholdY
                 ) {
-                  // Calculate width: either from seg.width or from x1-x0
                   const widthValue = seg.width ?? (seg.x1 - seg.x0)
                   setHoveredSegment({ index: i, width: widthValue })
                   found = true
                   break
                 }
               }
-              
+
               if (!found) {
                 setHoveredSegment(null)
               }
             })
 
-            // Mouse leave to clear hover
             over.addEventListener("mouseleave", () => {
               setHoveredSegment(null)
               setMousePos(null)
+              setHoveredDataPoint(null)
             })
 
-            // Set initial cursor
             over.style.cursor = "crosshair"
           }
-        ]
-        ,
+        ],
         draw: [
           (u: uPlot) => {
             const ctx = u.ctx
-            
-            // Update legend text color for dark mode (runs on every draw to catch theme changes)
+
+            // Update legend text color
             const legendEl = u.root.querySelector('.u-legend')
             if (legendEl) {
               const legendTextColor = isDark ? "rgba(248,250,252,0.95)" : "#1f2937"
-              ;(legendEl as HTMLElement).style.color = legendTextColor
+                ; (legendEl as HTMLElement).style.color = legendTextColor
               const legendItems = legendEl.querySelectorAll('.u-legend-item')
               legendItems.forEach((item) => {
-                ;(item as HTMLElement).style.color = legendTextColor
+                ; (item as HTMLElement).style.color = legendTextColor
               })
             }
 
-            // Draw bar-style series (e.g., throughput histogram over time)
+            // Draw bar-style series
             if (seriesConfig && seriesConfig.length > 0) {
               const xVals = (u.data[0] as number[]) || []
               seriesConfig.forEach((s, sIdx) => {
                 if (!s.bar) return
                 const yVals = (u.data[sIdx + 1] as (number | null | undefined)[]) || []
                 if (!xVals.length || !yVals.length) return
-                
+
                 ctx.save()
                 ctx.fillStyle = s.color
                 ctx.strokeStyle = s.color
@@ -847,7 +861,6 @@ export function UPlotChart({
                 const baseY = yScaleType === "log" ? Math.max(u.scales.y.min ?? 1e-9, 1e-9) : (u.scales.y.min ?? 0)
                 const baseYPx = u.valToPos(baseY, "y", true)
 
-                // Compute bar width in pixels once, assuming roughly uniform spacing
                 let barHalfWidthPx = 0
                 if (s.barWidth && s.barWidth > 0) {
                   const leftVal = xVals[0] - s.barWidth / 2
@@ -890,42 +903,35 @@ export function UPlotChart({
               })
             }
 
-            // Draw width segments (horizontal segments at given y between x0-x1 with vertical caps)
+            // Draw width segments
             const segments = widthSegmentsRef.current
             if (segments && segments.length > 0) {
               ctx.save()
-              const capHeight = 8 // Height of vertical caps in pixels
-              
+              const capHeight = 8
+
               segments.forEach((seg, idx) => {
                 const x0px = Math.round(u.valToPos(seg.x0, "x", true))
                 const x1px = Math.round(u.valToPos(seg.x1, "x", true))
                 const ypx = Math.round(u.valToPos(seg.y, "y", true))
-                
-                // Check if this segment is hovered
+
                 const isHovered = hoveredSegment?.index === idx
-                
-                // Set styling - improve visibility and color
+
                 ctx.lineWidth = isHovered ? 3 : 2
-                // Use a more distinct color for width bars (e.g., teal/cyan instead of orange)
-                // Default: Teal-500 (#14b8a6) / Teal-400 (#2dd4bf)
                 const baseColor = isDark ? "#2dd4bf" : "#0d9488"
                 const hoverColor = isDark ? "#5eead4" : "#0f766e"
-                
+
                 ctx.strokeStyle = isHovered ? hoverColor : baseColor
-                
-                // Draw horizontal line
+
                 ctx.beginPath()
                 ctx.moveTo(x0px, ypx)
                 ctx.lineTo(x1px, ypx)
                 ctx.stroke()
-                
-                // Draw left vertical cap
+
                 ctx.beginPath()
                 ctx.moveTo(x0px, ypx - capHeight / 2)
                 ctx.lineTo(x0px, ypx + capHeight / 2)
                 ctx.stroke()
-                
-                // Draw right vertical cap
+
                 ctx.beginPath()
                 ctx.moveTo(x1px, ypx - capHeight / 2)
                 ctx.lineTo(x1px, ypx + capHeight / 2)
@@ -934,7 +940,7 @@ export function UPlotChart({
               ctx.restore()
             }
 
-            // Draw horizontal threshold lines across full plot
+            // Draw horizontal threshold lines
             if (hLines && hLines.length > 0) {
               ctx.save()
               hLines.forEach(line => {
@@ -948,8 +954,7 @@ export function UPlotChart({
                 ctx.moveTo(x0px, ypx)
                 ctx.lineTo(x1px, ypx)
                 ctx.stroke()
-                
-                // Draw label if provided
+
                 if (line.label) {
                   ctx.save()
                   ctx.setLineDash([])
@@ -964,7 +969,7 @@ export function UPlotChart({
               ctx.restore()
             }
 
-            // Draw vertical threshold lines across full plot
+            // Draw vertical threshold lines
             if (vLines && vLines.length > 0) {
               ctx.save()
               vLines.forEach(line => {
@@ -982,12 +987,11 @@ export function UPlotChart({
               ctx.restore()
             }
 
-            // Draw offset annotation when using relative display
+            // Draw offset annotation
             if (offsetInfoRef.current) {
               const { offset, unit, decimals } = offsetInfoRef.current
               ctx.save()
-              
-              // Format the offset value
+
               let offsetText = ""
               if (unit === "ms") {
                 const msDecimals = decimals ?? 0
@@ -997,27 +1001,25 @@ export function UPlotChart({
               } else {
                 offsetText = `+ ${offset.toFixed(2)} min`
               }
-              
-              // Style the annotation
+
               ctx.font = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
               ctx.fillStyle = isDark ? "rgba(248,250,252,0.75)" : "rgba(15,23,42,0.60)"
               ctx.textAlign = "left"
               ctx.textBaseline = "bottom"
-              
-              // Position at left edge of plot area, just above the x-axis
+
               const plotLeft = u.bbox.left
               const plotBottom = u.bbox.top + u.bbox.height
               const xPos = plotLeft + 5
               const yPos = plotBottom - 3
-              
+
               ctx.fillText(offsetText, xPos, yPos)
               ctx.restore()
             }
 
-            // Draw lasso path if drawing
+            // Draw lasso path
             const lassoPath = lassoPathRef.current
             const isDrawingLasso = isDrawingLassoRef.current
-            
+
             if (lassoPath.length > 1) {
               ctx.save()
               ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
@@ -1031,54 +1033,95 @@ export function UPlotChart({
               if (isDrawingLasso) {
                 ctx.stroke()
               } else {
-                // Close the path when complete
                 ctx.closePath()
                 ctx.stroke()
               }
               ctx.restore()
             }
 
+            // Draw glowing peaks for standard series (not customScatter)
+            if (!customScatter) {
+              seriesConfig.forEach((s, sIdx) => {
+                if (!s.points) return
+                const xVals = u.data[0] as number[]
+                const yVals = u.data[sIdx + 1] as (number | null | undefined)[]
+                if (!xVals || !yVals) return
+
+                ctx.save()
+
+                const xMin = u.bbox.left - 10
+                const xMax = u.bbox.left + u.bbox.width + 10
+                const yMin = u.bbox.top - 10
+                const yMax = u.bbox.top + u.bbox.height + 10
+
+                // Draw Glow (Halo)
+                ctx.beginPath()
+                for (let i = 0; i < xVals.length; i++) {
+                  const xVal = xVals[i]
+                  const yVal = yVals[i]
+                  if (yVal == null || !Number.isFinite(yVal)) continue
+
+                  const xPx = u.valToPos(xVal, "x", true)
+                  const yPx = u.valToPos(yVal, "y", true)
+
+                  if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue
+
+                  ctx.moveTo(xPx + 8, yPx)
+                  ctx.arc(xPx, yPx, 8, 0, 2 * Math.PI)
+                }
+                ctx.fillStyle = s.color
+                ctx.globalAlpha = 0.2
+                ctx.fill()
+
+                // Draw inner point (solid)
+                ctx.beginPath()
+                for (let i = 0; i < xVals.length; i++) {
+                  const xVal = xVals[i]
+                  const yVal = yVals[i]
+                  if (yVal == null || !Number.isFinite(yVal)) continue
+                  const xPx = u.valToPos(xVal, "x", true)
+                  const yPx = u.valToPos(yVal, "y", true)
+                  if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue
+
+                  const size = s.pointSize ?? 4
+                  ctx.moveTo(xPx + size, yPx)
+                  ctx.arc(xPx, yPx, size, 0, 2 * Math.PI)
+                }
+                ctx.globalAlpha = 1.0
+                ctx.fillStyle = s.color
+                ctx.fill()
+
+                ctx.restore()
+              })
+            }
+
             // Custom point rendering with three states (Double Peak only)
-            // Use u.data instead of xData from closure to avoid stale data
             const currentXData = u.data[0] as number[]
             const firstSeries = seriesConfig.find(s => s.points)
             if (customScatter && firstSeries && currentXData && currentXData.length > 0) {
               ctx.save()
-              // Clip to plot area to avoid drawing outside
               ctx.beginPath();
               ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
               ctx.clip();
-              
-              // Use cached sets for performance
+
               const filteredSet = filteredSetRef.current
               const selectedSet = selectedSetRef.current
-              
+
               const hasFilters = filteredSet && filteredSet.size < xData.length
-              
-              // Optimization: Group points by style to minimize state changes and draw calls
-              // 1. Selected (Light Blue, Large)
-              // 2. Normal (Default, Medium)
-              // 3. Filtered (Dim, Small)
-              
-              // We use path recording for batch rendering
+
               const selectedPath = new Path2D();
               const normalPath = new Path2D();
               const filteredPath = new Path2D();
-              
+
               let hasSelected = false;
               let hasNormal = false;
               let hasFiltered = false;
-              
-              // Viewport culling bounds
-              const xMin = u.bbox.left - 10; // Add margin for point radius
+
+              const xMin = u.bbox.left - 10;
               const xMax = u.bbox.left + u.bbox.width + 10;
               const yMin = u.bbox.top - 10;
               const yMax = u.bbox.top + u.bbox.height + 10;
 
-              // Find index of first series with points
-              // We need the actual y-values which are in u.data
-              // u.data[0] is x, u.data[1] is first series, etc.
-              // Find the index in seriesConfig corresponding to the points series
               const seriesIdx = seriesConfig.findIndex(s => s.points)
               if (seriesIdx === -1) {
                 ctx.restore()
@@ -1090,16 +1133,15 @@ export function UPlotChart({
                 const xVal = currentXData[i]
                 const yVal = yValues[i]
                 if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue
-                
+
                 const xPx = u.valToPos(xVal, "x", true)
                 const yPx = u.valToPos(yVal as number, "y", true)
-                
-                // Skip points outside viewport
+
                 if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue;
 
                 const isSelected = selectedSet?.has(i)
                 const passesFilter = !hasFilters || filteredSet?.has(i)
-                
+
                 if (isSelected) {
                   selectedPath.moveTo(xPx + 6, yPx);
                   selectedPath.arc(xPx, yPx, 6, 0, 2 * Math.PI);
@@ -1114,8 +1156,7 @@ export function UPlotChart({
                   hasNormal = true;
                 }
               }
-              
-              // Draw batches
+
               if (hasFiltered) {
                 ctx.fillStyle = isDark ? "rgba(100, 100, 100, 0.15)" : "rgba(150, 150, 150, 0.15)"
                 ctx.strokeStyle = isDark ? "rgba(100, 100, 100, 0.2)" : "rgba(150, 150, 150, 0.2)"
@@ -1123,7 +1164,7 @@ export function UPlotChart({
                 ctx.fill(filteredPath)
                 ctx.stroke(filteredPath)
               }
-              
+
               if (hasNormal) {
                 ctx.fillStyle = isDark ? "rgba(203, 213, 225, 0.6)" : "rgba(15, 23, 42, 0.6)"
                 ctx.strokeStyle = isDark ? "rgba(203, 213, 225, 0.8)" : "rgba(15, 23, 42, 0.8)"
@@ -1131,7 +1172,7 @@ export function UPlotChart({
                 ctx.fill(normalPath)
                 ctx.stroke(normalPath)
               }
-              
+
               if (hasSelected) {
                 ctx.fillStyle = isDark ? "rgba(96, 165, 250, 0.8)" : "rgba(59, 130, 246, 0.8)"
                 ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
@@ -1139,7 +1180,7 @@ export function UPlotChart({
                 ctx.fill(selectedPath)
                 ctx.stroke(selectedPath)
               }
-              
+
               ctx.restore()
             }
           }
@@ -1161,7 +1202,7 @@ export function UPlotChart({
       const u = uPlotInstanceRef.current
       const currentMin = u.scales.x.min
       const currentMax = u.scales.x.max
-      
+
       // Only update if the range is different (avoid feedback loop)
       if (currentMin !== xRange.min || currentMax !== xRange.max) {
         u.setScale("x", { min: xRange.min, max: xRange.max })
@@ -1172,7 +1213,7 @@ export function UPlotChart({
   const handleExportImage = () => {
     const u = uPlotInstanceRef.current
     if (!u) return
-    
+
     const canvas = u.ctx.canvas
     const link = document.createElement("a")
     link.download = `chart-${Date.now()}.png`
@@ -1180,6 +1221,10 @@ export function UPlotChart({
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+
+    toast.success("Chart exported successfully", {
+      description: "The image has been saved to your downloads folder.",
+    })
   }
 
   if (!xData.length || !series.length) {
@@ -1200,7 +1245,7 @@ export function UPlotChart({
   return (
     <div ref={containerRef} className={`${className} group relative`} style={{ minHeight: 0 }}>
       <UplotReact options={opts} data={data} />
-      
+
       <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <Button
           variant="secondary"

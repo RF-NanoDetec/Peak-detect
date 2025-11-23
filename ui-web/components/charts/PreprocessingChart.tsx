@@ -92,9 +92,9 @@ const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
 
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
 
-export function PreprocessingChart({ 
-  resultId, 
-  filteredResultId, 
+export function PreprocessingChart({
+  resultId,
+  filteredResultId,
   className = "",
   timeResolution,
   peakTimes = [],
@@ -150,23 +150,23 @@ export function PreprocessingChart({
       binCount: value,
     }))
   }, [])
-  
+
   // Displayed data (fed by worker)
   const [xData, setXData] = useState<NumericArray>([])
   const [yOriginal, setYOriginal] = useState<NumericArray>([])
   const [yFiltered, setYFiltered] = useState<NumericArray | null>(null)
-  
+
   const [widthSegmentsState, setWidthSegmentsState] = useState<{
     x0: Float64Array
     x1: Float64Array
     y: Float32Array
   } | null>(null)
-  
+
   const [fullRes, setFullRes] = useState<boolean>(false)
   const [zoomRange, setZoomRange] = useState<WorkerRange>(null)
   const [dynamicDownsampling, setDynamicDownsampling] = useState<boolean>(true)
   const [workerReady, setWorkerReady] = useState(false)
-  
+
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const lastRangeRef = useRef<WorkerRange>(null)
@@ -176,7 +176,7 @@ export function PreprocessingChart({
   const requestCounterRef = useRef(0)
   const { theme } = useTheme()
   const isDark = theme === "dark"
-  
+
   const TARGET_POINTS = 10000 // Target number of points to display
   const ZOOM_THRESHOLD = 0.1
 
@@ -194,6 +194,7 @@ export function PreprocessingChart({
   const dispatchRangeRequest = useCallback((worker: Worker, range: WorkerRange | null) => {
     const requestId = `range-${requestCounterRef.current++}`
     latestRequestIdRef.current = requestId
+    console.time(`Worker Request ${requestId}`)
     worker.postMessage({
       type: 'GET_RANGE',
       requestId,
@@ -315,7 +316,8 @@ export function PreprocessingChart({
   // only receives already-downsampled windows.
   useEffect(() => {
     if (!workerRef.current) {
-      workerRef.current = new Worker(new URL("../../workers/dataWorker.ts", import.meta.url), { type: "module" })
+      // Use static worker file from public directory to avoid bundler issues
+      workerRef.current = new Worker("/workers/dataWorker.js")
     }
 
     const worker = workerRef.current
@@ -341,6 +343,9 @@ export function PreprocessingChart({
           if (message.requestId && latestRequestIdRef.current && message.requestId !== latestRequestIdRef.current) {
             return
           }
+          // Log latency
+          console.timeEnd(`Worker Request ${message.requestId}`)
+
           setXData(message.payload.time)
           setYOriginal(message.payload.raw)
           setYFiltered(message.payload.filtered)
@@ -615,7 +620,7 @@ export function PreprocessingChart({
       const [minStr, maxStr] = widthMs.split(',')
       const minWidth = parseFloat(minStr)
       const maxWidth = parseFloat(maxStr)
-      
+
       if (Number.isFinite(minWidth)) {
         lines.width.push({
           value: minWidth,
@@ -623,7 +628,7 @@ export function PreprocessingChart({
           label: "Min",
         })
       }
-      
+
       if (Number.isFinite(maxWidth)) {
         lines.width.push({
           value: maxWidth,
@@ -661,7 +666,7 @@ export function PreprocessingChart({
       console.log(`Starting histogram fetch for ${prominenceValues.length} peaks`)
       try {
         const intervalValues = peakIntervals || []
-        
+
         const response = await apiClient.generateHistograms(
           {
             peakAmplitudes: prominenceValues,
@@ -673,33 +678,33 @@ export function PreprocessingChart({
             metrics: histogramScales,
           }
         )
-        
+
         const endTime = performance.now()
         console.log(`Histogram fetch completed in ${(endTime - startTime).toFixed(2)}ms`)
-        
+
         // Validate histogram data before setting
         const isValidHistogram = (hist: any) => {
-          return hist && 
-                 Array.isArray(hist.bins) && 
-                 Array.isArray(hist.counts) && 
-                 hist.bins.length > 0 && 
-                 hist.counts.length > 0 &&
-                 hist.bins.every((v: any) => Number.isFinite(v)) &&
-                 hist.counts.every((v: any) => Number.isFinite(v))
+          return hist &&
+            Array.isArray(hist.bins) &&
+            Array.isArray(hist.counts) &&
+            hist.bins.length > 0 &&
+            hist.counts.length > 0 &&
+            hist.bins.every((v: any) => Number.isFinite(v)) &&
+            hist.counts.every((v: any) => Number.isFinite(v))
         }
-        
+
         const validatedResponse = {
           amplitude: isValidHistogram(response.amplitude) ? response.amplitude : { bins: [], counts: [] },
           width: isValidHistogram(response.width) ? response.width : { bins: [], counts: [] },
           interval: isValidHistogram(response.interval) ? response.interval : { bins: [], counts: [] },
         }
-        
+
         console.log("Histogram data validated:", {
           amplitude: validatedResponse.amplitude.bins.length + " bins",
-          width: validatedResponse.width.bins.length + " bins", 
+          width: validatedResponse.width.bins.length + " bins",
           interval: validatedResponse.interval.bins.length + " bins"
         })
-        
+
         setHistogramData(validatedResponse)
       } catch (error) {
         console.error("Failed to generate histograms:", error)
@@ -756,10 +761,9 @@ export function PreprocessingChart({
   }, [widthSegmentsState])
 
   const axisButtonClass = (active: boolean) =>
-    `px-1.5 py-0.5 rounded border text-[9px] font-medium transition-colors ${
-      active
-        ? "bg-primary border-primary text-primary-foreground shadow-sm"
-        : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/40"
+    `px-1.5 py-0.5 rounded border text-[9px] font-medium transition-colors ${active
+      ? "bg-primary border-primary text-primary-foreground shadow-sm"
+      : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/40"
     }`
 
   const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
@@ -822,16 +826,16 @@ export function PreprocessingChart({
     const peakSeries = (peakTimes?.length || 0) > 0 ? (() => {
       const peakXMin = (peakTimes || []).map(t => Math.max(0, t / 60))
       const peakYVals = peakAmplitudes || []
-      
+
       // Get visible range to filter peaks
       const visibleMin = xData.length > 0 ? xData[0] : 0
       const visibleMax = xData.length > 0 ? xData[xData.length - 1] : 0
-      
+
       const sparse = new Array(xData.length).fill(null) as (number | null)[]
       peakXMin.forEach((px, i) => {
         // Only show peaks in visible range
         if (px < visibleMin || px > visibleMax) return
-        
+
         // Find nearest index in xData using binary search
         let idx = -1
         let lo = 0, hi = xData.length - 1
@@ -843,8 +847,8 @@ export function PreprocessingChart({
         // lo is first >= px; choose closer between lo and lo-1
         const candidates = [lo, lo - 1].filter(j => j >= 0 && j < xData.length)
         if (candidates.length) {
-          idx = candidates.reduce((best, cur) => 
-            Math.abs(xData[cur] - px) < Math.abs(xData[best] - px) ? cur : best, 
+          idx = candidates.reduce((best, cur) =>
+            Math.abs(xData[cur] - px) < Math.abs(xData[best] - px) ? cur : best,
             candidates[0]
           )
         }
@@ -952,7 +956,7 @@ export function PreprocessingChart({
           )}
         </div>
       </div>
-      
+
       {/* Chart and Statistics side-by-side */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 px-4 pb-6 min-w-0" style={{ minHeight: 0 }}>
         {/* uPlot chart */}
@@ -988,13 +992,13 @@ export function PreprocessingChart({
                   <p className="text-[11px] text-muted-foreground">Detected peaks</p>
                   <p className="text-sm font-semibold">{summary.count.toLocaleString()}</p>
                 </div>
-                
+
                 {/* Mean Prominence */}
                 <div className="space-y-1">
                   <p className="text-[11px] text-muted-foreground">Mean prominence</p>
                   <p className="text-sm font-semibold">{formatStat(summary.meanProminence, 2)}</p>
                 </div>
-                
+
                 {/* Mean Width */}
                 <div className="space-y-1">
                   <p className="text-[11px] text-muted-foreground">Mean peak width</p>
@@ -1003,7 +1007,7 @@ export function PreprocessingChart({
                     <span className="text-[10px] text-muted-foreground">ms</span>
                   </p>
                 </div>
-                
+
                 {/* Mean Throughput */}
                 <div className="space-y-1">
                   <p className="text-[11px] text-muted-foreground">Mean throughput</p>
@@ -1012,7 +1016,7 @@ export function PreprocessingChart({
                     <span className="text-[10px] text-muted-foreground">peaks/s</span>
                   </p>
                 </div>
-                
+
                 {/* Peak area (counts per second) */}
                 <div className="space-y-1">
                   <p className="text-[11px] text-muted-foreground">Peak area</p>
@@ -1088,7 +1092,7 @@ export function PreprocessingChart({
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Width Histogram */}
                   <div className="flex flex-col space-y-2">
                     <p className="text-sm font-medium text-center">Peak Width</p>
@@ -1113,7 +1117,7 @@ export function PreprocessingChart({
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Interval Histogram */}
                   <div className="flex flex-col space-y-2">
                     <p className="text-sm font-medium text-center">Peak Distance</p>
