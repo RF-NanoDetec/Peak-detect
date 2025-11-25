@@ -57,7 +57,7 @@ export function Sidebar() {
               {/* Connector Line */}
               {index < steps.length - 1 && (
                 <div className={cn(
-                  "absolute left-[27px] top-[44px] bottom-[-4px] w-[2px]",
+                  "absolute left-[27px] top-[48px] bottom-[-22px] w-[2px]",
                   isActive ? "bg-primary/20" : "bg-muted-foreground/10"
                 )} />
               )}
