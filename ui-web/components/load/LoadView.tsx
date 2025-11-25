@@ -281,7 +281,7 @@ function ProtocolInformationAccordion({
             <div className="space-y-4 pt-2">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Measurement Date</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Measurement Date</label>
                   <Input
                     type="date"
                     value={protocol.measurement_date || ""}
@@ -289,7 +289,7 @@ function ProtocolInformationAccordion({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Start Time</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Start Time</label>
                   <Input
                     type="time"
                     value={protocol.start_time || ""}
@@ -299,7 +299,7 @@ function ProtocolInformationAccordion({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Setup</label>
+                <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Setup</label>
                 <Input
                   placeholder="e.g., Prototype, Old Ladom"
                   value={protocol.setup || ""}
@@ -309,7 +309,7 @@ function ProtocolInformationAccordion({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Sample Number</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Sample Number</label>
                   <Input
                     placeholder="Sample ID"
                     value={protocol.sample_number || ""}
@@ -317,7 +317,7 @@ function ProtocolInformationAccordion({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Particle</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Particle</label>
                   <Input
                     placeholder="Particle type"
                     value={protocol.particle || ""}
@@ -328,7 +328,7 @@ function ProtocolInformationAccordion({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Concentration</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Concentration</label>
                   <Input
                     placeholder="Particle concentration"
                     value={protocol.concentration || ""}
@@ -336,7 +336,7 @@ function ProtocolInformationAccordion({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Buffer</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Buffer</label>
                   <Input
                     placeholder="Buffer solution"
                     value={protocol.buffer || ""}
@@ -347,7 +347,7 @@ function ProtocolInformationAccordion({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Buffer Conc.</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Buffer Conc.</label>
                   <Input
                     placeholder="Buffer concentration"
                     value={protocol.buffer_concentration || ""}
@@ -355,7 +355,7 @@ function ProtocolInformationAccordion({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">ND Filter</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">ND Filter</label>
                   <Input
                     placeholder="Filter value"
                     value={protocol.nd_filter || ""}
@@ -366,7 +366,7 @@ function ProtocolInformationAccordion({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Laser Power</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Laser Power</label>
                   <Input
                     placeholder="Power setting"
                     value={protocol.laser_power || ""}
@@ -374,7 +374,7 @@ function ProtocolInformationAccordion({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Stamp</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Stamp</label>
                   <Input
                     placeholder="e.g., triple-block"
                     value={protocol.stamp || ""}
@@ -384,7 +384,7 @@ function ProtocolInformationAccordion({
               </div>
 
               <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Notes</label>
+                  <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Notes</label>
                   <Input
                     placeholder="Additional observations"
                     value={protocol.notes || ""}

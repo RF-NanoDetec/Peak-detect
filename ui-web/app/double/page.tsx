@@ -11,7 +11,6 @@ import { useParamsStore } from "@/lib/stores/paramsStore"
 import { computePairMetrics, filterPairMetricsByIndices } from "@/components/double/metrics"
 import { DoublePeakPanel } from "@/components/double/DoublePeakPanel"
 import { DoublePeakScatter } from "@/components/double/DoublePeakScatter"
-import { ExportControl } from "@/components/shared/ExportControl"
 import type { DoublePeakThresholds } from "@/components/double/types"
 import type { PairMetrics } from "@/components/double/metrics"
 
@@ -75,15 +74,6 @@ export default function DoublePeakPage() {
 
   const hasData = fullMetrics.totalPairs > 0
 
-  const doublePeakParams = {
-    min_distance: thresholds.distance[0] / 1000,
-    max_distance: thresholds.distance[1] / 1000,
-    min_amp_ratio: thresholds.pairPromRatio[0],
-    max_amp_ratio: thresholds.pairPromRatio[1],
-    min_width_ratio: thresholds.pairWidthRatio[0],
-    max_width_ratio: thresholds.pairWidthRatio[1],
-  }
-
   return (
     <PageShell>
       <PageVisualization>
@@ -99,8 +89,8 @@ export default function DoublePeakPage() {
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="text-center space-y-4 max-w-md">
-              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <GitBranch className="h-8 w-8 text-primary" />
+              <div className="mx-auto w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
+                <GitBranch className="h-8 w-8 text-accent" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold">No Pair Data</h3>
@@ -129,7 +119,7 @@ export default function DoublePeakPage() {
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <CheckCircle className="h-4 w-4 text-accent" />
                     <CardTitle className="text-base">Analysis Ready</CardTitle>
                   </div>
                   <CardDescription>Pair metrics computed from detected peaks</CardDescription>
@@ -152,15 +142,11 @@ export default function DoublePeakPage() {
                 thresholds={thresholds}
                 onThresholdsChange={setThresholds}
               />
-              <ExportControl 
-                hasDoublePeakAnalysis={true} 
-                doublePeakParams={doublePeakParams}
-              />
             </>
           ) : (
             <div className="text-center py-8 space-y-3">
-              <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <GitBranch className="h-6 w-6 text-primary" />
+              <div className="mx-auto w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+                <GitBranch className="h-6 w-6 text-accent" />
               </div>
               <div>
                 <h3 className="text-sm font-semibold">No Peak Data</h3>

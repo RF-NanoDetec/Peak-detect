@@ -9,6 +9,7 @@ import { apiClient } from "@/lib/apiClient"
 import type { PairMetrics } from "./metrics"
 import type { DoublePeakThresholds } from "./types"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
+import { useTheme } from "@/hooks/use-theme"
 
 interface DoublePeakPanelProps {
   metrics: PairMetrics
@@ -38,6 +39,11 @@ export function DoublePeakPanel({
 }: DoublePeakPanelProps) {
   const [histograms, setHistograms] = useState<DoublePeakHistograms | null>(null)
   const [loading, setLoading] = useState(false)
+  const { theme } = useTheme()
+  const isDark = theme === "dark"
+  
+  // Accent color for threshold lines
+  const thresholdColor = isDark ? "#fb923c" : "#f97316"
 
   // Fetch histograms when metrics change
   useEffect(() => {
@@ -92,34 +98,34 @@ export function DoublePeakPanel({
 
   const distanceLines = useMemo(
     () => [
-      { value: thresholds.distance[0], color: "#ef4444", label: "Min" },
-      { value: thresholds.distance[1], color: "#ef4444", label: "Max" },
+      { value: thresholds.distance[0], color: thresholdColor, label: "Min" },
+      { value: thresholds.distance[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.distance[0], thresholds.distance[1]]
+    [thresholds.distance[0], thresholds.distance[1], thresholdColor]
   )
 
   const pairPromRatioLines = useMemo(
     () => [
-      { value: thresholds.pairPromRatio[0], color: "#ef4444", label: "Min" },
-      { value: thresholds.pairPromRatio[1], color: "#ef4444", label: "Max" },
+      { value: thresholds.pairPromRatio[0], color: thresholdColor, label: "Min" },
+      { value: thresholds.pairPromRatio[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.pairPromRatio[0], thresholds.pairPromRatio[1]]
+    [thresholds.pairPromRatio[0], thresholds.pairPromRatio[1], thresholdColor]
   )
 
   const pairWidthRatioLines = useMemo(
     () => [
-      { value: thresholds.pairWidthRatio[0], color: "#ef4444", label: "Min" },
-      { value: thresholds.pairWidthRatio[1], color: "#ef4444", label: "Max" },
+      { value: thresholds.pairWidthRatio[0], color: thresholdColor, label: "Min" },
+      { value: thresholds.pairWidthRatio[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.pairWidthRatio[0], thresholds.pairWidthRatio[1]]
+    [thresholds.pairWidthRatio[0], thresholds.pairWidthRatio[1], thresholdColor]
   )
 
   const promOverAmpLines = useMemo(
     () => [
-      { value: thresholds.promOverAmp[0], color: "#ef4444", label: "Min" },
-      { value: thresholds.promOverAmp[1], color: "#ef4444", label: "Max" },
+      { value: thresholds.promOverAmp[0], color: thresholdColor, label: "Min" },
+      { value: thresholds.promOverAmp[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.promOverAmp[0], thresholds.promOverAmp[1]]
+    [thresholds.promOverAmp[0], thresholds.promOverAmp[1], thresholdColor]
   )
 
   return (

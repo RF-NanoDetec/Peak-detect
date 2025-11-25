@@ -1,8 +1,8 @@
-import { BarChart3 } from "lucide-react"
-import { ExportControl } from "@/components/shared/ExportControl"
+import { BarChart3, Download } from "lucide-react"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Separator } from "@/components/ui/separator"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 
 interface AnalyzeControlsProps {
   hasResults: boolean
@@ -35,13 +35,13 @@ export function AnalyzeControls({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">Analyze & Export</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Analyze Results</h2>
         <p className="text-sm text-muted-foreground">
-          Time series analysis and data export
+          Time series analysis of detected peaks
         </p>
       </div>
 
-      <Accordion type="multiple" defaultValue={["analysis", "export"]} className="w-full">
+      <Accordion type="multiple" defaultValue={["analysis"]} className="w-full">
         <AccordionItem value="analysis" className="border-none">
            <AccordionTrigger className="py-2 hover:no-underline">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -96,20 +96,14 @@ export function AnalyzeControls({
              </div>
            </AccordionContent>
         </AccordionItem>
-
-        <Separator className="my-2" />
-
-        <AccordionItem value="export" className="border-none">
-           <AccordionTrigger className="py-2 hover:no-underline">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                Export Data
-              </div>
-           </AccordionTrigger>
-           <AccordionContent className="pt-2 pb-0">
-             <ExportControl />
-           </AccordionContent>
-        </AccordionItem>
       </Accordion>
+
+      <Button variant="outline" className="w-full" asChild>
+        <Link href="/export">
+          <Download className="h-4 w-4 mr-2" />
+          Export Data
+        </Link>
+      </Button>
     </div>
   )
 }

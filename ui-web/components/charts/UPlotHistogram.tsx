@@ -47,6 +47,25 @@ const SCALE_DISTRIBUTIONS = {
   ARCSINH: 4,
 } as const
 
+// Safe min/max for arrays - avoids stack overflow from spread operator with large arrays
+const safeArrayMin = (arr: number[]): number => {
+  if (arr.length === 0) return 0
+  let min = arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i]
+  }
+  return min
+}
+
+const safeArrayMax = (arr: number[]): number => {
+  if (arr.length === 0) return 0
+  let max = arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i]
+  }
+  return max
+}
+
 const defaultRange = (scaleType: AxisScaleType) =>
   scaleType === "linear" ? { min: 0, max: 100 } : { min: 0.1, max: 1000 }
 
@@ -68,9 +87,11 @@ export function UPlotHistogram({
   const [chartReady, setChartReady] = useState(false)
   const { theme } = useTheme()
   const isDark = theme === "dark"
+  const accentColor = isDark ? "#fb923c" : "#f97316"
+  const accentEdgeColor = isDark ? "#fdba74" : "#fbbf24"
 
-  const barColor = color || (isDark ? "#5b9bd5" : "#3b82f6")
-  const edgeColor = isDark ? "#3a7ba5" : "#2563eb"
+  const barColor = color || accentColor
+  const edgeColor = color ? color : accentEdgeColor
 
   useEffect(() => {
     setMounted(true)
@@ -116,8 +137,8 @@ export function UPlotHistogram({
       xScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
         // Get valid edges for range calculation
         if (validEdges.length >= 2) {
-          const minVal = Math.min(...validEdges)
-          const maxVal = Math.max(...validEdges)
+          const minVal = safeArrayMin(validEdges)
+          const maxVal = safeArrayMax(validEdges)
           if (minVal > 0 && maxVal > minVal) {
             const padding = 0.1
             return [minVal / (1 + padding), maxVal * (1 + padding)]
@@ -129,8 +150,8 @@ export function UPlotHistogram({
     } else {
       // For linear scale, we can set explicit min/max
       if (validEdges.length >= 2) {
-        const minVal = Math.min(...validEdges)
-        const maxVal = Math.max(...validEdges)
+        const minVal = safeArrayMin(validEdges)
+        const maxVal = safeArrayMax(validEdges)
         const range = maxVal - minVal
         const padding = range > 0 ? range * 0.05 : Math.abs(maxVal) * 0.05 || 1
         xScaleBase.min = Math.max(0, minVal - padding)
@@ -150,8 +171,8 @@ export function UPlotHistogram({
       yScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
         // Use valid counts for range calculation
         if (validCounts.length > 0) {
-          const minPositive = Math.min(...validCounts)
-          const maxPositive = Math.max(...validCounts)
+          const minPositive = safeArrayMin(validCounts)
+          const maxPositive = safeArrayMax(validCounts)
           if (minPositive > 0 && maxPositive > minPositive) {
             const effectiveMin = Math.max(1, minPositive * 0.5)
             const effectiveMax = Math.max(10, maxPositive * 1.5)
@@ -166,7 +187,7 @@ export function UPlotHistogram({
       yScaleBase.auto = false
       yScaleBase.min = 0
       if (validCounts.length > 0) {
-        const maxCount = Math.max(...validCounts)
+        const maxCount = safeArrayMax(validCounts)
         yScaleBase.max = Math.max(1, maxCount * 1.1)
       }
     }
@@ -183,20 +204,20 @@ export function UPlotHistogram({
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
           label: xLabel,
-          labelSize: 20,
-          font: "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
-          labelFont: "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif",
-          size: 50,
+          labelSize: 16,
+          font: "500 10px 'Inter', 'Segoe UI', system-ui, sans-serif",
+          labelFont: "500 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
+          size: 35,
           values: (_u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
         },
         {
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
           label: yLabel,
-          labelSize: 30,
-          font: "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
-          labelFont: "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif",
-          size: 60,
+          labelSize: 16,
+          font: "500 10px 'Inter', 'Segoe UI', system-ui, sans-serif",
+          labelFont: "500 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
+          size: 40,
           values: (_u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
         },
       ],
@@ -228,8 +249,10 @@ export function UPlotHistogram({
 
             ctx.save()
             ctx.lineWidth = 1
+            
+            // Use the main color for both fill and stroke, but vary opacity
+            ctx.strokeStyle = barColor
             ctx.fillStyle = barColor
-            ctx.strokeStyle = edgeColor
 
             for (let i = 0; i < xValues.length; i += 1) {
               const count = yValues[i]
@@ -273,7 +296,12 @@ export function UPlotHistogram({
               const barTop = Math.min(zeroPx, yPx)
 
               if (barHeight > 0) {
+                // Fill with opacity
+                ctx.globalAlpha = 0.4
                 ctx.fillRect(barLeft, barTop, barWidthPx, barHeight)
+                
+                // Stroke with full opacity
+                ctx.globalAlpha = 1.0
                 ctx.strokeRect(barLeft, barTop, barWidthPx, barHeight)
               }
             }
@@ -284,7 +312,7 @@ export function UPlotHistogram({
             if (verticalLines.length > 0) {
               ctx.save()
               verticalLines.forEach((line) => {
-                const { value, color: lineColor = "#ef4444", label } = line
+                const { value, color: lineColor = isDark ? "#fb923c" : "#f97316", label } = line
                 
                 // Skip if value is not in valid range for scale type
                 if (!Number.isFinite(value)) return

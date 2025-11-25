@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { BlockMath } from "react-katex"
+import { InlineMath } from "react-katex"
 import "katex/dist/katex.min.css"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
@@ -140,7 +140,7 @@ export function LoadControls({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <label className="text-xs font-medium text-muted-foreground">Dead-time Correction</label>
+                    <label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Dead-time Correction</label>
                     <p className="text-[10px] text-muted-foreground">Compensate for detector blindness</p>
                   </div>
                   <Switch
@@ -152,7 +152,7 @@ export function LoadControls({
                 {photonCorrection.applyCorrection && (
                   <div className="space-y-3 animate-in slide-in-from-top-2 fade-in duration-200 bg-muted/30 p-3 rounded-lg">
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">Dead time (ns)</label>
+                      <label className="text-xs font-mono tracking-widest text-muted-foreground">Dead time (ns)</label>
                       <Input
                         type="number"
                         value={photonCorrection.deadTimeNs}
@@ -162,15 +162,11 @@ export function LoadControls({
                       />
                     </div>
                     
-                    <div className="space-y-2">
-                      <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        Photon counters have a "dead time" <span className="font-mono">T_D</span> after each detection where they cannot detect new photons.
-                        This correction scales the measured rate <span className="font-mono">R</span> to the true rate using the formula:
-                      </p>
-                      <div className="text-xs text-muted-foreground bg-background p-2 rounded-md text-center border">
-                         <BlockMath math="\text{Rate}_{true} = \frac{\text{Rate}_{measured}}{1 - \text{Rate}_{measured} \times T_D}" />
-                      </div>
-                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Photon counters have a dead time <InlineMath math="T_D" /> after each detection where they cannot detect new photons. 
+                      This correction computes the true rate <InlineMath math="R_t" /> from the measured rate <InlineMath math="R_m" /> by 
+                      dividing <InlineMath math="R_m" /> by <InlineMath math="(1 - R_m \times T_D)" />.
+                    </p>
                   </div>
                 )}
               </div>

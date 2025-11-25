@@ -22,6 +22,7 @@ export type Series = {
   dash?: number[]
   bar?: boolean
   barWidth?: number
+  dataIndices?: number[] // Optional: specific indices to render (optimization for sparse data)
 }
 
 export type WidthSegment = {
@@ -85,6 +86,25 @@ function isPointInPolygon(x: number, y: number, polygon: { x: number; y: number 
 
 type TimeUnit = "min" | "s" | "ms"
 
+// Safe min/max for arrays - avoids stack overflow from spread operator with large arrays
+const safeArrayMin = (arr: number[]): number => {
+  if (arr.length === 0) return 0
+  let min = arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i]
+  }
+  return min
+}
+
+const safeArrayMax = (arr: number[]): number => {
+  if (arr.length === 0) return 0
+  let max = arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i]
+  }
+  return max
+}
+
 // Format x-axis ticks for time (input values are minutes)
 const formatTimeAxisTicks = (
   u: uPlot,
@@ -120,8 +140,8 @@ const formatTimeAxisTicks = (
   })
 
   const finiteVals = convertedVals.filter(v => Number.isFinite(v))
-  const minVal = finiteVals.length > 0 ? Math.min(...finiteVals) : 0
-  const maxVal = finiteVals.length > 0 ? Math.max(...finiteVals) : 0
+  const minVal = safeArrayMin(finiteVals)
+  const maxVal = safeArrayMax(finiteVals)
 
   // For milliseconds, determine decimal places based on step size to avoid duplicates
   const stepMs = stepMin * 60000
@@ -242,9 +262,14 @@ export function UPlotChart({
   const offsetInfoRef = useRef<{ offset: number; unit: TimeUnit; decimals?: number } | null>(null)
   const [width, setWidth] = useState<number>(800)
   const [mounted, setMounted] = useState(false)
-  const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number } | null>(null)
+  const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number; x0: number; x1: number; y: number } | null>(null)
+  const [hoveredPeak, setHoveredPeak] = useState<{ index: number; time: number; amplitude: number } | null>(null)
   const [hoveredDataPoint, setHoveredDataPoint] = useState<{ x: number; values: { label: string; value: number | null | undefined; color: string }[] } | null>(null)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
+  
+  // RAF-based throttling for cursor updates
+  const rafIdRef = useRef<number | null>(null)
+  const lastCursorUpdateRef = useRef<number>(0)
 
   // Refs for lasso state to avoid re-renders/re-initialization
   const lassoPathRef = useRef<{ x: number; y: number }[]>([])
@@ -463,6 +488,14 @@ export function UPlotChart({
   // Ensure component is mounted before rendering UPlot
   useEffect(() => {
     setMounted(true)
+    
+    // Cleanup RAF on unmount
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current)
+        rafIdRef.current = null
+      }
+    }
   }, [])
 
   // Handle responsive width
@@ -487,7 +520,8 @@ export function UPlotChart({
       points: s.points,
       pointSize: s.pointSize,
       bar: s.bar,
-      barWidth: s.barWidth
+      barWidth: s.barWidth,
+      dataIndices: s.dataIndices
     }))
   }, [series])
 
@@ -641,22 +675,61 @@ export function UPlotChart({
         ],
         setCursor: [
           (u: uPlot) => {
+            // RAF-based throttling to prevent excessive updates with large datasets
+            const now = performance.now()
+            if (now - lastCursorUpdateRef.current < 16) { // ~60fps max
+              if (!rafIdRef.current) {
+                rafIdRef.current = requestAnimationFrame(() => {
+                  rafIdRef.current = null
+                  // Re-trigger cursor processing on next frame
+                  if (uPlotInstanceRef.current) {
+                    const idx = uPlotInstanceRef.current.cursor.idx
+                    processCursorUpdate(uPlotInstanceRef.current, idx)
+                  }
+                })
+              }
+              return
+            }
+            lastCursorUpdateRef.current = now
+            
             const idx = u.cursor.idx
-            if (idx != null && idx >= 0) {
-              const xVal = u.data[0][idx]
-              const values = seriesConfig.map((s, i) => ({
-                label: s.label,
-                value: u.data[i + 1][idx],
-                color: s.color
-              })).filter(v => v.value != null && Number.isFinite(v.value))
+            processCursorUpdate(u, idx)
+            
+            function processCursorUpdate(uPlotInst: uPlot, cursorIdx: number | null | undefined) {
+              if (cursorIdx != null && cursorIdx >= 0) {
+                const xVal = uPlotInst.data[0][cursorIdx]
+                const values = seriesConfig.map((s, i) => ({
+                  label: s.label,
+                  value: uPlotInst.data[i + 1][cursorIdx],
+                  color: s.color
+                })).filter(v => v.value != null && Number.isFinite(v.value))
 
-              if (values.length > 0) {
-                setHoveredDataPoint({ x: xVal, values })
+                // Check if we're hovering near a peak point
+                const peakSeriesIdx = seriesConfig.findIndex(s => s.label === "Peaks" || s.points)
+                if (peakSeriesIdx >= 0) {
+                  const peakYVal = uPlotInst.data[peakSeriesIdx + 1][cursorIdx]
+                  if (peakYVal != null && Number.isFinite(peakYVal as number)) {
+                    setHoveredPeak({
+                      index: cursorIdx,
+                      time: xVal as number,
+                      amplitude: peakYVal as number
+                    })
+                  } else {
+                    setHoveredPeak(null)
+                  }
+                } else {
+                  setHoveredPeak(null)
+                }
+
+                if (values.length > 0) {
+                  setHoveredDataPoint({ x: xVal, values })
+                } else {
+                  setHoveredDataPoint(null)
+                }
               } else {
                 setHoveredDataPoint(null)
+                setHoveredPeak(null)
               }
-            } else {
-              setHoveredDataPoint(null)
             }
           }
         ],
@@ -762,8 +835,8 @@ export function UPlotChart({
                 }
 
                 if (allYValues.length > 0) {
-                  const yMin = Math.min(...allYValues)
-                  const yMax = Math.max(...allYValues)
+                  const yMin = safeArrayMin(allYValues)
+                  const yMax = safeArrayMax(allYValues)
                   const padding = (yMax - yMin) * 0.05
                   u.setScale("y", { min: yMin - padding, max: yMax + padding })
                 } else {
@@ -809,8 +882,14 @@ export function UPlotChart({
                   mouseX <= x1px + hoverPaddingX &&
                   Math.abs(mouseY - ypx) <= hoverThresholdY
                 ) {
-                  const widthValue = seg.width ?? (seg.x1 - seg.x0)
-                  setHoveredSegment({ index: i, width: widthValue })
+                  const widthValue = seg.width ?? ((seg.x1 - seg.x0) * 60 * 1000) // Convert to ms if not provided
+                  setHoveredSegment({ 
+                    index: i, 
+                    width: widthValue,
+                    x0: seg.x0,
+                    x1: seg.x1,
+                    y: seg.y
+                  })
                   found = true
                   break
                 }
@@ -825,6 +904,7 @@ export function UPlotChart({
               setHoveredSegment(null)
               setMousePos(null)
               setHoveredDataPoint(null)
+              setHoveredPeak(null)
             })
 
             over.style.cursor = "crosshair"
@@ -917,8 +997,9 @@ export function UPlotChart({
                 const isHovered = hoveredSegment?.index === idx
 
                 ctx.lineWidth = isHovered ? 3 : 2
-                const baseColor = isDark ? "#2dd4bf" : "#0d9488"
-                const hoverColor = isDark ? "#5eead4" : "#0f766e"
+                // Width segment colors - using accent orange
+                const baseColor = isDark ? "#fb923c" : "#f97316"
+                const hoverColor = isDark ? "#fdba74" : "#ea580c"
 
                 ctx.strokeStyle = isHovered ? hoverColor : baseColor
 
@@ -1022,7 +1103,7 @@ export function UPlotChart({
 
             if (lassoPath.length > 1) {
               ctx.save()
-              ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
+              ctx.strokeStyle = isDark ? "#fb923c" : "#f97316"  // accent orange
               ctx.lineWidth = 2
               ctx.setLineDash([5, 3])
               ctx.beginPath()
@@ -1041,6 +1122,10 @@ export function UPlotChart({
 
             // Draw glowing peaks for standard series (not customScatter)
             if (!customScatter) {
+              // Get visible index range from uPlot to optimize rendering
+              const iMin = u.idx ? u.idx[0] : 0
+              const iMax = u.idx ? u.idx[1] : (u.data[0] ? u.data[0].length - 1 : 0)
+
               seriesConfig.forEach((s, sIdx) => {
                 if (!s.points) return
                 const xVals = u.data[0] as number[]
@@ -1049,44 +1134,70 @@ export function UPlotChart({
 
                 ctx.save()
 
-                const xMin = u.bbox.left - 10
-                const xMax = u.bbox.left + u.bbox.width + 10
-                const yMin = u.bbox.top - 10
-                const yMax = u.bbox.top + u.bbox.height + 10
+                const xMinPx = u.bbox.left - 10
+                const xMaxPx = u.bbox.left + u.bbox.width + 10
+                const yMinPx = u.bbox.top - 10
+                const yMaxPx = u.bbox.top + u.bbox.height + 10
+
+                const drawPass = (isGlow: boolean) => {
+                  const size = isGlow ? 8 : (s.pointSize ?? 4)
+
+                  const renderPoint = (i: number) => {
+                    const xVal = xVals[i]
+                    const yVal = yVals[i]
+                    if (yVal == null || !Number.isFinite(yVal)) return
+
+                    const xPx = u.valToPos(xVal, "x", true)
+                    const yPx = u.valToPos(yVal, "y", true)
+
+                    if (xPx < xMinPx || xPx > xMaxPx || yPx < yMinPx || yPx > yMaxPx) return
+
+                    ctx.moveTo(xPx + size, yPx)
+                    ctx.arc(xPx, yPx, size, 0, 2 * Math.PI)
+                  }
+
+                  if (s.dataIndices) {
+                    // Optimization: Iterate only provided indices
+                    // Binary search to find start index in dataIndices that is >= iMin
+                    let left = 0
+                    let right = s.dataIndices.length - 1
+                    let startIdx = -1
+
+                    while (left <= right) {
+                      const mid = (left + right) >> 1
+                      if (s.dataIndices[mid] >= iMin) {
+                        startIdx = mid
+                        right = mid - 1
+                      } else {
+                        left = mid + 1
+                      }
+                    }
+
+                    if (startIdx !== -1) {
+                      for (let k = startIdx; k < s.dataIndices.length; k++) {
+                        const i = s.dataIndices[k]
+                        if (i > iMax) break
+                        renderPoint(i)
+                      }
+                    }
+                  } else {
+                    // Default: Iterate visible range
+                    for (let i = iMin; i <= iMax; i++) {
+                      renderPoint(i)
+                    }
+                  }
+                }
 
                 // Draw Glow (Halo)
                 ctx.beginPath()
-                for (let i = 0; i < xVals.length; i++) {
-                  const xVal = xVals[i]
-                  const yVal = yVals[i]
-                  if (yVal == null || !Number.isFinite(yVal)) continue
-
-                  const xPx = u.valToPos(xVal, "x", true)
-                  const yPx = u.valToPos(yVal, "y", true)
-
-                  if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue
-
-                  ctx.moveTo(xPx + 8, yPx)
-                  ctx.arc(xPx, yPx, 8, 0, 2 * Math.PI)
-                }
+                drawPass(true)
                 ctx.fillStyle = s.color
                 ctx.globalAlpha = 0.2
                 ctx.fill()
 
                 // Draw inner point (solid)
                 ctx.beginPath()
-                for (let i = 0; i < xVals.length; i++) {
-                  const xVal = xVals[i]
-                  const yVal = yVals[i]
-                  if (yVal == null || !Number.isFinite(yVal)) continue
-                  const xPx = u.valToPos(xVal, "x", true)
-                  const yPx = u.valToPos(yVal, "y", true)
-                  if (xPx < xMin || xPx > xMax || yPx < yMin || yPx > yMax) continue
-
-                  const size = s.pointSize ?? 4
-                  ctx.moveTo(xPx + size, yPx)
-                  ctx.arc(xPx, yPx, size, 0, 2 * Math.PI)
-                }
+                drawPass(false)
                 ctx.globalAlpha = 1.0
                 ctx.fillStyle = s.color
                 ctx.fill()
@@ -1103,6 +1214,10 @@ export function UPlotChart({
               ctx.beginPath();
               ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
               ctx.clip();
+
+              // Get visible index range from uPlot to optimize rendering
+              const iMin = u.idx ? u.idx[0] : 0
+              const iMax = u.idx ? u.idx[1] : currentXData.length - 1
 
               const filteredSet = filteredSetRef.current
               const selectedSet = selectedSetRef.current
@@ -1129,7 +1244,7 @@ export function UPlotChart({
               }
               const yValues = u.data[seriesIdx + 1] as number[]
 
-              for (let i = 0; i < currentXData.length; i++) {
+              for (let i = iMin; i <= iMax; i++) {
                 const xVal = currentXData[i]
                 const yVal = yValues[i]
                 if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue
@@ -1174,8 +1289,8 @@ export function UPlotChart({
               }
 
               if (hasSelected) {
-                ctx.fillStyle = isDark ? "rgba(96, 165, 250, 0.8)" : "rgba(59, 130, 246, 0.8)"
-                ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6"
+                ctx.fillStyle = isDark ? "rgba(251, 146, 60, 0.8)" : "rgba(249, 115, 22, 0.8)"  // accent orange
+                ctx.strokeStyle = isDark ? "#fb923c" : "#f97316"
                 ctx.lineWidth = 2
                 ctx.fill(selectedPath)
                 ctx.stroke(selectedPath)
@@ -1258,22 +1373,48 @@ export function UPlotChart({
         </Button>
       </div>
 
-      {/* Tooltip for peak width - styled to match legend (bottom) instead of top left float */}
-      {hoveredSegment && mousePos && (
+      {/* Unified hover info bar at the bottom - consistent styling */}
+      {(hoveredSegment || hoveredPeak) && (
         <div
-          className="pointer-events-none absolute z-50 px-2 py-1 text-xs font-medium rounded shadow-lg border"
+          className="absolute left-0 right-0 z-40 px-3 py-2 border-t flex items-center gap-4 text-xs"
           style={{
-            left: mousePos.x + 10,
-            top: mousePos.y - 30,
-            backgroundColor: isDark ? "rgba(30, 41, 59, 0.95)" : "rgba(255, 255, 255, 0.95)",
-            color: isDark ? "rgba(248, 250, 252, 0.95)" : "rgba(15, 23, 42, 0.9)",
-            borderColor: isDark ? "rgba(71, 85, 105, 0.5)" : "rgba(203, 213, 225, 0.8)",
+            bottom: 0,
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255, 255, 255, 0.97)",
+            borderColor: isDark ? "rgba(71, 85, 105, 0.4)" : "rgba(203, 213, 225, 0.6)",
+            backdropFilter: "blur(8px)",
           }}
         >
-          <div className="whitespace-nowrap flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-teal-500"></div>
-            Peak width: {hoveredSegment.width.toFixed(3)} ms
-          </div>
+          {/* Peak Width Info */}
+          {hoveredSegment && (
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: isDark ? "#fb923c" : "#f97316" }}></div>
+              <span className="text-muted-foreground">Peak Width:</span>
+              <span className="font-semibold" style={{ color: isDark ? "#fdba74" : "#ea580c" }}>
+                {hoveredSegment.width.toFixed(3)} ms
+              </span>
+              <span className="text-muted-foreground/60 ml-1">
+                ({(hoveredSegment.x0 * 60).toFixed(2)}s – {(hoveredSegment.x1 * 60).toFixed(2)}s)
+              </span>
+            </div>
+          )}
+          
+          {/* Peak Point Info */}
+          {hoveredPeak && !hoveredSegment && (
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: isDark ? "#f87171" : "#ef4444" }}></div>
+              <span className="text-muted-foreground">Peak:</span>
+              <span className="font-semibold" style={{ color: isDark ? "#f87171" : "#ef4444" }}>
+                {hoveredPeak.amplitude.toFixed(2)}
+              </span>
+              <span className="text-muted-foreground/80">at</span>
+              <span className="font-medium">
+                {hoveredPeak.time >= 1 
+                  ? `${hoveredPeak.time.toFixed(3)} min`
+                  : `${(hoveredPeak.time * 60).toFixed(2)} s`
+                }
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

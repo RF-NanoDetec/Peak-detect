@@ -33,6 +33,7 @@ export function DoublePeakScatter({
   const [filteredIndices, setFilteredIndices] = useState<number[]>([])
 
   const pointColor = isDark ? "rgba(203, 213, 225, 0.6)" : "rgba(15, 23, 42, 0.6)"
+  const thresholdColor = isDark ? "#fb923c" : "#f97316"
   
   // Calculate filtered indices based on thresholds and lasso selection
   useEffect(() => {
@@ -67,10 +68,10 @@ export function DoublePeakScatter({
   // Horizontal lines for distance thresholds
   const hLines = useMemo(
     () => [
-      { y: thresholds.distance[0], color: "#ef4444", dash: [5, 3], label: "Min" },
-      { y: thresholds.distance[1], color: "#ef4444", dash: [5, 3], label: "Max" },
+      { y: thresholds.distance[0], color: thresholdColor, dash: [5, 3], label: "Min" },
+      { y: thresholds.distance[1], color: thresholdColor, dash: [5, 3], label: "Max" },
     ],
-    [thresholds.distance[0], thresholds.distance[1]]
+    [thresholds.distance[0], thresholds.distance[1], thresholdColor]
   )
 
   const handleLassoComplete = useCallback(
@@ -154,13 +155,13 @@ export function DoublePeakScatter({
             <p className="text-muted-foreground">
               Total pairs: <span className="font-medium text-foreground">{metrics.totalPairs}</span>
               {" • "}
-              Filtered: <span className={`font-medium ${filteredIndices.length < metrics.totalPairs ? "text-primary" : "text-foreground"}`}>
+              Filtered: <span className={`font-medium ${filteredIndices.length < metrics.totalPairs ? "text-accent" : "text-foreground"}`}>
                 {filteredIndices.length}
               </span>
               {selectedIndices.length > 0 && (
                 <>
                   {" • "}
-                  Lasso: <span className="font-medium text-blue-500">{selectedIndices.length}</span>
+                  Lasso: <span className="font-medium text-accent">{selectedIndices.length}</span>
                 </>
               )}
             </p>

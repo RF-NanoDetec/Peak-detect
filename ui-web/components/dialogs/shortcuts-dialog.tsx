@@ -25,7 +25,7 @@ export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps) {
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <div className="flex items-center gap-2">
-                        <Keyboard className="h-5 w-5 text-primary" />
+                        <Keyboard className="h-5 w-5 text-accent" />
                         <DialogTitle>Keyboard Shortcuts</DialogTitle>
                     </div>
                     <DialogDescription>

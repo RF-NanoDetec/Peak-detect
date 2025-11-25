@@ -17,7 +17,7 @@ export default function AnalyzePage() {
 
   const hasResults = !!(detectionResults && previewData)
   const [binWidthSeconds, setBinWidthSeconds] = useState<number>(10)
-  const [rollingMeanWindow, setRollingMeanWindow] = useState<number>(10)
+  const [rollingMeanWindow, setRollingMeanWindow] = useState<number>(100)
 
   return (
     <PageShell>

@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
 import { UPlotChart } from "./UPlotChart"
 import { UPlotHistogram } from "./UPlotHistogram"
+import { HistogramCard } from "./HistogramCard"
 import { useTheme } from "@/hooks/use-theme"
 import type { DataPreviewResponse } from "@/lib/types"
 import { parseResultBinary } from "@/lib/binaryParsers"
@@ -80,16 +81,6 @@ type HistogramMetricKey = "amplitude" | "width" | "interval"
 type AxisScaleOption = "linear" | "log"
 type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
-const histogramScaleOptions: { label: string; value: AxisScaleOption }[] = [
-  { label: "Lin", value: "linear" },
-  { label: "Log", value: "log" },
-]
-
-const histogramYScaleOptions: { label: string; value: "linear" | "log" }[] = [
-  { label: "Lin", value: "linear" },
-  { label: "Log", value: "log" },
-]
-
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
 
 export function PreprocessingChart({
@@ -162,7 +153,7 @@ export function PreprocessingChart({
     y: Float32Array
   } | null>(null)
 
-  const [fullRes, setFullRes] = useState<boolean>(false)
+  const [fullRes, setFullRes] = useState<boolean>(true)
   const [zoomRange, setZoomRange] = useState<WorkerRange>(null)
   const [dynamicDownsampling, setDynamicDownsampling] = useState<boolean>(true)
   const [workerReady, setWorkerReady] = useState(false)
@@ -174,11 +165,47 @@ export function PreprocessingChart({
   const zoomRangeRef = useRef<WorkerRange>(null)
   const latestRequestIdRef = useRef<string | null>(null)
   const requestCounterRef = useRef(0)
+  const chartContainerRef = useRef<HTMLDivElement | null>(null)
+  const [chartWidth, setChartWidth] = useState<number>(800)
   const { theme } = useTheme()
   const isDark = theme === "dark"
+  const accentColor = isDark ? "#fb923c" : "#f97316"
+  // Histogram colors: distinct, visually differentiated palette
+  const histogramColors = {
+    amplitude: isDark ? "#f87171" : "#ef4444",  // Red/coral for prominence (matches peak dots)
+    width: isDark ? "#2dd4bf" : "#14b8a6",      // Teal/green for peak width
+    interval: isDark ? "#a78bfa" : "#8b5cf6",   // Purple/violet for peak distance
+  }
 
-  const TARGET_POINTS = 10000 // Target number of points to display
+  // Dynamic target points based on chart width for responsive performance
+  // ~2 points per pixel, capped between 1000-2500 for smooth interaction
+  const TARGET_POINTS = useMemo(() => {
+    const calculated = Math.round(chartWidth * 2)
+    return Math.min(Math.max(calculated, 1000), 2500)
+  }, [chartWidth])
   const ZOOM_THRESHOLD = 0.1
+
+  // Track chart container width for responsive point targeting
+  useEffect(() => {
+    const container = chartContainerRef.current
+    if (!container) return
+
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) {
+        const w = Math.floor(entry.contentRect.width)
+        setChartWidth((prev) => {
+          // Only update if change is significant (>50px) to avoid excessive re-renders
+          if (Math.abs(prev - w) > 50) {
+            return w
+          }
+          return prev
+        })
+      }
+    })
+    ro.observe(container)
+    return () => ro.disconnect()
+  }, [])
 
   const resetZoom = useCallback(() => {
     setZoomRange(null)
@@ -502,9 +529,10 @@ export function PreprocessingChart({
       clearTimeout(debounceTimerRef.current)
     }
 
+    // Faster debounce (50ms) for smoother interaction during zoom/pan
     debounceTimerRef.current = setTimeout(() => {
       requestRange(range)
-    }, 100)
+    }, 50)
   }, [requestRange, workerReady])
 
   // Cleanup debounce timer
@@ -516,6 +544,15 @@ export function PreprocessingChart({
       }
     }
   }, [])
+
+  // Re-request data when TARGET_POINTS changes (due to resize)
+  useEffect(() => {
+    if (workerReady && workerRef.current) {
+      const currentRange = zoomRangeRef.current ?? zoomRange ?? null
+      requestRange(currentRange)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [TARGET_POINTS])
 
   const cleanNumbers = (values: number[] = []) => values.filter((v) => Number.isFinite(v))
   const mean = (values: number[]) => {
@@ -606,11 +643,14 @@ export function PreprocessingChart({
       interval: [],
     }
 
+    // Accent color for threshold lines
+    const thresholdColor = isDark ? "#fb923c" : "#f97316"
+    
     // Amplitude histogram: prominence threshold
     if (prominenceThreshold != null && Number.isFinite(prominenceThreshold)) {
       lines.amplitude.push({
         value: prominenceThreshold,
-        color: "#ef4444",
+        color: thresholdColor,
         label: "Threshold",
       })
     }
@@ -624,7 +664,7 @@ export function PreprocessingChart({
       if (Number.isFinite(minWidth)) {
         lines.width.push({
           value: minWidth,
-          color: "#ef4444",
+          color: thresholdColor,
           label: "Min",
         })
       }
@@ -632,7 +672,7 @@ export function PreprocessingChart({
       if (Number.isFinite(maxWidth)) {
         lines.width.push({
           value: maxWidth,
-          color: "#ef4444",
+          color: thresholdColor,
           label: "Max",
         })
       }
@@ -643,13 +683,13 @@ export function PreprocessingChart({
       const distanceMs = distance * timeResolution * 1000
       lines.interval.push({
         value: distanceMs,
-        color: "#ef4444",
+        color: thresholdColor,
         label: "Min Distance",
       })
     }
 
     return lines
-  }, [prominenceThreshold, distance, widthMs, timeResolution])
+  }, [prominenceThreshold, distance, widthMs, timeResolution, isDark])
 
   // Fetch histogram data when peaks are detected
   useEffect(() => {
@@ -760,49 +800,6 @@ export function PreprocessingChart({
     return segments
   }, [widthSegmentsState])
 
-  const axisButtonClass = (active: boolean) =>
-    `px-1.5 py-0.5 rounded border text-[9px] font-medium transition-colors ${active
-      ? "bg-primary border-primary text-primary-foreground shadow-sm"
-      : "border-border/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/40"
-    }`
-
-  const renderScaleControls = useCallback((metric: HistogramMetricKey) => {
-    const metricConfig = histogramScales[metric]
-    return (
-      <div className="absolute inset-0 pointer-events-none">
-        {/* Controls container with pointer-events-auto */}
-        <div className="relative w-full h-full">
-          {/* X scale controls – bottom-right */}
-          <div className="absolute bottom-8 right-2 flex items-center gap-1 pointer-events-auto bg-background/80 backdrop-blur-sm rounded border shadow-sm p-0.5">
-            {histogramScaleOptions.map((option) => (
-              <button
-                key={`${metric}-${option.value}`}
-                type="button"
-                className={axisButtonClass(metricConfig.xScale === option.value)}
-                onClick={() => updateXAxisScale(metric, option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          {/* Y scale controls – top-left */}
-          <div className="absolute top-2 left-14 flex items-center gap-1 pointer-events-auto bg-background/80 backdrop-blur-sm rounded border shadow-sm p-0.5">
-            {histogramYScaleOptions.map((option) => (
-              <button
-                key={`${metric}-y-${option.value}`}
-                type="button"
-                className={axisButtonClass(metricConfig.yScale === option.value)}
-                onClick={() => updateYAxisScale(metric, option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }, [histogramScales, updateXAxisScale, updateYAxisScale])
-
   // Recalculate series when data or peaks change
   // NOTE: Must be called before any early returns to satisfy Rules of Hooks
   const series = useMemo(() => {
@@ -815,7 +812,7 @@ export function PreprocessingChart({
       },
       ...(yFiltered ? [{
         label: "Filtered",
-        color: isDark ? "#60a5fa" : "#3b82f6",
+        color: isDark ? "rgba(220, 220, 220, 0.9)" : "rgba(40, 40, 40, 0.85)",
         width: 1.2,
         data: yFiltered,
       }] : []),
@@ -873,7 +870,7 @@ export function PreprocessingChart({
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-accent" />
           <p className="text-sm text-muted-foreground">Loading data...</p>
         </div>
       </div>
@@ -899,68 +896,43 @@ export function PreprocessingChart({
   }
 
   return (
-    <div className={`flex flex-col h-full w-full ${className}`} style={{ minHeight: 0 }}>
+    <div className={`flex flex-col w-full ${className}`}>
       {/* Dataset info */}
-      <div className="px-8 pt-6 pb-2 flex-shrink-0">
+      <div className="px-4 lg:px-8 pt-4 lg:pt-6 pb-2 shrink-0">
         {info && (
-          <>
-            <p className="text-[11px] text-muted-foreground mb-1">
-              {info.original_points?.toLocaleString()} points
-              {info.displayed_points && (
-                <> • displaying {info.displayed_points.toLocaleString()}</>
-              )}
-              {dynamicDownsampling && fullRes && zoomRange && (
-                <> • zoomed: {formatZoomRange(zoomRange)}</>
-              )}
-              {" • "}
-              <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
-            </p>
-            {widthSegments && widthSegments.length > 0 && (
-              <p className="text-[10px] text-muted-foreground flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-teal-500"></span>
-                <span>Teal bars: peak width (ms). Hover a bar to see the width.</span>
-              </p>
+          <p className="text-[11px] text-muted-foreground mb-1">
+            {info.original_points?.toLocaleString()} points
+            {info.displayed_points && (
+              <> • displaying {info.displayed_points.toLocaleString()}</>
             )}
-          </>
+            {info.decimated && (
+              <> <span className="text-muted-foreground/50">(target: {TARGET_POINTS.toLocaleString()})</span></>
+            )}
+            {dynamicDownsampling && fullRes && zoomRange && (
+              <> • zoomed: {formatZoomRange(zoomRange)}</>
+            )}
+            {" • "}
+            <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
+          </p>
         )}
         {/* Toggle buttons below info text, aligned left */}
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <Button
-            variant={fullRes ? "default" : "outline"}
+            variant={fullRes ? "outline" : "default"}
             size="sm"
             onClick={() => setFullRes(!fullRes)}
             disabled={loading}
             className="text-[11px] h-7 px-3 whitespace-nowrap"
           >
-            {fullRes ? "✓ Full Resolution" : "Load Full Resolution"}
+            {fullRes ? "Reduce Resolution (Preview)" : "Load Full Resolution"}
           </Button>
-          {fullRes && (
-            <Button
-              variant={dynamicDownsampling ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                const enabled = !dynamicDownsampling
-                setDynamicDownsampling(enabled)
-                if (!enabled) {
-                  resetZoom()
-                  requestRange(null)
-                } else {
-                  requestRange(zoomRange)
-                }
-              }}
-              disabled={loading}
-              className="text-[11px] h-7 px-3 whitespace-nowrap"
-            >
-              {dynamicDownsampling ? "✓ Dynamic Downsampling" : "Dynamic Downsampling"}
-            </Button>
-          )}
         </div>
       </div>
 
       {/* Chart and Statistics side-by-side */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 px-4 pb-6 min-w-0" style={{ minHeight: 0 }}>
+      <div className="flex flex-col xl:flex-row gap-4 px-4 pb-6 min-w-0">
         {/* uPlot chart */}
-        <div className="flex-1 min-w-0" style={{ minHeight: 0 }}>
+        <div ref={chartContainerRef} className="flex-1 min-w-0" style={{ minWidth: 300 }}>
           <UPlotChart
             xData={xData}
             series={series}
@@ -977,9 +949,9 @@ export function PreprocessingChart({
           />
         </div>
 
-        {/* Peak Statistics - Vertical box on the right */}
+        {/* Peak Statistics - Vertical box on the right, stacks below chart on smaller screens */}
         {summary && (
-          <div className="w-full lg:w-[220px] flex-shrink-0 min-w-0">
+          <div className="w-full xl:w-[200px] flex-shrink-0 min-w-0">
             <div className="rounded-lg border bg-card/60 shadow-sm h-full">
               <div className="flex items-center justify-between border-b px-3 py-2">
                 <div className="truncate">
@@ -1032,124 +1004,87 @@ export function PreprocessingChart({
       </div>
 
       {/* Histograms */}
-      <div className="px-6 pb-6 flex-shrink-0">
+      <div className="px-4 lg:px-6 pb-6 space-y-4">
         {peakAmplitudes.length > 0 && (
-          <div className="rounded-xl border bg-card shadow-sm">
-            <div className="flex items-center justify-between border-b px-4 py-3">
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <p className="text-base font-semibold">Peak Distributions</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Statistical analysis of detected peaks
-                </p>
+                <h3 className="text-base font-semibold">Peak Distributions</h3>
+                <p className="text-xs text-muted-foreground">Statistical analysis of detected peaks</p>
+              </div>
+              <div className="flex items-center gap-3 bg-muted/30 px-3 py-1.5 rounded-md border self-start sm:self-auto">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Bins</span>
+                <input
+                  type="range"
+                  min={20}
+                  max={200}
+                  step={10}
+                  value={histogramConfig.binCount}
+                  onChange={(event) => updateBinCount(Number(event.target.value))}
+                  className="w-24 h-1.5 rounded-lg cursor-pointer accent-accent"
+                  style={{ accentColor: accentColor }}
+                />
+                <span className="text-xs font-mono w-6 text-right">{histogramConfig.binCount}</span>
               </div>
             </div>
-            <div className="p-3">
-              <div className="mb-3 bg-muted/10 rounded-lg p-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium text-foreground">Bin Count</span>
-                  <input
-                    type="range"
-                    min={20}
-                    max={200}
-                    step={10}
-                    value={histogramConfig.binCount}
-                    onChange={(event) => updateBinCount(Number(event.target.value))}
-                    className="flex-1 min-w-[140px] accent-primary/80 h-1.5 rounded-lg cursor-pointer"
-                  />
-                  <span className="text-xs text-primary font-semibold w-10 text-right">{histogramConfig.binCount}</span>
+
+            {histogramLoading ? (
+              <div className="flex items-center justify-center py-12 border rounded-xl bg-card/50">
+                <div className="text-center space-y-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-accent mx-auto" />
+                  <p className="text-sm text-muted-foreground">Calculating distributions...</p>
                 </div>
               </div>
-              {histogramLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center space-y-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-                    <p className="text-sm text-muted-foreground">Calculating distributions...</p>
-                  </div>
-                </div>
-              ) : histogramData ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {/* Prominence Histogram (was Amplitude) */}
-                  <div className="flex flex-col space-y-2">
-                    <p className="text-sm font-medium text-center">Prominence</p>
-                    {histogramData.amplitude && histogramData.amplitude.bins && histogramData.amplitude.bins.length > 0 ? (
-                      <div className="relative border rounded-lg p-2 bg-card">
-                        <UPlotHistogram
-                          data={histogramData.amplitude}
-                          xLabel="Prominence"
-                          yLabel="Count"
-                          color={isDark ? "#5b9bd5" : "#3b82f6"}
-                          xScaleType={histogramScales.amplitude.xScale}
-                          yScaleType={histogramScales.amplitude.yScale}
-                          height={220}
-                          className="w-full"
-                          verticalLines={histogramVerticalLines.amplitude}
-                        />
-                        {renderScaleControls("amplitude")}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
-                        <p className="text-xs text-muted-foreground">No prominence data</p>
-                      </div>
-                    )}
-                  </div>
+            ) : histogramData ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Prominence Histogram */}
+                <HistogramCard
+                  title="Prominence"
+                  data={histogramData.amplitude}
+                  color={histogramColors.amplitude}
+                  xLabel="Prominence"
+                  yLabel="Count"
+                  xScale={histogramScales.amplitude.xScale}
+                  yScale={histogramScales.amplitude.yScale}
+                  onXScaleChange={(val) => updateXAxisScale("amplitude", val)}
+                  onYScaleChange={(val) => updateYAxisScale("amplitude", val)}
+                  verticalLines={histogramVerticalLines.amplitude}
+                />
 
-                  {/* Width Histogram */}
-                  <div className="flex flex-col space-y-2">
-                    <p className="text-sm font-medium text-center">Peak Width</p>
-                    {histogramData.width && histogramData.width.bins && histogramData.width.bins.length > 0 ? (
-                      <div className="relative border rounded-lg p-2 bg-card">
-                        <UPlotHistogram
-                          data={histogramData.width}
-                          xLabel="Width (ms)"
-                          yLabel="Count"
-                          color={isDark ? "#ff8c42" : "#f97316"}
-                          xScaleType={histogramScales.width.xScale}
-                          yScaleType={histogramScales.width.yScale}
-                          height={220}
-                          className="w-full"
-                          verticalLines={histogramVerticalLines.width}
-                        />
-                        {renderScaleControls("width")}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
-                        <p className="text-xs text-muted-foreground">No width data</p>
-                      </div>
-                    )}
-                  </div>
+                {/* Width Histogram */}
+                <HistogramCard
+                  title="Peak Width"
+                  data={histogramData.width}
+                  color={histogramColors.width}
+                  xLabel="Width (ms)"
+                  yLabel="Count"
+                  xScale={histogramScales.width.xScale}
+                  yScale={histogramScales.width.yScale}
+                  onXScaleChange={(val) => updateXAxisScale("width", val)}
+                  onYScaleChange={(val) => updateYAxisScale("width", val)}
+                  verticalLines={histogramVerticalLines.width}
+                />
 
-                  {/* Interval Histogram */}
-                  <div className="flex flex-col space-y-2">
-                    <p className="text-sm font-medium text-center">Peak Distance</p>
-                    {histogramData.interval && histogramData.interval.bins && histogramData.interval.bins.length > 0 ? (
-                      <div className="relative border rounded-lg p-2 bg-card">
-                        <UPlotHistogram
-                          data={histogramData.interval}
-                          xLabel="Distance Between Peaks (ms)"
-                          yLabel="Count"
-                          color={isDark ? "#4caf50" : "#22c55e"}
-                          xScaleType={histogramScales.interval.xScale}
-                          yScaleType={histogramScales.interval.yScale}
-                          height={220}
-                          className="w-full"
-                          verticalLines={histogramVerticalLines.interval}
-                        />
-                        {renderScaleControls("interval")}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center h-[220px] border rounded-lg bg-muted/20">
-                        <p className="text-xs text-muted-foreground">No interval data</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="py-12 text-sm text-muted-foreground text-center">
-                  <p>Generating histograms...</p>
-                </div>
-              )}
-            </div>
-          </div>
+                {/* Interval Histogram */}
+                <HistogramCard
+                  title="Peak Distance"
+                  data={histogramData.interval}
+                  color={histogramColors.interval}
+                  xLabel="Distance (ms)"
+                  yLabel="Count"
+                  xScale={histogramScales.interval.xScale}
+                  yScale={histogramScales.interval.yScale}
+                  onXScaleChange={(val) => updateXAxisScale("interval", val)}
+                  onYScaleChange={(val) => updateYAxisScale("interval", val)}
+                  verticalLines={histogramVerticalLines.interval}
+                />
+              </div>
+            ) : (
+              <div className="py-12 text-sm text-muted-foreground text-center border rounded-xl bg-card/50">
+                <p>Generating histograms...</p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

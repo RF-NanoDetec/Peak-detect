@@ -12,7 +12,7 @@ export function InfoTooltip({ content }: InfoTooltipProps) {
     <TooltipProvider>
       <Tooltip delayDuration={300}>
         <TooltipTrigger asChild>
-          <Info className="h-3.5 w-3.5 text-muted-foreground/70 hover:text-primary cursor-help transition-colors inline-block ml-1.5 translate-y-[2px]" />
+          <Info className="h-3.5 w-3.5 text-muted-foreground/70 hover:text-accent cursor-help transition-colors inline-block ml-1.5 translate-y-[2px]" />
         </TooltipTrigger>
         <TooltipContent className="max-w-[300px] text-xs leading-relaxed">
           <p>{content}</p>

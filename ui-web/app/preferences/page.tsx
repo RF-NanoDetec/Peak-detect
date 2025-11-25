@@ -14,8 +14,8 @@ export default function PreferencesPage() {
       <PageVisualization>
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-4 max-w-md">
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <Settings className="h-8 w-8 text-primary" />
+            <div className="mx-auto w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
+              <Settings className="h-8 w-8 text-accent" />
             </div>
             <div>
               <h3 className="text-lg font-semibold">Application Settings</h3>
@@ -56,13 +56,6 @@ export default function PreferencesPage() {
                 >
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Density</label>
-                <select className="w-full px-3 py-2 rounded-md border bg-background text-sm">
-                  <option>Comfortable</option>
-                  <option>Compact</option>
                 </select>
               </div>
             </CardContent>

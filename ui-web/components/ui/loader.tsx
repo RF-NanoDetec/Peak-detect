@@ -25,7 +25,7 @@ export function Loader({ className, size = "md", text }: LoaderProps) {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="text-primary animate-draw"
+                    className="text-accent animate-draw"
                     style={{
                         strokeDasharray: 100,
                     }}
