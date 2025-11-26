@@ -2,11 +2,11 @@ import { BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { AnalyzeTimeSeries } from "@/components/charts/AnalyzeTimeSeries"
-import type { DetectionResults } from "@/lib/stores/resultsStore" // Or wherever types are
+import type { DetectPeaksResponse } from "@/lib/types"
 
 interface AnalyzeViewProps {
   hasResults: boolean
-  detectionResults: DetectionResults | null
+  detectionResults: DetectPeaksResponse | null
   params: any
   binWidthSeconds: number
   rollingMeanWindow: number

@@ -10,6 +10,18 @@ import { Button } from "@/components/ui/button"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
 
+// Cleanup helper to properly destroy uPlot instance and prevent memory leaks
+const cleanupUPlotInstance = (instanceRef: React.MutableRefObject<uPlot | null>) => {
+  if (instanceRef.current) {
+    try {
+      instanceRef.current.destroy()
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    instanceRef.current = null
+  }
+}
+
 interface HistogramData {
   bins: number[]
   counts: number[]
@@ -69,6 +81,40 @@ const safeArrayMax = (arr: number[]): number => {
 const defaultRange = (scaleType: AxisScaleType) =>
   scaleType === "linear" ? { min: 0, max: 100 } : { min: 0.1, max: 1000 }
 
+// Safe log axis splits function that limits the number of splits to prevent RangeError
+// uPlot's default logAxisSplits can create too many elements when the range spans many orders of magnitude
+const safeLogAxisSplits = (u: uPlot, axisIdx: number, scaleMin: number, scaleMax: number, foundIncr: number, foundSpace: number): number[] => {
+  // Ensure valid inputs
+  if (!Number.isFinite(scaleMin) || !Number.isFinite(scaleMax) || scaleMin <= 0 || scaleMax <= scaleMin) {
+    return [1, 10, 100]
+  }
+  
+  const splits: number[] = []
+  const logMin = Math.floor(Math.log10(scaleMin))
+  const logMax = Math.ceil(Math.log10(scaleMax))
+  
+  // Limit to max 6 orders of magnitude to prevent array overflow
+  const maxOrders = 6
+  const startExp = Math.max(logMin, logMax - maxOrders)
+  const endExp = Math.min(logMax, logMin + maxOrders)
+  
+  // Generate splits at powers of 10
+  for (let exp = startExp; exp <= endExp; exp++) {
+    const val = Math.pow(10, exp)
+    if (val >= scaleMin * 0.9 && val <= scaleMax * 1.1) {
+      splits.push(val)
+    }
+  }
+  
+  // Ensure we have at least 2 splits
+  if (splits.length < 2) {
+    splits.length = 0
+    splits.push(scaleMin, scaleMax)
+  }
+  
+  return splits
+}
+
 export function UPlotHistogram({
   data,
   xLabel,
@@ -95,6 +141,12 @@ export function UPlotHistogram({
 
   useEffect(() => {
     setMounted(true)
+    
+    // Cleanup on unmount - CRITICAL for preventing memory leaks when scale type changes
+    return () => {
+      cleanupUPlotInstance(uPlotInstanceRef)
+      setChartReady(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -135,17 +187,35 @@ export function UPlotHistogram({
       xScaleBase.log = 10
       // Use range function for log scale instead of explicit min/max
       xScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
+        let resultMin = 0.1, resultMax = 1000
         // Get valid edges for range calculation
         if (validEdges.length >= 2) {
           const minVal = safeArrayMin(validEdges)
           const maxVal = safeArrayMax(validEdges)
           if (minVal > 0 && maxVal > minVal) {
             const padding = 0.1
-            return [minVal / (1 + padding), maxVal * (1 + padding)]
+            resultMin = minVal / (1 + padding)
+            resultMax = maxVal * (1 + padding)
           }
         }
-        // Fallback to safe defaults for log scale
-        return [0.1, 1000]
+        // Ensure valid range for log scale: min > 0, max > min, both finite
+        if (!Number.isFinite(resultMin) || resultMin <= 0) resultMin = 0.1
+        if (!Number.isFinite(resultMax) || resultMax <= resultMin) resultMax = resultMin * 1000
+        
+        // CRITICAL: Limit the ratio to prevent uPlot's logAxisSplits from creating too many elements
+        // A ratio > 10000 (4 orders of magnitude) can cause RangeError: Invalid array length
+        const MAX_LOG_RATIO = 10000
+        let ratio = resultMax / resultMin
+        if (ratio > MAX_LOG_RATIO) {
+          // Center the range around the geometric mean of the data
+          const geomMean = Math.sqrt(resultMin * resultMax)
+          const halfOrders = Math.log10(MAX_LOG_RATIO) / 2 // 2 orders of magnitude each side
+          resultMin = geomMean / Math.pow(10, halfOrders)
+          resultMax = geomMean * Math.pow(10, halfOrders)
+          ratio = resultMax / resultMin
+        }
+        
+        return [resultMin, resultMax]
       }
     } else {
       // For linear scale, we can set explicit min/max
@@ -169,18 +239,32 @@ export function UPlotHistogram({
       yScaleBase.clamp = (_self, val) => Math.max(val, 1)
       yScaleBase.log = 10
       yScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
+        let resultMin = 1, resultMax = 100
         // Use valid counts for range calculation
         if (validCounts.length > 0) {
           const minPositive = safeArrayMin(validCounts)
           const maxPositive = safeArrayMax(validCounts)
           if (minPositive > 0 && maxPositive > minPositive) {
-            const effectiveMin = Math.max(1, minPositive * 0.5)
-            const effectiveMax = Math.max(10, maxPositive * 1.5)
-            return [effectiveMin, effectiveMax]
+            resultMin = Math.max(1, minPositive * 0.5)
+            resultMax = Math.max(10, maxPositive * 1.5)
           }
         }
-        // Fallback to safe defaults for log scale
-        return [1, 100]
+        // Ensure valid range for log scale: min > 0, max > min, both finite
+        if (!Number.isFinite(resultMin) || resultMin <= 0) resultMin = 1
+        if (!Number.isFinite(resultMax) || resultMax <= resultMin) resultMax = resultMin * 100
+        
+        // CRITICAL: Limit the ratio to prevent uPlot's logAxisSplits from creating too many elements
+        const MAX_LOG_RATIO = 10000
+        let ratio = resultMax / resultMin
+        if (ratio > MAX_LOG_RATIO) {
+          const geomMean = Math.sqrt(resultMin * resultMax)
+          const halfOrders = Math.log10(MAX_LOG_RATIO) / 2
+          resultMin = Math.max(1, geomMean / Math.pow(10, halfOrders))
+          resultMax = geomMean * Math.pow(10, halfOrders)
+          ratio = resultMax / resultMin
+        }
+        
+        return [resultMin, resultMax]
       }
     } else {
       // For linear Y scale, start from 0
@@ -209,6 +293,8 @@ export function UPlotHistogram({
           labelFont: "500 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
           size: 35,
           values: (_u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
+          // Use safe splits function for log scale to prevent RangeError
+          ...(xScaleType === "log" ? { splits: safeLogAxisSplits } : {}),
         },
         {
           stroke: axisColor,
@@ -219,6 +305,8 @@ export function UPlotHistogram({
           labelFont: "500 11px 'Inter', 'Segoe UI', system-ui, sans-serif",
           size: 40,
           values: (_u: uPlot, vals: number[]) => vals.map(formatAxisNumber),
+          // Use safe splits function for log scale to prevent RangeError
+          ...(yScaleType === "log" ? { splits: safeLogAxisSplits } : {}),
         },
       ],
       legend: {
@@ -379,7 +467,7 @@ export function UPlotHistogram({
     const yValues = filteredData.map(([, y]) => y)
     
     return [xValues, yValues] as uPlot.AlignedData
-  }, [data, xScaleType, yScaleType])
+  }, [data, xScaleType, yScaleType, xLabel])
 
   // Note: Manual scale updates removed - the component remounts on scale changes
   // via the key prop, so scale configuration in opts is sufficient
@@ -402,6 +490,14 @@ export function UPlotHistogram({
       })
     }
   }, [verticalLines, chartReady])
+
+  // Additional cleanup when scale type changes (defensive - chartKey change should handle this)
+  useEffect(() => {
+    return () => {
+      // Clear chart ready state when scale changes to prevent stale redraws
+      setChartReady(false)
+    }
+  }, [xScaleType, yScaleType])
 
   const handleExportImage = () => {
     const u = uPlotInstanceRef.current
@@ -463,5 +559,7 @@ export function UPlotHistogram({
     </div>
   )
 }
+
+
 
 

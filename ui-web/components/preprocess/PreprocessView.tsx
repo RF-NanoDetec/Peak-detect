@@ -2,14 +2,14 @@ import { Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PreprocessingChart } from "@/components/charts/PreprocessingChart"
-import { DetectionResults, PreviewData } from "@/lib/types"
+import { DetectPeaksResponse, DataPreviewResponse } from "@/lib/types"
 
 interface PreprocessViewProps {
   resultId: string | null
   filteredResultId: string | null
   params: any
-  detectionResults: DetectionResults | null
-  previewData: PreviewData | null
+  detectionResults: DetectPeaksResponse | null
+  previewData: DataPreviewResponse | null
   onLoadData: () => void
 }
 

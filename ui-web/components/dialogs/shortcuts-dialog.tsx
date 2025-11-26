@@ -7,7 +7,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import { Keyboard } from "lucide-react"
+import { Keyboard, FileText, BookOpen } from "lucide-react"
 
 interface ShortcutsDialogProps {
     open: boolean
@@ -45,6 +45,36 @@ export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps) {
                                 </kbd>
                             </div>
                         ))}
+                    </div>
+
+                    <div className="border-t pt-4">
+                        <h4 className="text-sm font-medium mb-3">Documentation</h4>
+                        <div className="grid gap-2">
+                            <a 
+                                href="/docs/mathematical_reference.pdf" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors group"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4 text-muted-foreground group-hover:text-accent" />
+                                    <span className="text-sm font-medium">Mathematical Reference</span>
+                                </div>
+                                <span className="text-xs text-muted-foreground">PDF</span>
+                            </a>
+                            <a 
+                                href="/docs/user_manual.pdf" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors group"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-accent" />
+                                    <span className="text-sm font-medium">User Manual</span>
+                                </div>
+                                <span className="text-xs text-muted-foreground">PDF</span>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </DialogContent>

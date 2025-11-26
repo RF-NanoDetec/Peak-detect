@@ -4,11 +4,11 @@ import { Input } from "@/components/ui/input"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Separator } from "@/components/ui/separator"
-import type { ParamsStore } from "@/lib/stores/paramsStore"
+import type { Parameters, ParamsState } from "@/lib/types"
 
 interface PreprocessControlsProps {
-  params: ParamsStore['params']
-  updateParam: ParamsStore['updateParam']
+  params: Parameters
+  updateParam: ParamsState['updateParam']
   onApplyFilter: () => void
   onDetectPeaks: () => void
   onAutoThreshold: () => void

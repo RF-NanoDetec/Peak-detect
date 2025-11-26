@@ -48,7 +48,7 @@ export function DoublePeakScatter({
   const scatterSeries: Series[] = useMemo(() => {
     if (metrics.totalPairs === 0) return []
 
-    // All points series with base color
+    // All points series with base color - NO LINE CONNECTION
     return [
       {
         label: "Distance between peaks",
@@ -56,6 +56,7 @@ export function DoublePeakScatter({
         data: Float32Array.from(metrics.distanceMs),
         points: true,
         pointSize: 4,
+        width: 0, // Explicitly disable line connection between points
       },
     ]
   }, [metrics, pointColor])
