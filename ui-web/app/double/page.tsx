@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { GitBranch, CheckCircle } from "lucide-react"
+import { GitBranch } from "lucide-react"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
@@ -180,7 +179,7 @@ export default function DoublePeakPage() {
           </div>
         )}
       </PageVisualization>
-      <PageControls>
+      <PageControls widthClassName="w-[360px] lg:w-[430px] xl:w-[500px]">
         <div className="space-y-4">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Double Peak</h2>
@@ -191,27 +190,6 @@ export default function DoublePeakPage() {
 
           {hasData ? (
             <>
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-accent" />
-                    <CardTitle className="text-base">Analysis Ready</CardTitle>
-                  </div>
-                  <CardDescription>Pair metrics computed from detected peaks</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <p className="text-muted-foreground">Total Peaks</p>
-                      <p className="text-lg font-semibold">{fullMetrics.totalPeaks}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Total Pairs</p>
-                      <p className="text-lg font-semibold">{fullMetrics.totalPairs}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
               <DoublePeakPanel
                 metrics={displayMetrics}
                 thresholds={thresholds}

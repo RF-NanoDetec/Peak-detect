@@ -22,10 +22,12 @@ export function PageShell({ children, className }: PageShellProps) {
 interface PageControlsProps {
   children: React.ReactNode
   className?: string
+  widthClassName?: string
 }
 
-export function PageControls({ children, className }: PageControlsProps) {
+export function PageControls({ children, className, widthClassName }: PageControlsProps) {
   const { rightPanelCollapsed, toggleRightPanel } = useSidebar()
+  const panelWidthClasses = widthClassName || "w-[320px] lg:w-[380px] xl:w-[420px]"
 
   return (
     <>
@@ -50,7 +52,7 @@ export function PageControls({ children, className }: PageControlsProps) {
           className={cn(
             "shrink-0 border-l bg-muted/20 flex flex-col min-h-0 min-w-0 transition-all duration-200",
             // Responsive widths: narrower on smaller screens
-            "w-[320px] lg:w-[380px] xl:w-[420px]",
+            panelWidthClasses,
             className
           )}
         >

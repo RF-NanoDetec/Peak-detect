@@ -46,6 +46,7 @@ export function DoublePeakPanel({
 }: DoublePeakPanelProps) {
   const [histograms, setHistograms] = useState<DoublePeakHistograms | null>(null)
   const [loading, setLoading] = useState(false)
+  const [binCount, setBinCount] = useState(100)
   const { theme } = useTheme()
   const isDark = theme === "dark"
   
@@ -69,7 +70,7 @@ export function DoublePeakPanel({
           metrics.pairWidthRatio,
           metrics.promOverAmp.map((val) => val * 100), // percent view for prominence/amplitude
           {
-            bin_count: 60,
+            bin_count: binCount,
             metrics: {
               distance: { xScale: "log", yScale: "linear" },
               pairPromRatio: { xScale: "linear", yScale: "linear" },
@@ -88,7 +89,7 @@ export function DoublePeakPanel({
     }
 
     fetchHistograms()
-  }, [metrics])
+  }, [metrics, binCount])
 
   const updateThreshold = useCallback(
     (
@@ -241,6 +242,35 @@ export function DoublePeakPanel({
 
   return (
     <div className={`space-y-4 ${className}`}>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            Histogram Bin Count
+            <InfoTooltip content="Adjust the number of bins used for all histograms. Updates apply immediately." />
+          </CardTitle>
+          <CardDescription>Refine histogram resolution</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium">
+            <span className="text-muted-foreground">Bins</span>
+            <span className="px-2 py-1 rounded bg-muted text-foreground/80">{binCount}</span>
+          </div>
+          <input
+            type="range"
+            min={20}
+            max={200}
+            step={10}
+            value={binCount}
+            onChange={(e) => setBinCount(parseInt(e.target.value, 10))}
+            className="w-full"
+          />
+          <div className="flex justify-between text-[10px] text-muted-foreground px-1">
+            <span>Fewer bins</span>
+            <span>More bins</span>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Distance Constraint */}
       <Card>
         <CardHeader>
