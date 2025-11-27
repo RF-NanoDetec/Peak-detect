@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import Dict
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -23,7 +25,6 @@ except Exception:
     from service.models import Params  # type: ignore[no-redef]
     from service.storage import InMemoryStore  # type: ignore[no-redef]
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -33,12 +34,24 @@ logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
+    # Lifespan event handler (replaces deprecated on_event)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup
+        app.state.loop = asyncio.get_running_loop()
+        app.state.task_manager = TaskManager()
+        app.state.store = InMemoryStore()
+        app.state.params_default = Params()
+        yield
+        # Shutdown (if needed in the future)
+
     app = FastAPI(
         title="Peak Analysis Local Service",
         version=APP_VERSION,
         openapi_url="/api/openapi.json",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
+        lifespan=lifespan,
     )
 
     # CORS restricted to localhost origins
@@ -57,14 +70,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    @app.on_event("startup")
-    async def _on_startup():
-        # Store the running loop for cross-thread progress dispatch
-        app.state.loop = asyncio.get_running_loop()
-        app.state.task_manager = TaskManager()
-        app.state.store = InMemoryStore()
-        app.state.params_default = Params()
 
     def broadcast_progress(task_id: str, update: dict):
         # Safe to call from worker threads: schedule coroutine on main loop
@@ -85,6 +90,13 @@ def create_app() -> FastAPI:
     @app.get("/api/version")
     async def version() -> Dict[str, str]:
         return {"version": APP_VERSION}
+
+    @app.get("/favicon.ico")
+    async def favicon():
+        """Return a simple 204 No Content for favicon requests to avoid 404 errors."""
+        from fastapi import Response
+
+        return Response(status_code=204)
 
     @app.websocket("/ws/progress")
     async def ws_progress(

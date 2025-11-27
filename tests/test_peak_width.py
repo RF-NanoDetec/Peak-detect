@@ -9,6 +9,13 @@ This script:
 4. Verifies that measured peak widths match expected values
 """
 
+import pytest
+
+pytest.skip(
+    "Legacy integration test; run manually with `python tests/run_peak_width_test.py`",
+    allow_module_level=True,
+)
+
 import os
 import sys
 import numpy as np

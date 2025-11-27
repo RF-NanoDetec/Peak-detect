@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { Loader2 } from "lucide-react"
 import { UPlotChart, type Series } from "./UPlotChart"
 import { useTheme } from "@/hooks/use-theme"
 import { apiClient } from "@/lib/apiClient"
 
-// Maximum points to display for responsive rendering
-const MAX_DISPLAY_POINTS = 2500
+// Maximum points to display for responsive rendering (per visible window)
+const MAX_DISPLAY_POINTS = 20000
 
 interface DetectionChartProps {
   previewData?: { time: number[], amplitude: number[] } | null
@@ -77,6 +77,29 @@ const decimateLine = (
   return { x: finalX, y: finalY, decimated: true }
 }
 
+// Binary search helpers to slice the current zoom window
+const lowerBound = (arr: ArrayLike<number>, value: number): number => {
+  let lo = 0
+  let hi = arr.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (arr[mid] < value) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+const upperBound = (arr: ArrayLike<number>, value: number): number => {
+  let lo = 0
+  let hi = arr.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (arr[mid] <= value) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
 export function DetectionChart({
   previewData,
   resultId,
@@ -93,6 +116,7 @@ export function DetectionChart({
   const [fullRes, setFullRes] = useState(false)
   const [loadingFull, setLoadingFull] = useState(false)
   const [fullError, setFullError] = useState<string | null>(null)
+  const [xRange, setXRange] = useState<{ min: number; max: number } | null>(null)
 
   useEffect(() => {
     if (!resultId || !fullRes) {
@@ -140,14 +164,62 @@ export function DetectionChart({
     }
   }, [previewData, xDataFull, yDataFull])
 
-  // Decimate the data for responsive rendering
-  const { xData, yData, isDecimated, originalLength } = useMemo(() => {
-    if (!xDataRaw.length) {
-      return { xData: [] as number[], yData: [] as number[], isDecimated: false, originalLength: 0 }
+  // Reset zoom when the underlying dataset changes
+  useEffect(() => {
+    if (xDataRaw.length) {
+      setXRange({ min: xDataRaw[0], max: xDataRaw[xDataRaw.length - 1] })
+    } else {
+      setXRange(null)
     }
-    const { x, y, decimated } = decimateLine(xDataRaw, yDataRaw, MAX_DISPLAY_POINTS)
-    return { xData: x, yData: y, isDecimated: decimated, originalLength: xDataRaw.length }
-  }, [xDataRaw, yDataRaw])
+  }, [xDataRaw])
+
+  // Decimate only the visible slice for responsive rendering
+  const { xData, yData, isDecimated, originalLength, visibleCount } = useMemo(() => {
+    if (!xDataRaw.length) {
+      return {
+        xData: [] as number[],
+        yData: [] as number[],
+        isDecimated: false,
+        originalLength: 0,
+        visibleCount: 0,
+      }
+    }
+    const sourceLength = xDataRaw.length
+
+    let start = 0
+    let end = sourceLength
+    if (xRange && Number.isFinite(xRange.min) && Number.isFinite(xRange.max) && xRange.max > xRange.min) {
+      start = lowerBound(xDataRaw, xRange.min)
+      end = upperBound(xDataRaw, xRange.max)
+      if (start >= end) {
+        start = 0
+        end = sourceLength
+      }
+    }
+
+    const sliceX = xDataRaw.slice(start, end)
+    const sliceY = yDataRaw.slice(start, end)
+    const needsDecimation = sliceX.length > MAX_DISPLAY_POINTS
+
+    if (needsDecimation) {
+      const { x, y, decimated } = decimateLine(Array.from(sliceX), Array.from(sliceY), MAX_DISPLAY_POINTS)
+      return {
+        xData: x,
+        yData: y,
+        isDecimated: decimated,
+        originalLength: sourceLength,
+        visibleCount: sliceX.length,
+      }
+    }
+
+    return {
+      xData: sliceX as number[] | Float64Array | Float32Array,
+      yData: sliceY as number[] | Float32Array,
+      isDecimated: false,
+      originalLength: sourceLength,
+      visibleCount: sliceX.length,
+    }
+  }, [xDataRaw, yDataRaw, xRange])
 
   // Convert peaks to minutes and memoize to keep hook deps stable
   const { peakX, peakY } = useMemo(() => {
@@ -176,7 +248,7 @@ export function DetectionChart({
 
       // Optimization: Use binary search to find indices instead of linear scan
       // This reduces complexity from O(N*M) to O(M*logN) where N=data points, M=peaks
-      const findClosestIndex = (arr: number[], target: number) => {
+      const findClosestIndex = (arr: ArrayLike<number>, target: number) => {
         let left = 0
         let right = arr.length - 1
         if (arr.length === 0) return -1
@@ -229,6 +301,14 @@ export function DetectionChart({
 
   const hasAny = !!previewData || (!!xDataFull && !!yDataFull) || xDataRaw.length > 0
 
+  const handleResetZoom = useCallback(() => {
+    if (xDataRaw.length) {
+      setXRange({ min: xDataRaw[0], max: xDataRaw[xDataRaw.length - 1] })
+    } else {
+      setXRange(null)
+    }
+  }, [xDataRaw])
+
   if (!hasAny) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -242,13 +322,12 @@ export function DetectionChart({
       {/* Peak count info */}
       <div className="px-8 pt-6 pb-2 flex-shrink-0 space-y-1">
         <p className="text-[11px] text-muted-foreground">
-          {originalLength.toLocaleString()} points
-          {isDecimated && (
-            <> • displaying {xData.length.toLocaleString()}</>
-          )}
-          {" • "}{peakX.length} peaks detected
-          {" • "}
-          <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
+          {originalLength.toLocaleString()} points total
+          {"  |  "}view window: {visibleCount.toLocaleString()}
+          {"  |  "}rendered: {xData.length.toLocaleString()}
+          {"  |  "}{peakX.length} peaks detected
+          {"  |  "}
+          <span className="text-muted-foreground/70">Scroll to zoom | Double-click to reset</span>
         </p>
         <label className="text-[11px] text-muted-foreground flex items-center gap-2">
           <input
@@ -276,6 +355,9 @@ export function DetectionChart({
           xLabel="Time (min)"
           yLabel="Counts"
           height={400}
+          xRange={xRange}
+          onXRangeChange={setXRange}
+          onResetZoom={handleResetZoom}
         />
       </div>
     </div>

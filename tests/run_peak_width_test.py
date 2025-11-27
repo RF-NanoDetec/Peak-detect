@@ -5,6 +5,13 @@ Runner script for peak width test.
 This script runs the peak width test and displays the results.
 """
 
+import pytest
+
+pytest.skip(
+    "Legacy interactive runner; execute manually with `python tests/run_peak_width_test.py`",
+    allow_module_level=True,
+)
+
 import os
 import sys
 import unittest

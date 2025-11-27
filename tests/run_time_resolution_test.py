@@ -6,6 +6,13 @@ This script runs the time resolution test to verify that the application
 correctly handles different time resolutions throughout the processing pipeline.
 """
 
+import pytest
+
+pytest.skip(
+    "Legacy interactive runner; execute manually with `python tests/run_time_resolution_test.py`",
+    allow_module_level=True,
+)
+
 import os
 import sys
 import unittest

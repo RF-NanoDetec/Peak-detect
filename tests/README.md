@@ -1,55 +1,29 @@
 # Peak Analysis Tool Tests
 
-This directory contains test scripts for validating the Peak Analysis Tool functionality. The tests are designed to verify that critical components of the application work as expected.
+This directory now separates quick, automated unit tests from legacy, plot-heavy validation scripts.
 
-## Available Tests
+## What runs in CI/local `pytest`
+- `tests/unit/` contains lightweight unit tests (e.g., dead-time correction, decimation). Run them with:
+  ```bash
+  pytest tests/unit
+  ```
 
-### Peak Width Test
+## Legacy/manual scripts (skipped in pytest)
+The following files remain for manual validation and visual inspection and are skipped by default:
+- `tests/run_peak_width_test.py`
+- `tests/run_time_resolution_test.py`
+- `tests/test_peak_width.py`
+- `tests/test_peak_widths.py`
+- `tests/test_time_resolution.py`
 
-This test verifies that the peak width calculation is accurate by:
-1. Generating synthetic data with peaks of known width (50ms)
-2. Saving it to a file with 0.1ms time resolution 
-3. Processing the data using the application's peak detection
-4. Verifying that measured peak widths match expected values
-
-To run the test:
+Run them explicitly if you need the plots or data artifacts:
 ```bash
-python run_peak_width_test.py
+python tests/run_peak_width_test.py
+python tests/run_time_resolution_test.py
 ```
 
-### Time Resolution Test
+These scripts generate data files and images (e.g., `test_peak_data.txt`, `peak_width_test_results.png`) for inspection but are intentionally excluded from automated test runs to keep CI fast and deterministic.
 
-This test verifies that time resolution is handled correctly throughout the application by:
-1. Generating test data with the same peak at 3 different time resolutions
-2. Verifying that loading with correct resolution gives consistent time values
-3. Checking that peak width calculation is consistent across resolutions
-4. Validating that time resolution changes are applied throughout the pipeline
-
-To run the test:
-```bash
-python run_time_resolution_test.py
-```
-
-## Test Output
-
-The tests generate:
-1. Test data files (e.g., `test_peak_data.txt` or `test_time_res_1.0e-04.txt`)
-2. Result plots (e.g., `peak_width_test_results.png` or `time_resolution_test_results.png`)
-
-These outputs are helpful for visual inspection of the test results.
-
-## Expected Results
-
-The tests should indicate success with:
-- No assertion errors
-- Detailed output showing that measured values match expected values within tolerance
-- Visual confirmation that peak widths are correctly identified in plots
-
-If a test fails, it will print detailed error information explaining why.
-
-## Adding New Tests
-
-To add a new test:
-1. Create a test class extending `unittest.TestCase`
-2. Add test methods starting with `test_`
-3. Create a runner script for easy execution 
+## Adding new tests
+- Prefer small, deterministic unit tests under `tests/unit/`.
+- If a test requires plotting or large data generation, mark it as manual (skip in pytest) and document how to run it. 

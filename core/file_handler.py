@@ -75,9 +75,8 @@ def load_single_file(file, timestamps=None, index=0, time_resolution=1e-4):
             raise ValueError(f"File {file} doesn't have at least 2 columns")
         
         # Extract numpy arrays directly for better performance
-        # and use numpy.ascontiguousarray for faster array operations later
-        # Convert time values to seconds using the time_resolution factor
-        time_values = np.ascontiguousarray(df[time_col].values)
+        # Use float64 for time to preserve sub-millisecond precision on long spans
+        time_values = np.ascontiguousarray(df[time_col].values, dtype=np.float64)
         time_in_seconds = time_values * time_resolution
         
         return {

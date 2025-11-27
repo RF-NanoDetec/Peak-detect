@@ -237,12 +237,18 @@ export function PreprocessingChart({
     const requestId = `range-${requestCounterRef.current++}`
     latestRequestIdRef.current = requestId
     console.time(`Worker Request ${requestId}`)
+
+    // For very narrow windows (<= 200 ms span), request the full slice with no decimation
+    const spanMinutes = range ? Math.max(0, range.max - range.min) : null
+    const spanMs = spanMinutes != null ? spanMinutes * 60 * 1000 : null
+    const effectiveTarget = spanMs != null && spanMs <= 200 ? Number.MAX_SAFE_INTEGER : TARGET_POINTS
+
     worker.postMessage({
       type: 'GET_RANGE',
       requestId,
       payload: {
         range,
-        targetPoints: TARGET_POINTS,
+        targetPoints: effectiveTarget,
         dynamicDownsampling,
         zoomThreshold: ZOOM_THRESHOLD,
       },

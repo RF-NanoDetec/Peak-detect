@@ -117,7 +117,8 @@ def load_data_from_paths(
     if tracker:
         tracker.start_phase("preallocate_arrays")
     total_points = sum(len(r["time"]) for r in results)
-    combined_times = np.zeros(total_points, dtype=np.float32)
+    # Use float64 for time to avoid precision loss when spanning long acquisitions
+    combined_times = np.zeros(total_points, dtype=np.float64)
     combined_amplitudes = np.zeros(total_points, dtype=np.float32)
     if tracker:
         tracker.end_phase("preallocate_arrays")
