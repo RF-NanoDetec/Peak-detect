@@ -124,7 +124,7 @@ export function DoublePeakPanel({
       { value: thresholds.distance[0], color: thresholdColor, label: "Min" },
       { value: thresholds.distance[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.distance[0], thresholds.distance[1], thresholdColor]
+    [thresholds.distance, thresholdColor]
   )
 
   const pairPromRatioLines = useMemo(
@@ -132,7 +132,7 @@ export function DoublePeakPanel({
       { value: thresholds.pairPromRatio[0], color: thresholdColor, label: "Min" },
       { value: thresholds.pairPromRatio[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.pairPromRatio[0], thresholds.pairPromRatio[1], thresholdColor]
+    [thresholds.pairPromRatio, thresholdColor]
   )
 
   const pairWidthRatioLines = useMemo(
@@ -140,7 +140,7 @@ export function DoublePeakPanel({
       { value: thresholds.pairWidthRatio[0], color: thresholdColor, label: "Min" },
       { value: thresholds.pairWidthRatio[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.pairWidthRatio[0], thresholds.pairWidthRatio[1], thresholdColor]
+    [thresholds.pairWidthRatio, thresholdColor]
   )
 
   const promOverAmpLines = useMemo(
@@ -148,7 +148,7 @@ export function DoublePeakPanel({
       { value: thresholds.promOverAmp[0], color: thresholdColor, label: "Min" },
       { value: thresholds.promOverAmp[1], color: thresholdColor, label: "Max" },
     ],
-    [thresholds.promOverAmp[0], thresholds.promOverAmp[1], thresholdColor]
+    [thresholds.promOverAmp, thresholdColor]
   )
 
   const deriveEdges = useCallback(

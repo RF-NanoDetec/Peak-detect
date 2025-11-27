@@ -512,7 +512,7 @@ export function UPlotHistogram({
         ],
       },
     }
-  }, [width, height, isDark, data, xLabel, yLabel, barColor, edgeColor, overlayBarColor, overlayData, xScaleType, yScaleType, verticalLines])
+  }, [width, height, isDark, data, xLabel, yLabel, barColor, overlayBarColor, overlayData, xScaleType, yScaleType, verticalLines])
 
   const chartData = useMemo(() => {
     const rawX = data.bins || []
@@ -541,7 +541,7 @@ export function UPlotHistogram({
     const yValues = filteredData.map(([, y]) => y)
     
     return [xValues, yValues] as uPlot.AlignedData
-  }, [data, xScaleType, yScaleType, xLabel])
+  }, [data, xScaleType, yScaleType])
 
   // Note: Manual scale updates removed - the component remounts on scale changes
   // via the key prop, so scale configuration in opts is sufficient

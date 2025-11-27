@@ -12,56 +12,55 @@ Functions:
 """
 
 # Standard library
-import os
 import logging
 import traceback
-from functools import wraps
 
 # Third-party libraries
 import numpy as np
 import pandas as pd
-from scipy.signal import find_peaks, peak_widths
+
+from core.performance import profiling_log
 
 # Local imports
-from .peak_analysis_utils import profile_function, find_peaks_with_window, find_nearest
-from core.performance import profiling_log
+from .peak_analysis_utils import find_peaks_with_window, profile_function
+
 
 class PeakDetector:
     """
     A class for detecting and analyzing peaks in time series data.
-    
+
     This class provides methods for peak detection, analysis of peak characteristics
     (height, width, area), and conversion of peak data into structured formats.
     It implements various signal processing techniques to identify meaningful peaks
     and filter out noise.
-    
+
     Attributes:
         logger (logging.Logger): Logger instance for recording operations
         peaks_indices (numpy.ndarray): Indices of detected peaks
         peaks_properties (dict): Properties of detected peaks including heights, widths
         peaks_data (pandas.DataFrame): Structured data containing peak information
-        
+
     Example:
         >>> detector = PeakDetector()
         >>> detector.detect_peaks(signal, time_values, height_lim=0.5, distance=10)
         >>> results = detector.create_peak_dataframe(time_values)
     """
-    
+
     def __init__(self, logger=None):
         """
         Initialize the PeakDetector with optional logger.
-        
+
         Parameters:
             logger (logging.Logger, optional): Logger instance for recording operations.
                 If None, a default logger will be used.
         """
         self.logger = logger or logging.getLogger(__name__)
         self.reset()
-    
+
     def reset(self):
         """
         Reset all detector state variables to their initial values.
-        
+
         This method clears any previously detected peaks and their properties,
         allowing the detector to be reused for new data.
         """
@@ -70,15 +69,25 @@ class PeakDetector:
         self.peaks_data = None
         self.all_peaks_count = 0
         self.logger.debug("Peak detector reset")
-    
+
     @profile_function
-    def detect_peaks(self, signal, time_values, height_lim, distance, prominence_ratio, rel_height=0.5, width_range=None, time_resolution=1e-4):
+    def detect_peaks(
+        self,
+        signal,
+        time_values,
+        height_lim,
+        distance,
+        prominence_ratio,
+        rel_height=0.5,
+        width_range=None,
+        time_resolution=1e-4,
+    ):
         """
         Detect peaks in the provided signal data.
-        
+
         This method identifies peaks in the signal that meet specified criteria
         for height, distance between peaks, and optionally width constraints.
-        
+
         Parameters:
             signal (numpy.ndarray): The signal data to analyze
             time_values (numpy.ndarray): Corresponding time values for the signal
@@ -94,12 +103,12 @@ class PeakDetector:
                 If None, no width filtering is applied.
             time_resolution (float, optional): Time resolution in seconds per unit.
                 Defaults to 1e-4 (0.1 milliseconds per unit).
-                
+
         Returns:
             tuple: (indices, properties) where:
                 - indices is a numpy array containing the indices of detected peaks
                 - properties is a dict containing peak properties (heights, widths, etc.)
-                
+
         Notes:
             This method stores the detected peaks internally and they can be
             accessed via the peaks_indices and peaks_properties attributes.
@@ -108,11 +117,13 @@ class PeakDetector:
             # Use time_resolution directly instead of calculating from time differences
             rate = time_resolution  # Time between samples in seconds
             sampling_rate = 1 / rate  # Samples per second
-            
+
             # Convert width range from milliseconds to samples
             if width_range:
                 # Convert from milliseconds to samples using time resolution
-                width_p = [int(float(value) * sampling_rate / 1000) for value in width_range]
+                width_p = [
+                    int(float(value) * sampling_rate / 1000) for value in width_range
+                ]
                 profiling_log("DEBUG - Width conversion in detect_peaks:")
                 profiling_log(f"  Original width values (ms): {width_range}")
                 profiling_log(f"  Time resolution: {time_resolution} seconds per unit")
@@ -120,58 +131,60 @@ class PeakDetector:
                 profiling_log(f"  Converted width_p (samples): {width_p}")
             else:
                 width_p = None
-            
+
             # Find peaks with all filters including prominence ratio (single scan)
             peaks, properties = find_peaks_with_window(
-                signal, 
+                signal,
                 width=width_p,
                 prominence=height_lim,
-                distance=distance, 
+                distance=distance,
                 rel_height=rel_height,
-                prominence_ratio=prominence_ratio
+                prominence_ratio=prominence_ratio,
             )
-            
+
             # Store the total number of peaks before prominence ratio filtering (from properties)
-            self.all_peaks_count = properties.get('unfiltered_count', len(peaks))
-            
+            self.all_peaks_count = properties.get("unfiltered_count", len(peaks))
+
             # Store results
             self.peaks_indices = peaks
             self.peaks_properties = properties
-            
+
             # Log results
-            self.logger.info(f"Detected {len(peaks)} peaks out of {self.all_peaks_count} unfiltered peaks")
+            self.logger.info(
+                f"Detected {len(peaks)} peaks out of {self.all_peaks_count} unfiltered peaks"
+            )
             self.logger.info(f"Peak indices: {peaks[:10]}...")
-            
+
             return peaks, properties
-            
+
         except Exception as e:
             error_msg = f"Error in peak detection: {str(e)}"
             self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise ValueError(error_msg)
-    
+
     @profile_function
     def calculate_peak_areas(self, signal, window_extension=40):
         """
         Calculate the area under each detected peak using trapezoidal integration.
-        
+
         This method computes the area under each peak by integrating the signal
-        over a window around each peak using the trapezoidal rule. The window size 
-        is determined by the peak width and can be extended by the window_extension 
+        over a window around each peak using the trapezoidal rule. The window size
+        is determined by the peak width and can be extended by the window_extension
         parameter.
-        
+
         Parameters:
             signal (numpy.ndarray): The signal data to analyze
             window_extension (int, optional): Number of additional samples to include
                 on each side of the peak for area calculation. Defaults to 40.
-                
+
         Returns:
             numpy.ndarray: Array of calculated peak areas
             numpy.ndarray: Array of start indices for each peak
             numpy.ndarray: Array of end indices for each peak
-            
+
         Raises:
             ValueError: If peaks have not been detected before calling this method
-            
+
         Notes:
             The results are also stored in the peaks_properties dictionary
             under the key 'areas'.
@@ -179,111 +192,112 @@ class PeakDetector:
         """
         if self.peaks_indices is None or self.peaks_properties is None:
             raise ValueError("No peaks detected. Run detect_peaks first.")
-        
+
         try:
             peaks = self.peaks_indices
             events = len(peaks)
-            
-            # Extract peak widths and convert to integers for indexing
-            window = np.round(self.peaks_properties['widths'], 0).astype(int) + window_extension
-            
+
             # Initialize arrays for results
             peak_area = np.zeros(events)
             start = np.zeros(events)
             end = np.zeros(events)
-            
+
             # Calculate area for each peak
             for i in range(events):
                 # Get start and end indices from peak properties
                 st = int(self.peaks_properties["left_ips"][i])
                 en = int(self.peaks_properties["right_ips"][i])
-                
+
                 # Store indices
                 start[i] = st
                 end[i] = en
-                
+
                 # Extract signal segment for this peak
                 y_data = signal[st:en]
-                
+
                 # Find background level (minimum value in window)
                 background = np.min(y_data)
-                
+
                 # Calculate area using trapezoidal integration of signal minus background
                 peak_area[i] = np.trapz(y_data - background)
-            
+
             # Store results
-            self.peaks_properties['areas'] = peak_area
-            self.peaks_properties['start_indices'] = start
-            self.peaks_properties['end_indices'] = end
-            
-            self.logger.info(f"Calculated {events} peak areas using trapezoidal integration")
-            
+            self.peaks_properties["areas"] = peak_area
+            self.peaks_properties["start_indices"] = start
+            self.peaks_properties["end_indices"] = end
+
+            self.logger.info(
+                f"Calculated {events} peak areas using trapezoidal integration"
+            )
+
             return peak_area, start, end
-            
+
         except Exception as e:
             error_msg = f"Error calculating peak areas: {str(e)}"
             self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise ValueError(error_msg)
-    
+
     def calculate_peak_intervals(self, time_values, interval=10):
         """
         Calculate time intervals between consecutive peaks.
-        
+
         Parameters:
             time_values (numpy.ndarray): Time values corresponding to the signal
             interval (float, optional): Not used in new implementation.
                 Kept for backwards compatibility.
-                
+
         Returns:
             numpy.ndarray: Array of peak times
             numpy.ndarray: Array of time intervals between consecutive peaks
-            
+
         Notes:
             This method updates the peaks_properties dictionary with the calculated
             intervals under the key 'intervals'.
         """
         if self.peaks_indices is None:
             raise ValueError("No peaks detected. Run detect_peaks first.")
-        
+
         try:
             # Get time values at peak positions
             peak_times = time_values[self.peaks_indices]
-            
+
             # Calculate intervals between consecutive peaks
             # First interval is the time to first peak
             peaks_interval = np.zeros_like(peak_times)
             peaks_interval[0] = peak_times[0]
-            
+
             # Remaining intervals are differences between consecutive peaks
             if len(peak_times) > 1:
                 peaks_interval[1:] = np.diff(peak_times)
-            
+
             # Store results
-            self.peaks_properties['intervals'] = peaks_interval
-            
+            self.peaks_properties["intervals"] = peaks_interval
+
             self.logger.info(f"Calculated {len(peaks_interval)} peak intervals")
-            
+
             return peak_times, peaks_interval
-            
+
         except Exception as e:
             error_msg = f"Error calculating peak intervals: {str(e)}"
             self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise ValueError(error_msg)
-    
-    def create_peak_dataframe(self, time_values, protocol_info=None, time_resolution=1e-4):
+
+    def create_peak_dataframe(
+        self, time_values, protocol_info=None, time_resolution=1e-4
+    ):
         """
         Create a DataFrame containing peak detection results.
-        
+
         This method organizes all detected peak information into a structured DataFrame,
         optionally adding protocol information.
-        
+
         Parameters:
             time_values (numpy.ndarray): Time values corresponding to the signal
             protocol_info (dict, optional): Additional protocol information to include
                 in the DataFrame. Defaults to None.
             time_resolution (float, optional): Time resolution in seconds per unit.
                 Defaults to 1e-4 (0.1 milliseconds per unit).
-                
+
         Returns:
             pandas.DataFrame: DataFrame containing peak information including:
                 - Peak Index: The index of each peak in the original signal
@@ -293,7 +307,7 @@ class PeakDetector:
                 - Area: Area under each peak
                 - Interval: Time intervals between consecutive peaks
                 - Any additional protocol information provided
-                
+
         Notes:
             This method requires that peak detection and area calculation have been
             performed beforehand.
@@ -301,25 +315,27 @@ class PeakDetector:
         # Validate inputs
         if self.peaks_indices is None:
             raise ValueError("No peaks detected. Run detect_peaks first.")
-            
-        if 'prominences' not in self.peaks_properties:
+
+        if "prominences" not in self.peaks_properties:
             raise ValueError("Peak prominences not available")
-            
-        if 'widths' not in self.peaks_properties:
+
+        if "widths" not in self.peaks_properties:
             raise ValueError("Peak widths not available")
-            
-        if 'areas' not in self.peaks_properties:
-            raise ValueError("Peak areas not available. Run calculate_peak_areas first.")
-            
-        if 'intervals' not in self.peaks_properties:
+
+        if "areas" not in self.peaks_properties:
+            raise ValueError(
+                "Peak areas not available. Run calculate_peak_areas first."
+            )
+
+        if "intervals" not in self.peaks_properties:
             self.calculate_peak_intervals(time_values)
-            
+
         try:
             # Check if all arrays have the same length
             expected_length = len(self.peaks_indices)
-            
+
             # Validate array lengths
-            props_to_check = ['prominences', 'widths', 'areas', 'intervals']
+            props_to_check = ["prominences", "widths", "areas", "intervals"]
             for prop in props_to_check:
                 if prop in self.peaks_properties:
                     actual_length = len(self.peaks_properties[prop])
@@ -327,77 +343,83 @@ class PeakDetector:
                         error_msg = f"Array length mismatch: {prop} has length {actual_length}, expected {expected_length}"
                         self.logger.error(error_msg)
                         raise ValueError(error_msg)
-            
+
             # Use time_resolution directly instead of calculating from time differences
             rate = time_resolution  # Time between samples in seconds
-            
+
             # Create basic DataFrame with peak measurements
-            results_df = pd.DataFrame({
-                "Peak Index": self.peaks_indices,
-                "Time (s)": time_values[self.peaks_indices] / 60,  # Convert to minutes
-                "Height": self.peaks_properties['prominences'],
-                "Width (ms)": self.peaks_properties['widths'] * rate * 1000,  # Convert from samples to milliseconds
-                "Area": self.peaks_properties['areas'],
-                "Interval": self.peaks_properties['intervals']
-            })
-            
+            results_df = pd.DataFrame(
+                {
+                    "Peak Index": self.peaks_indices,
+                    "Time (s)": time_values[self.peaks_indices]
+                    / 60,  # Convert to minutes
+                    "Height": self.peaks_properties["prominences"],
+                    "Width (ms)": self.peaks_properties["widths"]
+                    * rate
+                    * 1000,  # Convert from samples to milliseconds
+                    "Area": self.peaks_properties["areas"],
+                    "Interval": self.peaks_properties["intervals"],
+                }
+            )
+
             # Add protocol information if provided
             if protocol_info is not None:
                 for key, value in protocol_info.items():
                     results_df[key] = value
-            
+
             # Store results
             self.peaks_data = results_df
-            
+
             return results_df
-            
+
         except Exception as e:
             error_msg = f"Error creating peak DataFrame: {str(e)}"
             self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise ValueError(error_msg)
 
+
 # Function to calculate auto threshold
 def calculate_auto_threshold(signal, sigma_multiplier=5):
     """
     Automatically calculate a threshold for peak detection based on signal statistics (OPTIMIZED).
-    
+
     This function uses Median Absolute Deviation (MAD) for robust, fast threshold estimation.
     MAD is more resistant to outliers and requires fewer passes through the data.
-    
+
     OPTIMIZATION: Uses MAD instead of std for robustness and speed:
     - MAD = median(|x - median(x)|)
     - sigma_estimate = 1.4826 * MAD (converts MAD to equivalent std)
-    
+
     Parameters:
         signal (numpy.ndarray): The signal data to analyze
         sigma_multiplier (float, optional): Number of standard deviations above
             the baseline to set the threshold. Defaults to 5.
-            
+
     Returns:
         float: The calculated threshold value
-        
+
     Notes:
         This method is useful for automated peak detection when the appropriate
         threshold is not known in advance. MAD-based estimation is faster and
         more robust than traditional std-based methods.
-        
+
     Example:
         >>> threshold = calculate_auto_threshold(signal, sigma_multiplier=3)
         >>> detector.detect_peaks(signal, time_values, height_lim=threshold, distance=10)
     """
     if signal is None or len(signal) == 0:
         raise ValueError("Signal is empty or None")
-    
+
     # OPTIMIZATION: Use Median Absolute Deviation (MAD) for robust, fast estimation
     # MAD is more resistant to outliers and can be computed efficiently
     median_val = np.median(signal)
     mad = np.median(np.abs(signal - median_val))
-    
+
     # Convert MAD to equivalent standard deviation (assumes normal distribution)
     # Factor 1.4826 comes from the relationship: σ ≈ 1.4826 × MAD
     sigma_estimate = 1.4826 * mad
-    
+
     # Calculate threshold as sigma_multiplier times estimated sigma
     suggested_threshold = sigma_multiplier * sigma_estimate
-    
-    return suggested_threshold 
+
+    return suggested_threshold

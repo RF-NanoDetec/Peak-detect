@@ -130,11 +130,15 @@ export function DetectionChart({
     }
   }, [resultId, fullRes])
 
-  const hasAny = !!previewData || (!!xDataFull && !!yDataFull)
-
-  // Choose full-res if available, else preview
-  const xDataRaw = xDataFull ?? (previewData ? previewData.time.map(t => Math.max(0, t / 60)) : [])
-  const yDataRaw = yDataFull ?? (previewData ? previewData.amplitude : [])
+  // Choose full-res if available, else preview (memoized to keep deps stable)
+  const { xDataRaw, yDataRaw } = useMemo(() => {
+    const normalizedPreviewTime = previewData ? previewData.time.map(t => Math.max(0, t / 60)) : []
+    const normalizedPreviewAmp = previewData ? previewData.amplitude : []
+    return {
+      xDataRaw: xDataFull ?? normalizedPreviewTime,
+      yDataRaw: yDataFull ?? normalizedPreviewAmp,
+    }
+  }, [previewData, xDataFull, yDataFull])
 
   // Decimate the data for responsive rendering
   const { xData, yData, isDecimated, originalLength } = useMemo(() => {
@@ -145,17 +149,13 @@ export function DetectionChart({
     return { xData: x, yData: y, isDecimated: decimated, originalLength: xDataRaw.length }
   }, [xDataRaw, yDataRaw])
 
-  if (!hasAny) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-muted-foreground">No data available</p>
-      </div>
-    )
-  }
-
-  // Convert peak times to minutes
-  const peakX = (peakTimes || []).map(t => Math.max(0, t / 60))
-  const peakY = peakAmplitudes || []
+  // Convert peaks to minutes and memoize to keep hook deps stable
+  const { peakX, peakY } = useMemo(() => {
+    return {
+      peakX: (peakTimes || []).map(t => Math.max(0, t / 60)),
+      peakY: peakAmplitudes || [],
+    }
+  }, [peakTimes, peakAmplitudes])
 
   // Build series: signal line + optional peak scatter
   const series = useMemo(() => {
@@ -226,6 +226,16 @@ export function DetectionChart({
 
     return result
   }, [xData, yData, peakX, peakY, isDark, isDecimated])
+
+  const hasAny = !!previewData || (!!xDataFull && !!yDataFull) || xDataRaw.length > 0
+
+  if (!hasAny) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-sm text-muted-foreground">No data available</p>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex flex-col h-full w-full ${className}`} style={{ minHeight: 0 }}>

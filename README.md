@@ -6,7 +6,7 @@
 
 A robust web-based application for scientific peak analysis in time series data. Designed for researchers and analysts who need to detect, measure, and characterize signal peaks with precision.
 
-![Application Screenshot](resources/images/screenshot.png)
+![Application Screenshot](docs/figures/Peak_analysis.png)
 
 ## 🚀 Features
 

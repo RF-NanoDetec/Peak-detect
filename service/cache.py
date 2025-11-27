@@ -7,7 +7,6 @@ Provides in-memory LRU caches for expensive operations:
 - Auto-cutoff calculations
 """
 
-from functools import lru_cache
 import hashlib
 import logging
 from typing import Dict, Any, Optional, Tuple

@@ -83,6 +83,21 @@ type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
 
+const cleanNumbers = (values: number[] = []) => values.filter((v) => Number.isFinite(v))
+const mean = (values: number[]) => {
+  const arr = cleanNumbers(values)
+  if (!arr.length) return null
+  return arr.reduce((sum, v) => sum + v, 0) / arr.length
+}
+const std = (values: number[]) => {
+  const arr = cleanNumbers(values)
+  if (!arr.length) return null
+  const m = mean(arr)
+  if (m == null) return null
+  const variance = arr.reduce((sum, v) => sum + Math.pow(v - m, 2), 0) / arr.length
+  return Math.sqrt(variance)
+}
+
 export function PreprocessingChart({
   resultId,
   filteredResultId,
@@ -553,21 +568,6 @@ export function PreprocessingChart({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [TARGET_POINTS])
-
-  const cleanNumbers = (values: number[] = []) => values.filter((v) => Number.isFinite(v))
-  const mean = (values: number[]) => {
-    const arr = cleanNumbers(values)
-    if (!arr.length) return null
-    return arr.reduce((sum, v) => sum + v, 0) / arr.length
-  }
-  const std = (values: number[]) => {
-    const arr = cleanNumbers(values)
-    if (!arr.length) return null
-    const m = mean(arr)
-    if (m == null) return null
-    const variance = arr.reduce((sum, v) => sum + Math.pow(v - m, 2), 0) / arr.length
-    return Math.sqrt(variance)
-  }
 
   const summary = useMemo(() => {
     const totalPeaks = peakTimes?.length || 0

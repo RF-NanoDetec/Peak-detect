@@ -1,6 +1,6 @@
 ; Inno Setup script for Peak Analysis Tool (LabOne-style)
 #define AppName "Peak Analysis Tool"
-#define AppVersion "1.0.0"
+#define AppVersion "2.0.0"
 #define AppPublisher "Your Org"
 #define InstallDirName "{pf}\PeakTool"
 

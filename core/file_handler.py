@@ -4,7 +4,6 @@ File handling utilities for Peak Analysis Tool
 This module contains functions for loading and managing data files.
 """
 
-import os
 import pandas as pd
 import numpy as np
 import logging

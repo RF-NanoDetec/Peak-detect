@@ -32,7 +32,7 @@ from pathlib import Path
 import platform
 
 # Application version
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 
 # Debug mode - controls additional debugging features
 DEBUG_MODE = os.environ.get("PEAK_ANALYSIS_DEBUG", "0") == "1"
@@ -221,16 +221,6 @@ def get_app_info():
         Platform: Windows-10-10.0.19041-SP0
         Mode: Development
     """
-    # First collect the info in a dictionary
-    info_dict = {
-        "version": APP_VERSION,
-        "platform": platform.system(),
-        "python_version": platform.python_version(),
-        "frozen": is_frozen(),
-        "debug_mode": DEBUG_MODE,
-        "base_dir": str(BASE_DIR),
-    }
-    
     # Format into a multi-line string
     mode = "Production" if not DEBUG_MODE else "Development"
     exe_mode = "Bundled Executable" if is_frozen() else "Development Mode"

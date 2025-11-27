@@ -1589,7 +1589,7 @@ export function UPlotChart({
         ]
       }
     }
-  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom])
+  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom, customScatter, hoveredSegment?.index, xData.length, yRange])
   // Note: yRange is intentionally excluded - we handle it via setScale() in useEffect
   // yScaleType must be included as it changes the scale distribution (distr: 3 for log)
 
