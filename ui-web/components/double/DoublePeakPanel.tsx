@@ -3,6 +3,7 @@
 import { useMemo, useCallback, useState, useEffect, type Dispatch, type SetStateAction } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { StepperInput } from "@/components/ui/stepper-input"
 import { UPlotHistogram } from "@/components/charts/UPlotHistogram"
 import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
@@ -15,6 +16,7 @@ interface DoublePeakPanelProps {
   metrics: PairMetrics
   thresholds: DoublePeakThresholds
   onThresholdsChange: Dispatch<SetStateAction<DoublePeakThresholds>>
+  resolutionMs: number
   className?: string
 }
 
@@ -35,6 +37,7 @@ export function DoublePeakPanel({
   metrics,
   thresholds,
   onThresholdsChange,
+  resolutionMs,
   className = "",
 }: DoublePeakPanelProps) {
   const [histograms, setHistograms] = useState<DoublePeakHistograms | null>(null)
@@ -59,7 +62,7 @@ export function DoublePeakPanel({
           metrics.distanceMs,
           metrics.pairPromRatio,
           metrics.pairWidthRatio,
-          metrics.promOverAmp,
+          metrics.promOverAmp.map((val) => val * 100), // percent view for prominence/amplitude
           {
             bin_count: 60,
             metrics: {
@@ -83,10 +86,24 @@ export function DoublePeakPanel({
   }, [metrics])
 
   const updateThreshold = useCallback(
-    (key: keyof DoublePeakThresholds, index: 0 | 1, value: number) => {
-      onThresholdsChange(prev => {
+    (
+      key: keyof DoublePeakThresholds,
+      index: 0 | 1,
+      value: number,
+      opts?: { min?: number; max?: number }
+    ) => {
+      if (!Number.isFinite(value)) return
+      const min = opts?.min ?? -Infinity
+      const max = opts?.max ?? Infinity
+      const clamped = Math.min(Math.max(value, min), max)
+      onThresholdsChange((prev) => {
         const nextRange = [...prev[key]] as [number, number]
-        nextRange[index] = value
+        nextRange[index] = clamped
+        if (index === 0 && nextRange[1] < clamped) {
+          nextRange[1] = clamped
+        } else if (index === 1 && nextRange[0] > clamped) {
+          nextRange[0] = clamped
+        }
         return {
           ...prev,
           [key]: nextRange,
@@ -143,21 +160,21 @@ export function DoublePeakPanel({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium">Min (ms)</label>
-              <Input
-                type="number"
+              <StepperInput
                 value={thresholds.distance[0]}
-                onChange={(e) => updateThreshold("distance", 0, parseFloat(e.target.value) || 0)}
-                step="0.1"
+                onValueChange={(value) => updateThreshold("distance", 0, value, { min: resolutionMs })}
+                step={0.1}
+                min={resolutionMs}
                 className="text-xs"
               />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Max (ms)</label>
-              <Input
-                type="number"
+              <StepperInput
                 value={thresholds.distance[1]}
-                onChange={(e) => updateThreshold("distance", 1, parseFloat(e.target.value) || 0)}
-                step="1"
+                onValueChange={(value) => updateThreshold("distance", 1, value, { min: thresholds.distance[0] })}
+                step={1}
+                min={thresholds.distance[0]}
                 className="text-xs"
               />
             </div>
@@ -183,34 +200,36 @@ export function DoublePeakPanel({
         </CardContent>
       </Card>
 
-      {/* Pair Prominence Ratio */}
+      {/* Per-Peak Prominence Ratio (percent view) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Pair Prominence Ratio
-            <InfoTooltip content="Ratio of the second peak's prominence to the first peak's prominence. Used to identify pairs with similar (or specific dissimilar) intensities." />
+            Prominence Ratio
+            <InfoTooltip content="Per-peak prominence divided by amplitude, expressed as a percentage. Matches the Prominence Ratio setting used during detection." />
           </CardTitle>
-          <CardDescription>Prom[i+1] / Prom[i] for consecutive peaks</CardDescription>
+          <CardDescription>Prominence / Amplitude, shown as %</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium">Min</label>
-              <Input
-                type="number"
-                value={thresholds.pairPromRatio[0]}
-                onChange={(e) => updateThreshold("pairPromRatio", 0, parseFloat(e.target.value) || 0)}
-                step="0.1"
+              <label className="text-xs font-medium">Min (%)</label>
+              <StepperInput
+                value={thresholds.promOverAmp[0]}
+                onValueChange={(value) => updateThreshold("promOverAmp", 0, value, { min: 0, max: 200 })}
+                step={1}
+                min={0}
+                max={200}
                 className="text-xs"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Max</label>
-              <Input
-                type="number"
-                value={thresholds.pairPromRatio[1]}
-                onChange={(e) => updateThreshold("pairPromRatio", 1, parseFloat(e.target.value) || 0)}
-                step="0.1"
+              <label className="text-xs font-medium">Max (%)</label>
+              <StepperInput
+                value={thresholds.promOverAmp[1]}
+                onValueChange={(value) => updateThreshold("promOverAmp", 1, value, { min: 0, max: 200 })}
+                step={1}
+                min={0}
+                max={200}
                 className="text-xs"
               />
             </div>
@@ -219,14 +238,14 @@ export function DoublePeakPanel({
             <div className="flex items-center justify-center h-[180px]">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : histograms && histograms.pairPromRatio ? (
+          ) : histograms && histograms.promOverAmp ? (
             <UPlotHistogram
-              data={histograms.pairPromRatio}
-              xLabel="Prominence Ratio"
+              data={histograms.promOverAmp}
+              xLabel="Prominence Ratio (%)"
               yLabel="Count"
               xScaleType="linear"
               height={180}
-              verticalLines={pairPromRatioLines}
+              verticalLines={promOverAmpLines}
             />
           ) : (
             <div className="flex items-center justify-center h-[180px] border rounded-lg bg-muted/20">
@@ -252,7 +271,12 @@ export function DoublePeakPanel({
               <Input
                 type="number"
                 value={thresholds.pairWidthRatio[0]}
-                onChange={(e) => updateThreshold("pairWidthRatio", 0, parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  if (!isNaN(val)) {
+                    updateThreshold("pairWidthRatio", 0, val, { min: 0 })
+                  }
+                }}
                 step="0.1"
                 className="text-xs"
               />
@@ -262,7 +286,12 @@ export function DoublePeakPanel({
               <Input
                 type="number"
                 value={thresholds.pairWidthRatio[1]}
-                onChange={(e) => updateThreshold("pairWidthRatio", 1, parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  if (!isNaN(val)) {
+                    updateThreshold("pairWidthRatio", 1, val, { min: 0 })
+                  }
+                }}
                 step="0.1"
                 className="text-xs"
               />
@@ -289,14 +318,14 @@ export function DoublePeakPanel({
         </CardContent>
       </Card>
 
-      {/* Per-Peak Prominence/Amplitude Ratio */}
+      {/* Pair Prominence Ratio */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Prominence / Amplitude
-            <InfoTooltip content="Ratio of prominence to amplitude for each peak. Helps distinguish valid peaks from baseline fluctuations." />
+            Pair Prominence Ratio
+            <InfoTooltip content="Ratio of the second peak's prominence to the first peak's prominence. Used to identify pairs with similar (or specific dissimilar) intensities." />
           </CardTitle>
-          <CardDescription>Per-peak prominence-to-amplitude ratio</CardDescription>
+          <CardDescription>Prom[i+1] / Prom[i] for consecutive peaks</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -304,9 +333,14 @@ export function DoublePeakPanel({
               <label className="text-xs font-medium">Min</label>
               <Input
                 type="number"
-                value={thresholds.promOverAmp[0]}
-                onChange={(e) => updateThreshold("promOverAmp", 0, parseFloat(e.target.value) || 0)}
-                step="0.01"
+                value={thresholds.pairPromRatio[0]}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  if (!isNaN(val)) {
+                    updateThreshold("pairPromRatio", 0, val, { min: 0 })
+                  }
+                }}
+                step="0.1"
                 className="text-xs"
               />
             </div>
@@ -314,9 +348,14 @@ export function DoublePeakPanel({
               <label className="text-xs font-medium">Max</label>
               <Input
                 type="number"
-                value={thresholds.promOverAmp[1]}
-                onChange={(e) => updateThreshold("promOverAmp", 1, parseFloat(e.target.value) || 0)}
-                step="0.01"
+                value={thresholds.pairPromRatio[1]}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  if (!isNaN(val)) {
+                    updateThreshold("pairPromRatio", 1, val, { min: 0 })
+                  }
+                }}
+                step="0.1"
                 className="text-xs"
               />
             </div>
@@ -325,14 +364,14 @@ export function DoublePeakPanel({
             <div className="flex items-center justify-center h-[180px]">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : histograms && histograms.promOverAmp ? (
+          ) : histograms && histograms.pairPromRatio ? (
             <UPlotHistogram
-              data={histograms.promOverAmp}
-              xLabel="Prom / Amp"
+              data={histograms.pairPromRatio}
+              xLabel="Prominence Ratio"
               yLabel="Count"
               xScaleType="linear"
               height={180}
-              verticalLines={promOverAmpLines}
+              verticalLines={pairPromRatioLines}
             />
           ) : (
             <div className="flex items-center justify-center h-[180px] border rounded-lg bg-muted/20">

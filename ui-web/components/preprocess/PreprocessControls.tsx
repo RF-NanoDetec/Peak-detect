@@ -1,9 +1,11 @@
-import { Loader2, Info } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { StepperInput } from "@/components/ui/stepper-input"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Separator } from "@/components/ui/separator"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { Parameters, ParamsState } from "@/lib/types"
 
 interface PreprocessControlsProps {
@@ -58,15 +60,19 @@ export function PreprocessControls({
                 Filter Type
                 <InfoTooltip content="Digital filters remove noise from the signal." />
               </label>
-              <select 
-                className="w-full px-3 py-2 rounded-md border bg-transparent text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Select
                 value={params.filter_type}
-                onChange={(e) => updateParam('filter_type', e.target.value as any)}
+                onValueChange={(value) => updateParam('filter_type', value as any)}
               >
-                <option value="none">None</option>
-                <option value="butterworth">Butterworth</option>
-                <option value="savgol">Savitzky-Golay</option>
-              </select>
+                <SelectTrigger className="text-xs h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="butterworth">Butterworth</SelectItem>
+                  <SelectItem value="savgol">Savitzky-Golay</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {params.filter_type === 'butterworth' && (
@@ -139,8 +145,8 @@ export function PreprocessControls({
               </div>
             )}
 
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={onApplyFilter}
               disabled={loading || !resultId || params.filter_type === 'none'}
               size="sm"
@@ -156,7 +162,7 @@ export function PreprocessControls({
             </Button>
           </AccordionContent>
         </AccordionItem>
-        
+
         <Separator className="my-2" />
 
         {/* Detect Section */}
@@ -173,22 +179,25 @@ export function PreprocessControls({
                   Prominence
                   <InfoTooltip content="Vertical distance between the peak and its lowest contour line." />
                 </label>
-                <Input
-                  type="number"
+                <StepperInput
                   value={prominenceInput}
+                  onValueChange={(value) => {
+                    setProminenceInput(value.toString())
+                    updateParam('prominence_threshold', value)
+                  }}
                   onChange={(e) => {
                     const inputValue = e.target.value
                     setProminenceInput(inputValue)
                     if (inputValue !== '' && inputValue !== '-') {
                       const value = parseFloat(inputValue)
-                      if (!isNaN(value) && value >= 0 && isFinite(value)) {
+                      if (!isNaN(value) && value >= 1 && isFinite(value)) {
                         updateParam('prominence_threshold', value)
                       }
                     }
                   }}
                   onBlur={(e) => {
                     const value = parseFloat(e.target.value)
-                    if (isNaN(value) || value < 0 || !isFinite(value)) {
+                    if (isNaN(value) || value < 1 || !isFinite(value)) {
                       const defaultValue = 20
                       setProminenceInput(defaultValue.toString())
                       updateParam('prominence_threshold', defaultValue)
@@ -196,26 +205,27 @@ export function PreprocessControls({
                       setProminenceInput(value.toString())
                     }
                   }}
-                  step="0.1"
-                  min="0"
+                  step={1}
+                  min={1}
                   className="text-xs"
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <label className="text-xs font-medium flex items-center gap-1">
                   Min Distance
                   <InfoTooltip content="Minimum horizontal distance (samples) between peaks." />
                 </label>
-                <Input
-                  type="number"
+                <StepperInput
                   value={params.distance}
-                  onChange={(e) => updateParam('distance', parseInt(e.target.value))}
+                  onValueChange={(value) => updateParam('distance', value)}
+                  min={1}
+                  step={1}
                   className="text-xs"
                 />
               </div>
-              
-               <div className="space-y-2">
+
+              <div className="space-y-2">
                 <label className="text-xs font-medium flex items-center gap-1">
                   Rel Height (%)
                   <InfoTooltip content="Relative height for width measurement." />
@@ -230,7 +240,7 @@ export function PreprocessControls({
                     max="100"
                     className="text-xs pr-6"
                   />
-                   <span className="absolute inset-y-0 right-2 flex items-center text-[10px] text-muted-foreground">%</span>
+                  <span className="absolute inset-y-0 right-2 flex items-center text-[10px] text-muted-foreground">%</span>
                 </div>
               </div>
 
@@ -238,15 +248,14 @@ export function PreprocessControls({
                 <label className="text-xs font-medium flex items-center gap-1">
                   Width Min (ms)
                 </label>
-                <Input
-                  type="number"
-                  value={params.width_ms.split(',')[0]}
-                  onChange={(e) => {
+                <StepperInput
+                  value={parseFloat(params.width_ms.split(',')[0])}
+                  onValueChange={(value) => {
                     const [, max] = params.width_ms.split(',')
-                    updateParam('width_ms', `${e.target.value},${max || 200}`)
+                    updateParam('width_ms', `${value},${max || 200}`)
                   }}
-                  step="0.1"
-                  min="0.01"
+                  step={0.1}
+                  min={0.1}
                   className="text-xs"
                 />
               </div>
@@ -254,25 +263,24 @@ export function PreprocessControls({
                 <label className="text-xs font-medium flex items-center gap-1">
                   Width Max (ms)
                 </label>
-                <Input
-                  type="number"
-                  value={params.width_ms.split(',')[1]}
-                  onChange={(e) => {
+                <StepperInput
+                  value={parseFloat(params.width_ms.split(',')[1])}
+                  onValueChange={(value) => {
                     const [min] = params.width_ms.split(',')
-                    updateParam('width_ms', `${min || 0.1},${e.target.value}`)
+                    updateParam('width_ms', `${min || 0.1},${value}`)
                   }}
-                  step="1"
-                  min="0.1"
+                  step={1}
+                  min={0.1}
                   className="text-xs"
                 />
               </div>
-              
-               <div className="space-y-2 col-span-2">
+
+              <div className="space-y-2 col-span-2">
                 <label className="text-xs font-medium flex items-center gap-1">
                   Prominence Ratio (%)
                   <InfoTooltip content="Ratio of prominence to amplitude." />
                 </label>
-                 <div className="relative">
+                <div className="relative">
                   <Input
                     type="number"
                     value={Number((params.prominence_ratio * 100).toFixed(1))}
@@ -288,7 +296,7 @@ export function PreprocessControls({
             </div>
 
             <div className="flex gap-2 pt-2">
-              <Button 
+              <Button
                 className="flex-1"
                 onClick={onDetectPeaks}
                 disabled={detecting || !resultId}
@@ -319,4 +327,3 @@ export function PreprocessControls({
     </div>
   )
 }
-

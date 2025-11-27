@@ -57,6 +57,7 @@ interface UPlotChartProps {
   vLines?: { x: number; color?: string; dash?: number[]; label?: string }[]
   xRange?: { min: number; max: number } | null
   onXRangeChange?: (range: { min: number; max: number }) => void
+  onYRangeChange?: (range: { min: number; max: number }) => void
   xScaleType?: "linear" | "log"
   yScaleType?: "linear" | "log"
   yRange?: { min: number; max: number } | null
@@ -287,6 +288,7 @@ export function UPlotChart({
   vLines,
   xRange,
   onXRangeChange,
+  onYRangeChange,
   xScaleType = "linear",
   yScaleType = "linear",
   yRange,
@@ -331,6 +333,13 @@ export function UPlotChart({
   // Refs for scale-related props to avoid recreating options on scale change
   const yScaleTypeRef = useRef(yScaleType)
   const yRangeRef = useRef(yRange)
+  const xRangeRef = useRef(xRange)
+  const lastReportedXRangeRef = useRef<{ min: number; max: number } | null>(null)
+  const lastReportedYRangeRef = useRef<{ min: number; max: number } | null>(null)
+  const rangesEqual = (a: { min: number; max: number } | null | undefined, b: { min: number; max: number } | null | undefined, eps = 1e-6) => {
+    if (!a || !b) return false
+    return Math.abs(a.min - b.min) < eps && Math.abs(a.max - b.max) < eps
+  }
 
   // Ref to track if we are currently updating scale from props
   // This prevents the setScale hook from firing callbacks when we programmatically set the scale
@@ -349,6 +358,7 @@ export function UPlotChart({
   enableLassoRef.current = enableLasso
   yScaleTypeRef.current = yScaleType
   yRangeRef.current = yRange
+  xRangeRef.current = xRange
 
   // Update Sets when arrays change (shallow comparison is enough if references change)
   useMemo(() => {
@@ -808,7 +818,25 @@ export function UPlotChart({
               const min = u.scales.x.min!
               const max = u.scales.x.max!
               if (Number.isFinite(min) && Number.isFinite(max)) {
-                onXRangeChange({ min, max })
+                const next = { min, max }
+                if (rangesEqual(lastReportedXRangeRef.current, next) || rangesEqual(xRangeRef.current || null, next)) {
+                  lastReportedXRangeRef.current = next
+                  return
+                }
+                lastReportedXRangeRef.current = next
+                onXRangeChange(next)
+              }
+            } else if (key === "y" && onYRangeChange) {
+              const min = u.scales.y.min!
+              const max = u.scales.y.max!
+              if (Number.isFinite(min) && Number.isFinite(max)) {
+                const next = { min, max }
+                if (rangesEqual(lastReportedYRangeRef.current, next) || rangesEqual(yRangeRef.current || null, next)) {
+                  lastReportedYRangeRef.current = next
+                  return
+                }
+                lastReportedYRangeRef.current = next
+                onYRangeChange(next)
               }
             }
           }
@@ -1483,8 +1511,8 @@ export function UPlotChart({
                 const passesFilter = !hasFilters || filteredSet?.has(i)
 
                 if (isSelected) {
-                  selectedPath.moveTo(xPx + 6, yPx);
-                  selectedPath.arc(xPx, yPx, 6, 0, 2 * Math.PI);
+                  selectedPath.moveTo(xPx + 5, yPx);
+                  selectedPath.arc(xPx, yPx, 5, 0, 2 * Math.PI);
                   hasSelected = true;
                 } else if (!passesFilter) {
                   filteredPath.moveTo(xPx + 3, yPx);
@@ -1527,7 +1555,7 @@ export function UPlotChart({
         ]
       }
     }
-  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom])
+  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom])
   // Note: yRange is intentionally excluded - we handle it via setScale() in useEffect
   // yScaleType must be included as it changes the scale distribution (distr: 3 for log)
 
@@ -1553,6 +1581,19 @@ export function UPlotChart({
       }
     }
   }, [data, xRange]) // Update when data or xRange changes
+
+  // Keep last reported ranges in sync when props change externally
+  useEffect(() => {
+    if (xRange && Number.isFinite(xRange.min) && Number.isFinite(xRange.max)) {
+      lastReportedXRangeRef.current = { ...xRange }
+    }
+  }, [xRange])
+
+  useEffect(() => {
+    if (yRange && Number.isFinite(yRange.min) && Number.isFinite(yRange.max)) {
+      lastReportedYRangeRef.current = { ...yRange }
+    }
+  }, [yRange])
 
   const handleExportImage = () => {
     const u = uPlotInstanceRef.current

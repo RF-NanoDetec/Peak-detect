@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { GitBranch, CheckCircle } from "lucide-react"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useRouter } from "next/navigation"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
-import { computePairMetrics, filterPairMetricsByIndices } from "@/components/double/metrics"
+import { useDoubleStore } from "@/lib/stores/doubleStore"
+import { computePairMetrics } from "@/components/double/metrics"
 import { DoublePeakPanel } from "@/components/double/DoublePeakPanel"
 import { DoublePeakScatter } from "@/components/double/DoublePeakScatter"
 import type { DoublePeakThresholds } from "@/components/double/types"
@@ -18,14 +19,35 @@ export default function DoublePeakPage() {
   const router = useRouter()
   const { detectionResults } = useResultsStore()
   const { params } = useParamsStore()
+  const resolutionMs = (params.time_resolution || 1e-4) * 1000
+  const { selectedPairIndices, setSelectedPairIndices, clearSelectedPairIndices } = useDoubleStore()
 
-  const [selectedIndices, setSelectedIndices] = useState<number[]>([])
-  const [thresholds, setThresholds] = useState<DoublePeakThresholds>({
-    distance: [0.1, 100.0] as [number, number],
-    pairPromRatio: [0.01, 100.0] as [number, number],
-    pairWidthRatio: [0.01, 100.0] as [number, number],
-    promOverAmp: [0.0, 1.0] as [number, number],
+  const [selectedIndices, setSelectedIndices] = useState<number[]>(selectedPairIndices)
+  const [thresholds, setThresholds] = useState<DoublePeakThresholds>(() => {
+    const initialMin = Math.max(1, resolutionMs)
+    return {
+      distance: [initialMin, 100.0],
+      pairPromRatio: [0.0, 100.0],
+      pairWidthRatio: [0.0, 100.0],
+      promOverAmp: [0.0, 200.0], // Stored in percent for UI
+    }
   })
+
+  useEffect(() => {
+    // Keep min distance aligned with time resolution
+    setThresholds((prev) => {
+      const currentMin = prev.distance[0]
+      const enforcedMin = Math.max(Math.max(resolutionMs, 1), currentMin)
+      if (enforcedMin === currentMin) {
+        return prev
+      }
+      const nextMax = Math.max(prev.distance[1], enforcedMin)
+      return {
+        ...prev,
+        distance: [enforcedMin, nextMax],
+      }
+    })
+  }, [resolutionMs])
 
   // Compute pair metrics from detection results
   const fullMetrics: PairMetrics = useMemo(() => {
@@ -68,11 +90,34 @@ export default function DoublePeakPage() {
     })
   }, [detectionResults, params.time_resolution])
 
+  // Keep local selection in sync with store (used by export page)
+  useEffect(() => {
+    setSelectedIndices(selectedPairIndices)
+  }, [selectedPairIndices])
+
+  // Clamp selection when pair count changes
+  useEffect(() => {
+    setSelectedIndices((prev) => {
+      const clamped = prev.filter((idx) => idx >= 0 && idx < fullMetrics.totalPairs)
+      if (clamped.length !== prev.length) {
+        setSelectedPairIndices(clamped)
+      }
+      return clamped
+    })
+  }, [fullMetrics.totalPairs, setSelectedPairIndices])
+
   // Always show full metrics in histograms (not filtered)
   // Filtering is applied in export only
   const displayMetrics = fullMetrics
 
   const hasData = fullMetrics.totalPairs > 0
+
+  useEffect(() => {
+    if (!hasData) {
+      setSelectedIndices([])
+      clearSelectedPairIndices()
+    }
+  }, [hasData, clearSelectedPairIndices])
 
   return (
     <PageShell>
@@ -83,7 +128,10 @@ export default function DoublePeakPage() {
               metrics={fullMetrics}
               thresholds={thresholds}
               selectedIndices={selectedIndices}
-              onSelectedIndicesChange={setSelectedIndices}
+              onSelectedIndicesChange={(indices) => {
+                setSelectedIndices(indices)
+                setSelectedPairIndices(indices)
+              }}
             />
           </div>
         ) : (
@@ -141,6 +189,7 @@ export default function DoublePeakPage() {
                 metrics={displayMetrics}
                 thresholds={thresholds}
                 onThresholdsChange={setThresholds}
+                resolutionMs={resolutionMs}
               />
             </>
           ) : (

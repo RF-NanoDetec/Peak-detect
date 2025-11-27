@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { Download, Loader2, CheckCircle, FileSpreadsheet, AlertCircle } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -15,21 +15,25 @@ import { apiClient } from "@/lib/apiClient"
 import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useResultsStore } from "@/lib/stores/resultsStore"
+import { useDoubleStore } from "@/lib/stores/doubleStore"
 import { useRouter } from "next/navigation"
 import { computePairMetrics, filterPairsByThresholds } from "@/components/double/metrics"
 import type { DoublePeakThresholds } from "@/components/double/types"
 import type { PairMetrics } from "@/components/double/metrics"
+
+type ExportMode = "single" | "double" | "combined"
 
 export default function ExportPage() {
   const router = useRouter()
   const { resultId, filteredResultId } = useDataStore()
   const { params } = useParamsStore()
   const { detectionResults } = useResultsStore()
+  const { selectedPairIndices } = useDoubleStore()
   
   const [isExporting, setIsExporting] = useState(false)
   const [format, setFormat] = useState<"csv" | "txt" | "xlsx">("csv")
   const [includeMetadata, setIncludeMetadata] = useState(true)
-  const [exportDoublePeaksOnly, setExportDoublePeaksOnly] = useState(false)
+  const [exportMode, setExportMode] = useState<ExportMode>("single")
   
   // Double peak thresholds (same defaults as Double Peak page)
   const [thresholds, setThresholds] = useState<DoublePeakThresholds>({
@@ -86,9 +90,29 @@ export default function ExportPage() {
     return filterPairsByThresholds(pairMetrics, thresholds)
   }, [pairMetrics, thresholds])
 
+  const clampedSelection = useMemo(
+    () => selectedPairIndices.filter((idx) => idx >= 0 && idx < pairMetrics.totalPairs),
+    [pairMetrics.totalPairs, selectedPairIndices]
+  )
+
+  const activePairIndices = useMemo(() => {
+    if (clampedSelection.length > 0) {
+      return clampedSelection
+    }
+    return filteredPairIndices
+  }, [clampedSelection, filteredPairIndices])
+
+  const selectionSource = clampedSelection.length > 0 ? "lasso" : "filters"
+
   const hasData = !!resultId
   const hasDetectionResults = !!(detectionResults && detectionResults.peak_times && detectionResults.peak_times.length > 0)
   const hasPairs = pairMetrics.totalPairs > 0
+
+  useEffect(() => {
+    if (!hasPairs && exportMode !== "single") {
+      setExportMode("single")
+    }
+  }, [exportMode, hasPairs])
 
   const updateThreshold = useCallback(
     (key: keyof DoublePeakThresholds, index: 0 | 1, value: number) => {
@@ -140,7 +164,7 @@ export default function ExportPage() {
         "Rel Height": params.rel_height,
       }
 
-      // Double peak params for the API
+      // Double peak params for the API (only when exporting double data)
       const doublePeakParams = {
         min_distance: thresholds.distance[0] / 1000, // Convert ms to seconds
         max_distance: thresholds.distance[1] / 1000,
@@ -150,24 +174,29 @@ export default function ExportPage() {
         max_width_ratio: thresholds.pairWidthRatio[1],
       }
 
-      if (exportDoublePeaksOnly && hasPairs) {
+      if (exportMode !== "single" && hasPairs) {
         metadata["Double Peak Min Distance (ms)"] = thresholds.distance[0]
         metadata["Double Peak Max Distance (ms)"] = thresholds.distance[1]
         metadata["Double Peak Min Prom Ratio"] = thresholds.pairPromRatio[0]
         metadata["Double Peak Max Prom Ratio"] = thresholds.pairPromRatio[1]
         metadata["Double Peak Min Width Ratio"] = thresholds.pairWidthRatio[0]
         metadata["Double Peak Max Width Ratio"] = thresholds.pairWidthRatio[1]
-        metadata["Filtered Pairs Count"] = filteredPairIndices.length
+        metadata["Double Peak Selected Pairs"] = activePairIndices.length
+        metadata["Double Peak Selection Source"] = selectionSource
       }
 
       const payload = {
         resultId,
         filteredResultId,
-        double_peak_params: exportDoublePeaksOnly ? doublePeakParams : undefined,
+        double_peak_params: exportMode === "single" ? undefined : doublePeakParams,
+        double_peak_indices: exportMode === "single" ? undefined : activePairIndices,
+        double_peak_thresholds: exportMode === "single" ? undefined : thresholds,
         metadata,
         format,
         include_metadata: includeMetadata,
-        filter_double_peaks: exportDoublePeaksOnly,
+        filter_double_peaks: exportMode === "double",
+        export_mode: exportMode,
+        selection_source: selectionSource,
         prominence_threshold: params.prominence_threshold,
         distance: params.distance,
         rel_height: params.rel_height,
@@ -180,9 +209,14 @@ export default function ExportPage() {
 
       const blob = await apiClient.exportUnified(payload)
       
-      const filename = exportDoublePeaksOnly 
-        ? `double_peaks_analysis.${format === 'xlsx' ? 'xlsx' : format}`
-        : `peaks_analysis.${format === 'xlsx' ? 'xlsx' : format}`
+      const filenameBase =
+        exportMode === "single"
+          ? "single_peaks_analysis"
+          : exportMode === "double"
+            ? "double_peaks_analysis"
+            : "combined_peaks_analysis"
+
+      const filename = `${filenameBase}.${format === 'xlsx' ? 'xlsx' : format}`
       
       downloadBlob(blob, filename)
       toast.success(`Exported successfully as ${format.toUpperCase()}`)
@@ -229,10 +263,13 @@ export default function ExportPage() {
                           <span className="text-muted-foreground">Total Peak Pairs</span>
                           <span className="font-medium">{pairMetrics.totalPairs}</span>
                         </div>
-                        {exportDoublePeaksOnly && (
+                        {exportMode !== "single" && (
                           <div className="flex justify-between text-accent">
-                            <span>Pairs Matching Filters</span>
-                            <span className="font-semibold">{filteredPairIndices.length}</span>
+                            <span>Pairs to Export</span>
+                            <span className="font-semibold">
+                              {activePairIndices.length}
+                              {selectionSource === "lasso" ? " (lasso)" : " (filters)"}
+                            </span>
                           </div>
                         )}
                       </>
@@ -249,7 +286,7 @@ export default function ExportPage() {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Export Mode</span>
                       <span className="font-medium">
-                        {exportDoublePeaksOnly ? "Double Peaks Only" : "All Peaks"}
+                        {exportMode === "single" ? "Single Peaks" : exportMode === "double" ? "Double Peaks" : "Combined"}
                       </span>
                     </div>
                   </div>
@@ -377,20 +414,36 @@ export default function ExportPage() {
                     <Switch checked={includeMetadata} onCheckedChange={setIncludeMetadata} />
                   </div>
 
-                  {hasPairs && (
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium flex items-center gap-1">
-                        Double Peaks Only
-                        <InfoTooltip content="Export only peak pairs that match the filter criteria below" />
-                      </label>
-                      <Switch checked={exportDoublePeaksOnly} onCheckedChange={setExportDoublePeaksOnly} />
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium flex items-center gap-1">
+                      Export Mode
+                      <InfoTooltip content="Choose whether to export single peaks, double-peak pairs, or both together." />
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(["single", "double", "combined"] as ExportMode[]).map((mode) => (
+                        <Button
+                          key={mode}
+                          variant={exportMode === mode ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs h-9"
+                          onClick={() => setExportMode(mode)}
+                          disabled={mode !== "single" && !hasPairs}
+                        >
+                          {mode === "single" ? "Single" : mode === "double" ? "Double" : "Combined"}
+                        </Button>
+                      ))}
                     </div>
-                  )}
+                    {clampedSelection.length > 0 && (
+                      <p className="text-[11px] text-accent">
+                        Using lasso selection ({clampedSelection.length} pairs)
+                      </p>
+                    )}
+                  </div>
                 </AccordionContent>
               </AccordionItem>
 
               {/* Double Peak Filters - only show when enabled */}
-              {hasPairs && exportDoublePeaksOnly && (
+              {hasPairs && exportMode !== "single" && (
                 <>
                   <Separator className="my-1" />
                   
@@ -399,11 +452,16 @@ export default function ExportPage() {
                       <div className="flex items-center gap-2 text-sm font-medium">
                         Double Peak Filters
                         <span className="text-xs font-normal text-muted-foreground ml-1">
-                          ({filteredPairIndices.length} of {pairMetrics.totalPairs})
+                          ({activePairIndices.length} of {pairMetrics.totalPairs})
                         </span>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4 space-y-4">
+                      {clampedSelection.length > 0 && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Lasso selection is active; clear it in the Double Peak page to use filters.
+                        </p>
+                      )}
                       {/* Distance */}
                       <div className="space-y-2">
                         <label className="text-xs font-medium flex items-center gap-1">
@@ -535,7 +593,11 @@ export default function ExportPage() {
             <Button 
               className="w-full mt-4" 
               onClick={handleExport} 
-              disabled={isExporting || !hasDetectionResults}
+              disabled={
+                isExporting ||
+                !hasDetectionResults ||
+                (exportMode !== "single" && (!hasPairs || activePairIndices.length === 0))
+              }
               size="lg"
             >
               {isExporting ? (

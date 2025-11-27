@@ -1463,7 +1463,7 @@ def export_unified(
     store: InMemoryStore = Depends(get_store)
 ):
     """
-    Unified export for peaks data with optional metadata and double peak masking.
+    Unified export for peaks data with optional metadata and double peak/double pair sections.
     """
     import logging
     import pandas as pd
@@ -1478,6 +1478,12 @@ def export_unified(
     export_format = payload.get('format', 'csv').lower()
     include_metadata = payload.get('include_metadata', False)
     filter_double_peaks = payload.get('filter_double_peaks', False)
+    export_mode = payload.get('export_mode', 'single')  # single | double | combined
+    double_peak_indices = payload.get('double_peak_indices') or []
+    if isinstance(double_peak_indices, list):
+        double_peak_indices = [int(idx) for idx in double_peak_indices if isinstance(idx, (int, float))]
+    double_peak_thresholds = payload.get('double_peak_thresholds') or {}
+    selection_source = payload.get('selection_source') or ('lasso' if double_peak_indices else 'filters')
     
     if not result_id:
         raise HTTPException(status_code=400, detail="resultId required")
@@ -1542,59 +1548,109 @@ def export_unified(
         else:
             properties = {}
             
-    # If double peak analysis is missing but we have params, run it
-    if not double_peak_analysis and double_peak_params:
+    # If double peak analysis is missing but we have params (or an export mode that needs it), run it
+    needs_double_section = export_mode in ("double", "combined")
+    if needs_double_section and not double_peak_analysis:
+        params_to_use = double_peak_params or {
+            "min_distance": double_peak_thresholds.get("distance", [0.001, 0.100])[0] / 1000 if double_peak_thresholds else 0.001,
+            "max_distance": double_peak_thresholds.get("distance", [0.001, 0.100])[1] / 1000 if double_peak_thresholds else 0.100,
+            "min_amp_ratio": double_peak_thresholds.get("pairPromRatio", [0.1, 10.0])[0],
+            "max_amp_ratio": double_peak_thresholds.get("pairPromRatio", [0.1, 10.0])[1],
+            "min_width_ratio": double_peak_thresholds.get("pairWidthRatio", [0.1, 10.0])[0],
+            "max_width_ratio": double_peak_thresholds.get("pairWidthRatio", [0.1, 10.0])[1],
+        }
         double_peak_analysis = analyze_double_peaks_pure(
             peaks=peaks,
             properties=properties,
             time_resolution=time_resolution,
-            min_distance=double_peak_params.get('min_distance', 0.001),
-            max_distance=double_peak_params.get('max_distance', 0.100),
-            min_amp_ratio=double_peak_params.get('min_amp_ratio', 0.1),
-            max_amp_ratio=double_peak_params.get('max_amp_ratio', 10.0),
-            min_width_ratio=double_peak_params.get('min_width_ratio', 0.1),
-            max_width_ratio=double_peak_params.get('max_width_ratio', 10.0),
+            min_distance=params_to_use.get('min_distance', 0.001),
+            max_distance=params_to_use.get('max_distance', 0.100),
+            min_amp_ratio=params_to_use.get('min_amp_ratio', 0.1),
+            max_amp_ratio=params_to_use.get('max_amp_ratio', 10.0),
+            min_width_ratio=params_to_use.get('min_width_ratio', 0.1),
+            max_width_ratio=params_to_use.get('max_width_ratio', 10.0),
         )
         
-    # Generate DataFrame
-    df = export_unified_peaks_data(
-        time_values, 
-        peaks, 
-        properties, 
-        time_resolution, 
-        double_peak_analysis, 
-        filter_double_peaks
+    # Generate DataFrames
+    frames = export_unified_peaks_data(
+        time_values,
+        peaks,
+        properties,
+        time_resolution,
+        double_peak_analysis,
+        filter_double_peaks if needs_double_section else False,
+        pair_indices=double_peak_indices if needs_double_section else None,
+        include_double_flags=(export_mode != "single")
     )
-    
-    if df.empty:
-        # Instead of 404, return empty file with headers to avoid confusion
-        # If export_unified_peaks_data returns empty DF, it might not have columns set if it returned early
-        if 'Time (s)' not in df.columns:
-             # Define standard columns
-             df = pd.DataFrame(columns=[
-                 'Time (s)', 'Amplitude', 'Width (ms)', 'Width (samples)', 
-                 'Interval (s)', 'Is Double Peak'
-             ])
-             
-             # If filtering for double peaks was requested, ensure columns match
-             if filter_double_peaks:
-                  # Add specific columns if needed or just rely on empty
-                  pass
-        
+
+    peaks_df = frames["peaks_df"]
+    double_df = frames["double_df"]
+
+    # Remove mask column for double-only export (requested clean view)
+    if export_mode == "double":
+        if "Is Double Peak" in peaks_df.columns:
+            peaks_df = peaks_df.drop(columns=["Is Double Peak"])
+        if "Is Double Peak" in double_df.columns:
+            double_df = double_df.drop(columns=["Is Double Peak"])
+
+    # Build metadata blocks
+    single_metadata_items = list(metadata.items()) if metadata else []
+    double_metadata_items: List[tuple] = []
+    if needs_double_section:
+        # Use thresholds if present; otherwise fall back to params and analysis counts
+        if double_peak_thresholds:
+            dist = double_peak_thresholds.get("distance", [None, None])
+            if dist and len(dist) == 2:
+                double_metadata_items.append(("Distance Min (ms)", dist[0]))
+                double_metadata_items.append(("Distance Max (ms)", dist[1]))
+            prom_ratio = double_peak_thresholds.get("pairPromRatio")
+            if prom_ratio and len(prom_ratio) == 2:
+                double_metadata_items.append(("Prominence Ratio Min", prom_ratio[0]))
+                double_metadata_items.append(("Prominence Ratio Max", prom_ratio[1]))
+            width_ratio = double_peak_thresholds.get("pairWidthRatio")
+            if width_ratio and len(width_ratio) == 2:
+                double_metadata_items.append(("Width Ratio Min", width_ratio[0]))
+                double_metadata_items.append(("Width Ratio Max", width_ratio[1]))
+            prom_over_amp = double_peak_thresholds.get("promOverAmp")
+            if prom_over_amp and len(prom_over_amp) == 2:
+                double_metadata_items.append(("Prominence/Amplitude Min", prom_over_amp[0]))
+                double_metadata_items.append(("Prominence/Amplitude Max", prom_over_amp[1]))
+
+        if double_peak_analysis:
+            double_metadata_items.append(("Total Pairs", double_peak_analysis.get("total_pairs", 0)))
+            double_metadata_items.append(("Double Peak Count", double_peak_analysis.get("double_peak_count", 0)))
+
+        selected_count = len(double_df) if not double_df.empty else (len(double_peak_indices) if double_peak_indices else 0)
+        double_metadata_items.append(("Selected Pair Count", selected_count))
+        double_metadata_items.append(("Selection Source", selection_source))
+
+    # If everything is empty, return an empty response with headers
+    if peaks_df.empty and double_df.empty:
+        peaks_df = pd.DataFrame(columns=[
+            'Time (s)', 'Amplitude', 'Width (ms)', 'Width (samples)', 'Interval (s)'
+        ])
+
     # Handle Export Format
     if export_format == 'xlsx':
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            if include_metadata and metadata:
-                # Write metadata to a separate sheet
-                meta_df = pd.DataFrame(list(metadata.items()), columns=['Parameter', 'Value'])
+            if include_metadata and (single_metadata_items or double_metadata_items):
+                meta_rows = []
+                for key, val in single_metadata_items:
+                    meta_rows.append(("Single Peaks", key, val))
+                for key, val in double_metadata_items:
+                    meta_rows.append(("Double Peaks", key, val))
+                meta_df = pd.DataFrame(meta_rows, columns=['Section', 'Parameter', 'Value'])
                 meta_df.to_excel(writer, sheet_name='Metadata', index=False)
-                
-            df.to_excel(writer, sheet_name='Peaks', index=False)
+
+            peaks_df.to_excel(writer, sheet_name='Single Peaks', index=False)
+
+            if needs_double_section and not double_df.empty:
+                double_df.to_excel(writer, sheet_name='Double Peak Pairs', index=False)
             
         output.seek(0)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = "peaks_analysis.xlsx"
+        filename = f"{export_mode}_peaks_analysis.xlsx"
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type=media_type,
@@ -1604,19 +1660,31 @@ def export_unified(
     else: # CSV or TXT
         output = StringIO()
         
-        if include_metadata and metadata:
-            # Write metadata as comments
-            for k, v in metadata.items():
+        if include_metadata and (single_metadata_items or double_metadata_items):
+            output.write("# Metadata\n")
+            for k, v in single_metadata_items:
                 output.write(f"# {k}: {v}\n")
+            if double_metadata_items:
+                output.write("# Double Peak Metadata\n")
+                for k, v in double_metadata_items:
+                    output.write(f"# {k}: {v}\n")
             output.write("\n")
-            
+
         sep = ',' if export_format == 'csv' else '\t'
-        df.to_csv(output, index=False, sep=sep)
+        # Single peaks section
+        output.write("# Single Peaks\n")
+        peaks_df.to_csv(output, index=False, sep=sep)
+
+        # Double peak section (optional)
+        if needs_double_section and not double_df.empty:
+            output.write("\n# Double Peak Pairs\n")
+            double_df.to_csv(output, index=False, sep=sep)
+
         output.seek(0)
         
         media_type = "text/csv" if export_format == 'csv' else "text/plain"
         ext = "csv" if export_format == 'csv' else "txt"
-        filename = f"peaks_analysis.{ext}"
+        filename = f"{export_mode}_peaks_analysis.{ext}"
         
         return StreamingResponse(
             iter([output.getvalue()]),

@@ -368,7 +368,9 @@ def export_peaks_to_csv_data(
 
 def export_double_peaks_to_csv_data(
     double_peak_analysis: Dict[str, Any],
-    time_values: np.ndarray
+    time_values: np.ndarray,
+    pair_indices: Optional[List[int]] = None,
+    include_is_double: bool = True
 ) -> pd.DataFrame:
     """
     Create a DataFrame with double peak information for CSV export.
@@ -390,6 +392,11 @@ def export_double_peaks_to_csv_data(
     
     # Extract data from peak pairs
     pairs = double_peak_analysis['peak_pairs']
+
+    # Restrict to specific pairs if provided
+    if pair_indices is not None and len(pair_indices) > 0:
+        index_set = set(pair_indices)
+        pairs = [p for i, p in enumerate(pairs) if i in index_set]
     
     data = {
         'Primary Peak Time (s)': [time_values[p['primary_peak_idx']] for p in pairs],
@@ -400,8 +407,10 @@ def export_double_peaks_to_csv_data(
         'Secondary Peak Width (ms)': [p['secondary_width_ms'] for p in pairs],
         'Width Ratio': [p['width_ratio'] for p in pairs],
         'Amplitude Ratio': [p['amplitude_ratio'] for p in pairs],
-        'Is Double Peak': [p['is_double_peak'] for p in pairs]
     }
+
+    if include_is_double:
+        data['Is Double Peak'] = [p.get('is_double_peak', False) for p in pairs]
     
     return pd.DataFrame(data)
 
@@ -412,67 +421,64 @@ def export_unified_peaks_data(
     properties: Dict[str, np.ndarray],
     time_resolution: float,
     double_peak_analysis: Optional[Dict[str, Any]] = None,
-    filter_double_peaks: bool = False
-) -> pd.DataFrame:
+    filter_double_peaks: bool = False,
+    pair_indices: Optional[List[int]] = None,
+    include_double_flags: bool = False
+) -> Dict[str, pd.DataFrame]:
     """
-    Create a unified DataFrame with peak information and optional double peak masking.
-    
-    Parameters
-    ----------
-    time_values : np.ndarray
-        Array of time values in seconds
-    peaks : np.ndarray
-        Array of peak indices
-    properties : dict
-        Dictionary of peak properties (prominences, widths, etc.)
-    time_resolution : float
-        Time resolution in seconds per sample
-    double_peak_analysis : dict, optional
-        Result from analyze_double_peaks_pure
-    filter_double_peaks : bool
-        If True, only export peaks that are part of a double peak pair
-        
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with peak information and optional double peak mask
+    Create dataframes for single-peak data and, optionally, double-peak pair data.
+
+    Returns a dictionary with:
+        {
+            "peaks_df": DataFrame of single peaks (with optional Is Double Peak mask),
+            "double_df": DataFrame of double-peak pairs (may be empty)
+        }
     """
-    # Start with standard peak export
-    df = export_peaks_to_csv_data(time_values, peaks, properties, time_resolution)
-    
-    if df.empty:
-        return df
-        
-    # Add double peak mask if analysis is provided
+    peaks_df = export_peaks_to_csv_data(time_values, peaks, properties, time_resolution)
+    double_df = pd.DataFrame()
+
+    if peaks_df.empty:
+        return {"peaks_df": peaks_df, "double_df": double_df}
+
+    # Add double peak mask and pair table if analysis is provided
     if double_peak_analysis and 'peak_pairs' in double_peak_analysis:
-        # Initialize mask
-        is_double_peak = np.zeros(len(peaks), dtype=bool)
-        
-        # Map peak indices to their position in the peaks array
-        # peaks array contains indices into time_values
-        # We need to find which row in df corresponds to which peak index
-        # Since df is constructed from peaks array in order, row i corresponds to peaks[i]
-        
-        # Create a map from peak_index (in time_values) to row_index (in df)
-        peak_idx_to_row = {peak_idx: i for i, peak_idx in enumerate(peaks)}
-        
-        for pair in double_peak_analysis['peak_pairs']:
-            if pair.get('is_double_peak', False):
-                primary_idx = pair['primary_peak_idx']
-                secondary_idx = pair['secondary_peak_idx']
-                
-                if primary_idx in peak_idx_to_row:
-                    is_double_peak[peak_idx_to_row[primary_idx]] = True
-                if secondary_idx in peak_idx_to_row:
-                    is_double_peak[peak_idx_to_row[secondary_idx]] = True
-                    
-        df['Is Double Peak'] = is_double_peak
-        
+        peak_pairs = double_peak_analysis['peak_pairs']
+
+        # Restrict to selected pair indices when provided
+        if pair_indices is not None and len(pair_indices) > 0:
+            pair_set = set(pair_indices)
+            peak_pairs = [p for i, p in enumerate(peak_pairs) if i in pair_set]
+
+        # Optionally build mask for peaks participating in selected pairs
+        if include_double_flags:
+            is_double_peak = np.zeros(len(peaks), dtype=bool)
+
+            peak_idx_to_row = {peak_idx: i for i, peak_idx in enumerate(peaks)}
+            for pair in peak_pairs:
+                mark_peak = pair.get('is_double_peak', False) if not filter_double_peaks else True
+                if mark_peak:
+                    primary_idx = pair['primary_peak_idx']
+                    secondary_idx = pair['secondary_peak_idx']
+
+                    if primary_idx in peak_idx_to_row:
+                        is_double_peak[peak_idx_to_row[primary_idx]] = True
+                    if secondary_idx in peak_idx_to_row:
+                        is_double_peak[peak_idx_to_row[secondary_idx]] = True
+
+            peaks_df['Is Double Peak'] = is_double_peak
+
+        double_df = export_double_peaks_to_csv_data(
+            {"peak_pairs": peak_pairs},
+            time_values,
+            pair_indices=None,  # already filtered above
+            include_is_double=include_double_flags
+        )
+
         if filter_double_peaks:
-            df = df[df['Is Double Peak']].copy()
-            
+            peaks_df = peaks_df[peaks_df.get('Is Double Peak', False)].copy()
+
     elif filter_double_peaks:
-        # If filtering requested but no analysis provided, return empty
-        return pd.DataFrame(columns=df.columns)
-        
-    return df
+        # If filtering requested but no analysis provided, return empty peaks_df
+        peaks_df = pd.DataFrame(columns=peaks_df.columns)
+
+    return {"peaks_df": peaks_df, "double_df": double_df}
