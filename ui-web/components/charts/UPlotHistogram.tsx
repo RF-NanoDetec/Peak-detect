@@ -36,6 +36,8 @@ interface UPlotHistogramProps {
   xLabel: string
   yLabel?: string
   color?: string
+  overlayData?: HistogramData
+  overlayColor?: string
   xScaleType?: AxisScaleType
   yScaleType?: YAxisScaleType
   height?: number
@@ -120,6 +122,8 @@ export function UPlotHistogram({
   xLabel,
   yLabel = "Count",
   color,
+  overlayData,
+  overlayColor,
   xScaleType = "linear",
   yScaleType = "linear",
   height = 200,
@@ -138,6 +142,7 @@ export function UPlotHistogram({
 
   const barColor = color || accentColor
   const edgeColor = color ? color : accentEdgeColor
+  const overlayBarColor = overlayColor || accentColor
 
   useEffect(() => {
     setMounted(true)
@@ -178,6 +183,13 @@ export function UPlotHistogram({
     const validCounts = yData.filter(v =>
       Number.isFinite(v) && (yScaleType !== "log" || v > 0)
     )
+    const overlayCountsRaw = overlayData?.counts || []
+    const validOverlayCounts = overlayCountsRaw.filter(v =>
+      Number.isFinite(v) && (yScaleType !== "log" || v > 0)
+    )
+    const combinedCounts = validOverlayCounts.length > 0
+      ? [...validCounts, ...validOverlayCounts]
+      : validCounts
 
     // X Scale Configuration
     const xScaleBase: uPlot.Scale = { time: false }
@@ -241,9 +253,9 @@ export function UPlotHistogram({
       yScaleBase.range = (_u: uPlot, dataMin: number, dataMax: number) => {
         let resultMin = 1, resultMax = 100
         // Use valid counts for range calculation
-        if (validCounts.length > 0) {
-          const minPositive = safeArrayMin(validCounts)
-          const maxPositive = safeArrayMax(validCounts)
+        if (combinedCounts.length > 0) {
+          const minPositive = safeArrayMin(combinedCounts)
+          const maxPositive = safeArrayMax(combinedCounts)
           if (minPositive > 0 && maxPositive > minPositive) {
             resultMin = Math.max(1, minPositive * 0.5)
             resultMax = Math.max(10, maxPositive * 1.5)
@@ -270,8 +282,8 @@ export function UPlotHistogram({
       // For linear Y scale, start from 0
       yScaleBase.auto = false
       yScaleBase.min = 0
-      if (validCounts.length > 0) {
-        const maxCount = safeArrayMax(validCounts)
+      if (combinedCounts.length > 0) {
+        const maxCount = safeArrayMax(combinedCounts)
         yScaleBase.max = Math.max(1, maxCount * 1.1)
       }
     }
@@ -334,6 +346,9 @@ export function UPlotHistogram({
             const xValues = (u.data[0] as number[]) || []
             const yValues = (u.data[1] as number[]) || []
             const edges = data.bin_edges || []
+            const overlayBins = overlayData?.bins || []
+            const overlayCounts = overlayData?.counts || []
+            const overlayEdges = overlayData?.bin_edges && overlayData.bin_edges.length > 1 ? overlayData.bin_edges : edges
 
             ctx.save()
             ctx.lineWidth = 1
@@ -394,6 +409,65 @@ export function UPlotHistogram({
               }
             }
 
+            // Overlay selection histogram on top with accent color
+            if (overlayBins.length > 0 && overlayCounts.length > 0) {
+              ctx.save()
+              ctx.strokeStyle = overlayBarColor
+              ctx.fillStyle = overlayBarColor
+
+              const overlayLen = Math.min(overlayBins.length, overlayCounts.length)
+              for (let i = 0; i < overlayLen; i += 1) {
+                const count = overlayCounts[i]
+                if (!Number.isFinite(count)) continue
+
+                const hasEdges = overlayEdges && overlayEdges.length > i + 1
+                const center = hasEdges
+                  ? (xScaleType === "linear"
+                      ? (overlayEdges[i] + overlayEdges[i + 1]) / 2
+                      : Math.sqrt(overlayEdges[i] * overlayEdges[i + 1]))
+                  : overlayBins[i]
+
+                let barWidthPx = 0
+                if (hasEdges) {
+                  const left = u.valToPos(overlayEdges[i], "x", true)
+                  const right = u.valToPos(overlayEdges[i + 1], "x", true)
+                  barWidthPx = Math.abs(right - left) * 0.7
+                } else if (overlayBins.length > 1) {
+                  const prev = overlayBins[i - 1] ?? overlayBins[i]
+                  const next = overlayBins[i + 1] ?? overlayBins[i]
+                  const leftPx = u.valToPos(prev, "x", true)
+                  const rightPx = u.valToPos(next, "x", true)
+                  barWidthPx = Math.abs(rightPx - leftPx) * 0.45
+                } else {
+                  barWidthPx = Math.max(2, width * 0.04)
+                }
+
+                if (barWidthPx <= 0) continue
+
+                const scaleMin = u.scales.y?.min ?? 0
+                const countValue = yScaleType === "log" ? Math.max(count, 1) : count
+                const baseValue = yScaleType === "log" ? Math.max(scaleMin, 1) : scaleMin
+
+                const xPx = u.valToPos(center, "x", true)
+                const yPx = u.valToPos(countValue, "y", true)
+                const zeroPx = u.valToPos(baseValue, "y", true)
+
+                const barHeight = Math.abs(zeroPx - yPx)
+                const barLeft = xPx - barWidthPx / 2
+                const barTop = Math.min(zeroPx, yPx)
+
+                if (barHeight > 0) {
+                  ctx.globalAlpha = 0.55
+                  ctx.fillRect(barLeft, barTop, barWidthPx, barHeight)
+                  
+                  ctx.globalAlpha = 0.9
+                  ctx.strokeRect(barLeft, barTop, barWidthPx, barHeight)
+                }
+              }
+
+              ctx.restore()
+            }
+
             ctx.restore()
 
             // Draw vertical lines for thresholds
@@ -438,7 +512,7 @@ export function UPlotHistogram({
         ],
       },
     }
-  }, [width, height, isDark, data, xLabel, yLabel, barColor, edgeColor, xScaleType, yScaleType, verticalLines])
+  }, [width, height, isDark, data, xLabel, yLabel, barColor, edgeColor, overlayBarColor, overlayData, xScaleType, yScaleType, verticalLines])
 
   const chartData = useMemo(() => {
     const rawX = data.bins || []
@@ -489,7 +563,7 @@ export function UPlotHistogram({
         }
       })
     }
-  }, [verticalLines, chartReady])
+  }, [verticalLines, overlayData, chartReady])
 
   // Additional cleanup when scale type changes (defensive - chartKey change should handle this)
   useEffect(() => {
@@ -559,7 +633,3 @@ export function UPlotHistogram({
     </div>
   )
 }
-
-
-
-

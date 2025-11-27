@@ -3,6 +3,7 @@
  * 
  * Computes pair-wise and per-peak metrics from detection results.
  */
+import type { DoublePeakThresholds } from "./types"
 
 export interface PairMetrics {
   // Arrays of length N-1 (for N peaks)
@@ -125,6 +126,18 @@ export interface FilterThresholds {
   promOverAmp: [number, number]
 }
 
+export const normalizeDoubleThresholds = (
+  thresholds: DoublePeakThresholds
+): FilterThresholds => ({
+  distance: thresholds.distance,
+  pairPromRatio: thresholds.pairPromRatio,
+  pairWidthRatio: thresholds.pairWidthRatio,
+  promOverAmp: [
+    thresholds.promOverAmp[0] / 100,
+    thresholds.promOverAmp[1] / 100,
+  ],
+})
+
 /**
  * Filter pairs by threshold values and optionally lasso selection.
  * Returns array of passing pair indices.
@@ -211,4 +224,3 @@ export function downloadCSV(csvContent: string, filename: string = 'double_peak_
   
   URL.revokeObjectURL(url)
 }
-

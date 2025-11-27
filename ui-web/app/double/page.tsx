@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useDoubleStore } from "@/lib/stores/doubleStore"
-import { computePairMetrics } from "@/components/double/metrics"
+import { computePairMetrics, filterPairsByThresholds, filterPairMetricsByIndices, normalizeDoubleThresholds } from "@/components/double/metrics"
 import { DoublePeakPanel } from "@/components/double/DoublePeakPanel"
 import { DoublePeakScatter } from "@/components/double/DoublePeakScatter"
 import type { DoublePeakThresholds } from "@/components/double/types"
@@ -90,6 +90,32 @@ export default function DoublePeakPage() {
     })
   }, [detectionResults, params.time_resolution])
 
+  const normalizedThresholds = useMemo(
+    () => normalizeDoubleThresholds(thresholds),
+    [thresholds]
+  )
+
+  const filteredIndices = useMemo(() => {
+    if (fullMetrics.totalPairs === 0) return []
+    const lassoSelection = selectedIndices.length > 0 ? selectedIndices : undefined
+    return filterPairsByThresholds(fullMetrics, normalizedThresholds, lassoSelection)
+  }, [fullMetrics, normalizedThresholds, selectedIndices])
+
+  const filteredMetrics = useMemo(() => {
+    if (filteredIndices.length === 0) {
+      return {
+        distanceMs: [],
+        pairPromRatio: [],
+        pairWidthRatio: [],
+        timesMin: [],
+        promOverAmp: [],
+        totalPairs: 0,
+        totalPeaks: fullMetrics.totalPeaks,
+      }
+    }
+    return filterPairMetricsByIndices(fullMetrics, filteredIndices)
+  }, [fullMetrics, filteredIndices])
+
   // Keep local selection in sync with store (used by export page)
   useEffect(() => {
     setSelectedIndices(selectedPairIndices)
@@ -128,6 +154,7 @@ export default function DoublePeakPage() {
               metrics={fullMetrics}
               thresholds={thresholds}
               selectedIndices={selectedIndices}
+              filteredIndices={filteredIndices}
               onSelectedIndicesChange={(indices) => {
                 setSelectedIndices(indices)
                 setSelectedPairIndices(indices)
@@ -190,6 +217,8 @@ export default function DoublePeakPage() {
                 thresholds={thresholds}
                 onThresholdsChange={setThresholds}
                 resolutionMs={resolutionMs}
+                filteredIndices={filteredIndices}
+                filteredMetrics={filteredMetrics}
               />
             </>
           ) : (

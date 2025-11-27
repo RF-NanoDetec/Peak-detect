@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Download, Lasso, Filter } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { PairMetrics } from "./metrics"
-import { exportPairMetricsToCSV, downloadCSV, filterPairsByThresholds, type FilterThresholds } from "./metrics"
+import { exportPairMetricsToCSV, downloadCSV } from "./metrics"
 import type { DoublePeakThresholds } from "./types"
 
 type ScaleType = "linear" | "log"
@@ -56,8 +56,11 @@ const buildRange = (values: number[], scale: ScaleType): Range => {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return null
 
   if (scale === "log") {
-    const paddingFactor = 0.15
-    min = Math.max(min / (1 + paddingFactor), min * 0.8, LOG_FLOOR)
+    const paddingFactor = 0.12
+    // Keep the lower bound anchored to the smallest positive value so we don't
+    // show empty decades when switching from linear to log.
+    const nearestFloor = min / 1.5
+    min = Math.max(min / (1 + paddingFactor), min * 0.85, nearestFloor, LOG_FLOOR)
     max = max * (1 + paddingFactor)
     if (max <= min) {
       max = min * 10
@@ -84,6 +87,7 @@ interface DoublePeakScatterProps {
   metrics: PairMetrics
   thresholds: DoublePeakThresholds
   selectedIndices: number[]
+  filteredIndices: number[]
   onSelectedIndicesChange: (indices: number[]) => void
   className?: string
 }
@@ -92,6 +96,7 @@ export function DoublePeakScatter({
   metrics,
   thresholds,
   selectedIndices,
+  filteredIndices,
   onSelectedIndicesChange,
   className = "",
 }: DoublePeakScatterProps) {
@@ -100,7 +105,6 @@ export function DoublePeakScatter({
   const [enableLasso, setEnableLasso] = useState(false)
   const [yScale, setYScale] = useState<ScaleType>("linear")
   const [xRange, setXRange] = useState<{ min: number; max: number } | null>(null)
-  const [filteredIndices, setFilteredIndices] = useState<number[]>([])
   const [yRange, setYRange] = useState<Range>(() => {
     const seedRange = buildRange(
       [...metrics.distanceMs, thresholds.distance[0], thresholds.distance[1]],
@@ -115,27 +119,6 @@ export function DoublePeakScatter({
 
   const pointColor = isDark ? "rgba(203, 213, 225, 0.6)" : "rgba(15, 23, 42, 0.6)"
   const thresholdColor = isDark ? "#fb923c" : "#f97316"
-  const normalizedThresholds: FilterThresholds = useMemo(
-    () => ({
-      ...thresholds,
-      promOverAmp: [
-        thresholds.promOverAmp[0] / 100,
-        thresholds.promOverAmp[1] / 100,
-      ],
-    }),
-    [thresholds]
-  )
-  
-  // Calculate filtered indices based on thresholds and lasso selection
-  useEffect(() => {
-    const filtered = filterPairsByThresholds(
-      metrics,
-      normalizedThresholds,
-      selectedIndices.length > 0 ? selectedIndices : undefined
-    )
-    setFilteredIndices(filtered)
-  }, [metrics, normalizedThresholds, selectedIndices])
-
   // Create filtered set for quick lookup
   const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices])
   const selectedSet = useMemo(() => new Set(selectedIndices), [selectedIndices])

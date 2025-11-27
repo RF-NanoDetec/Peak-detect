@@ -152,6 +152,42 @@ const safeArrayMax = (arr: number[]): number => {
   return max
 }
 
+const computeRange = (
+  arrays: ArrayLike<number | null | undefined>[],
+  scale: "linear" | "log"
+): { min: number; max: number } | null => {
+  let min = Infinity
+  let max = -Infinity
+
+  for (const arr of arrays) {
+    const len = arr?.length ?? 0
+    for (let i = 0; i < len; i++) {
+      const v = (arr as any)[i]
+      if (typeof v !== "number" || !Number.isFinite(v)) continue
+      if (scale === "log" && v <= 0) continue
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+  }
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === Infinity || max === -Infinity) {
+    return null
+  }
+
+  if (scale === "log") {
+    const padding = 0.1
+    const paddedMin = Math.max(min / (1 + padding), min * 0.85)
+    const paddedMax = max * (1 + padding)
+    const safeMin = Math.max(1e-9, paddedMin)
+    const safeMax = paddedMax > safeMin ? paddedMax : safeMin * 10
+    return { min: safeMin, max: safeMax }
+  }
+
+  const span = max - min
+  const padding = span > 0 ? span * 0.08 : Math.abs(max || 1) * 0.05
+  return { min: min - padding, max: max + padding }
+}
+
 // Format x-axis ticks for time (input values are minutes)
 const formatTimeAxisTicks = (
   u: uPlot,
@@ -329,6 +365,7 @@ export function UPlotChart({
   const selectedIndicesRef = useRef(selectedIndices)
   const filteredIndicesRef = useRef(filteredIndices)
   const enableLassoRef = useRef(enableLasso)
+  const xScaleTypeRef = useRef(xScaleType)
   
   // Refs for scale-related props to avoid recreating options on scale change
   const yScaleTypeRef = useRef(yScaleType)
@@ -357,6 +394,7 @@ export function UPlotChart({
   filteredIndicesRef.current = filteredIndices
   enableLassoRef.current = enableLasso
   yScaleTypeRef.current = yScaleType
+  xScaleTypeRef.current = xScaleType
   yRangeRef.current = yRange
   xRangeRef.current = xRange
 
@@ -1004,29 +1042,25 @@ export function UPlotChart({
                 onResetZoom()
               } else {
                 const xSeries = u.data[0] as number[]
-                const xMin = xSeries && xSeries.length > 0 ? xSeries[0] : 0
-                const xMax = xSeries && xSeries.length > 0 ? xSeries[xSeries.length - 1] : 1
-
-                if (onXRangeChange) {
-                  onXRangeChange({ min: xMin, max: xMax })
+                const xRangeReset = computeRange([xSeries], xScaleTypeRef.current)
+                if (xRangeReset) {
+                  u.setScale("x", xRangeReset)
+                  onXRangeChange?.(xRangeReset)
                 }
 
-                u.setScale("x", { min: xMin, max: xMax })
-
-                const allYValues: number[] = []
-                for (let i = 1; i < u.data.length; i++) {
-                  const sData = u.data[i] as (number | null | undefined)[]
-                  const validVals = sData.filter(v => typeof v === "number" && Number.isFinite(v)) as number[]
-                  allYValues.push(...validVals)
-                }
-
-                if (allYValues.length > 0) {
-                  const yMin = safeArrayMin(allYValues)
-                  const yMax = safeArrayMax(allYValues)
-                  const padding = (yMax - yMin) * 0.05
-                  u.setScale("y", { min: yMin - padding, max: yMax + padding })
+                const yRangeReset = computeRange(
+                  u.data.slice(1) as ArrayLike<number | null | undefined>[],
+                  yScaleTypeRef.current
+                )
+                if (yRangeReset) {
+                  u.setScale("y", yRangeReset)
+                  onYRangeChange?.(yRangeReset)
                 } else {
-                  u.setScale("y", { min: 0, max: 100 })
+                  const fallback = yScaleTypeRef.current === "log"
+                    ? { min: 1e-3, max: 1 }
+                    : { min: 0, max: 100 }
+                  u.setScale("y", fallback)
+                  onYRangeChange?.(fallback)
                 }
               }
             })

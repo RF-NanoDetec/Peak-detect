@@ -17,6 +17,8 @@ interface DoublePeakPanelProps {
   thresholds: DoublePeakThresholds
   onThresholdsChange: Dispatch<SetStateAction<DoublePeakThresholds>>
   resolutionMs: number
+  filteredIndices: number[]
+  filteredMetrics: PairMetrics
   className?: string
 }
 
@@ -38,6 +40,8 @@ export function DoublePeakPanel({
   thresholds,
   onThresholdsChange,
   resolutionMs,
+  filteredIndices,
+  filteredMetrics,
   className = "",
 }: DoublePeakPanelProps) {
   const [histograms, setHistograms] = useState<DoublePeakHistograms | null>(null)
@@ -47,6 +51,7 @@ export function DoublePeakPanel({
   
   // Accent color for threshold lines
   const thresholdColor = isDark ? "#fb923c" : "#f97316"
+  const baseHistogramColor = isDark ? "#334155" : "#1f2937"
 
   // Fetch histograms when metrics change
   useEffect(() => {
@@ -145,13 +150,102 @@ export function DoublePeakPanel({
     [thresholds.promOverAmp[0], thresholds.promOverAmp[1], thresholdColor]
   )
 
+  const deriveEdges = useCallback(
+    (base: HistogramData | null, scale: "linear" | "log") => {
+      if (!base) return null
+      if (base.bin_edges && base.bin_edges.length > 1) {
+        return base.bin_edges
+      }
+      const bins = base.bins || []
+      if (bins.length < 2) return null
+
+      if (scale === "log") {
+        const ratio = bins[1] > 0 ? bins[1] / bins[0] : NaN
+        if (!Number.isFinite(ratio) || ratio <= 0) return null
+        const start = bins[0] / Math.sqrt(ratio)
+        const edges: number[] = [start]
+        for (let i = 0; i < bins.length; i++) {
+          edges.push(edges[i] * ratio)
+        }
+        return edges
+      }
+
+      const step = bins[1] - bins[0]
+      if (!Number.isFinite(step) || step === 0) return null
+      const start = bins[0] - step / 2
+      const edges: number[] = []
+      for (let i = 0; i <= bins.length; i++) {
+        edges.push(start + step * i)
+      }
+      return edges
+    },
+    []
+  )
+
+  const buildOverlayHistogram = useCallback(
+    (base: HistogramData | null, values: number[], scale: "linear" | "log"): HistogramData | null => {
+      if (!base || !base.bins || base.bins.length === 0 || values.length === 0) return null
+      const edges = deriveEdges(base, scale)
+      if (!edges || edges.length < 2) return null
+
+      const counts = new Array(edges.length - 1).fill(0)
+      const minEdge = edges[0]
+      const maxEdge = edges[edges.length - 1]
+
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i]
+        if (!Number.isFinite(v)) continue
+        if (scale === "log" && v <= 0) continue
+        if (v < minEdge || v > maxEdge) continue
+
+        let left = 0
+        let right = edges.length - 2
+        while (left <= right) {
+          const mid = (left + right) >> 1
+          const low = edges[mid]
+          const high = edges[mid + 1]
+          if (v < low) {
+            right = mid - 1
+          } else if (v > high) {
+            left = mid + 1
+          } else {
+            counts[mid] += 1
+            break
+          }
+        }
+      }
+
+      return {
+        bins: base.bins,
+        counts,
+        bin_edges: edges,
+      }
+    },
+    [deriveEdges]
+  )
+
+  const overlayHistograms = useMemo(() => {
+    if (!histograms || filteredIndices.length === 0 || filteredMetrics.totalPairs === 0) return null
+
+    return {
+      distance: buildOverlayHistogram(histograms.distance, filteredMetrics.distanceMs, "log"),
+      pairPromRatio: buildOverlayHistogram(histograms.pairPromRatio, filteredMetrics.pairPromRatio, "linear"),
+      pairWidthRatio: buildOverlayHistogram(histograms.pairWidthRatio, filteredMetrics.pairWidthRatio, "linear"),
+      promOverAmp: buildOverlayHistogram(
+        histograms.promOverAmp,
+        filteredMetrics.promOverAmp.map((val) => val * 100),
+        "linear"
+      ),
+    }
+  }, [histograms, filteredMetrics, filteredIndices.length, buildOverlayHistogram])
+
   return (
     <div className={`space-y-4 ${className}`}>
       {/* Distance Constraint */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Distance (ms)
+            Distance [ms]
             <InfoTooltip content="Time separation between two peaks in a potential pair. Peaks too close or too far apart are not considered pairs." />
           </CardTitle>
           <CardDescription>Distance between consecutive peaks</CardDescription>
@@ -186,10 +280,13 @@ export function DoublePeakPanel({
           ) : histograms && histograms.distance ? (
             <UPlotHistogram
               data={histograms.distance}
-              xLabel="Distance (ms)"
+              xLabel="Distance [ms]"
               yLabel="Count"
               xScaleType="log"
               height={180}
+              color={baseHistogramColor}
+              overlayData={overlayHistograms?.distance ?? undefined}
+              overlayColor={thresholdColor}
               verticalLines={distanceLines}
             />
           ) : (
@@ -245,6 +342,9 @@ export function DoublePeakPanel({
               yLabel="Count"
               xScaleType="linear"
               height={180}
+              color={baseHistogramColor}
+              overlayData={overlayHistograms?.promOverAmp ?? undefined}
+              overlayColor={thresholdColor}
               verticalLines={promOverAmpLines}
             />
           ) : (
@@ -308,6 +408,9 @@ export function DoublePeakPanel({
               yLabel="Count"
               xScaleType="linear"
               height={180}
+              color={baseHistogramColor}
+              overlayData={overlayHistograms?.pairWidthRatio ?? undefined}
+              overlayColor={thresholdColor}
               verticalLines={pairWidthRatioLines}
             />
           ) : (
@@ -371,6 +474,9 @@ export function DoublePeakPanel({
               yLabel="Count"
               xScaleType="linear"
               height={180}
+              color={baseHistogramColor}
+              overlayData={overlayHistograms?.pairPromRatio ?? undefined}
+              overlayColor={thresholdColor}
               verticalLines={pairPromRatioLines}
             />
           ) : (

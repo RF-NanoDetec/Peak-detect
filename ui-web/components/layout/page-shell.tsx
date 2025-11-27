@@ -50,7 +50,7 @@ export function PageControls({ children, className }: PageControlsProps) {
           className={cn(
             "shrink-0 border-l bg-muted/20 flex flex-col min-h-0 min-w-0 transition-all duration-200",
             // Responsive widths: narrower on smaller screens
-            "w-[280px] lg:w-[320px] xl:w-[360px]",
+            "w-[320px] lg:w-[380px] xl:w-[420px]",
             className
           )}
         >
