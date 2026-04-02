@@ -12,9 +12,9 @@
   "dispatch_drain": {
     "enabled": true,
     "max_per_tick": 5,
-    "run_count": 5121,
+    "run_count": 5172,
     "leader_only": true,
-    "last_tick_at": "2026-04-02T19:02:33.220Z",
+    "last_tick_at": "2026-04-02T19:02:46.812Z",
     "last_result": {
       "processed": 0,
       "skipped": 0,
@@ -27,16 +27,16 @@
     "leader_only": true,
     "stale_threshold_ms": 180000,
     "precomputed_leader_stale": true,
-    "last_tick_at": "2026-04-02T19:02:33.220Z",
+    "last_tick_at": "2026-04-02T19:02:46.813Z",
     "last_error": null,
-    "run_count": 5121
+    "run_count": 5172
   },
   "ralph_continue_steer": {
     "enabled": true,
     "cadence_ms": 60000,
     "message": "Ralph loop active continue",
     "active": false,
-    "last_state_check_at": "2026-04-02T19:02:33.224Z",
+    "last_state_check_at": "2026-04-02T19:02:46.818Z",
     "last_sent_at": "",
     "cooldown_anchor_at": "",
     "last_reason": "blocked_by_current_session",
@@ -52,7 +52,7 @@
   "fallback_auto_nudge": {
     "enabled": true,
     "stall_ms": 5000,
-    "last_tick_at": "2026-04-02T19:02:33.222Z",
+    "last_tick_at": "2026-04-02T19:02:46.815Z",
     "last_turn_at": "2026-04-02T18:47:07.668Z",
     "last_turn_count": 1,
     "last_message": "Mode: code-review  \nResult: strong app foundation, but a few hot paths still bypass the fast archite",
