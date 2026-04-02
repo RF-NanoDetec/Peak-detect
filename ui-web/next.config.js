@@ -2,7 +2,8 @@
 const nextConfig = {
   reactStrictMode: false,
   output: 'export',
-  distDir: 'out',
+  // Use `.next` during `next dev`; `out` only for production static export builds.
+  distDir: process.env.NODE_ENV === 'production' ? 'out' : '.next',
   // Disable image optimization for static export
   images: {
     unoptimized: true,

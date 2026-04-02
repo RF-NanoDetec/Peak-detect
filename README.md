@@ -50,6 +50,21 @@ High-precision, browser-based analysis for time-series peaks. The tool loads raw
 1. Download `PeakService.exe` from the release.
 2. Double-click it. The backend starts on `http://127.0.0.1:8765` and opens your default browser.
 
+### Fast Start (Source Checkout on Windows)
+If you are running from this repository checkout, use the launcher:
+```powershell
+.\run_app.ps1
+```
+or double-click:
+```bat
+run_app.bat
+```
+
+The launcher:
+- uses the project `.venv`
+- reuses an already-running app on port `8765`
+- opens the UI at `http://127.0.0.1:8765/load/`
+
 ### Run from Source (recommended: `uv`)
 ```bash
 # 1) Create and activate a virtual env

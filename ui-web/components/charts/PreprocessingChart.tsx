@@ -168,7 +168,7 @@ export function PreprocessingChart({
     y: Float32Array
   } | null>(null)
 
-  const [fullRes, setFullRes] = useState<boolean>(true)
+  const [fullRes, setFullRes] = useState<boolean>(false)
   const [zoomRange, setZoomRange] = useState<WorkerRange>(null)
   const [dynamicDownsampling, setDynamicDownsampling] = useState<boolean>(true)
   const [workerReady, setWorkerReady] = useState(false)
@@ -236,7 +236,6 @@ export function PreprocessingChart({
   const dispatchRangeRequest = useCallback((worker: Worker, range: WorkerRange | null) => {
     const requestId = `range-${requestCounterRef.current++}`
     latestRequestIdRef.current = requestId
-    console.time(`Worker Request ${requestId}`)
 
     // For very narrow windows (<= 200 ms span), request the full slice with no decimation
     const spanMinutes = range ? Math.max(0, range.max - range.min) : null
@@ -364,8 +363,9 @@ export function PreprocessingChart({
   // only receives already-downsampled windows.
   useEffect(() => {
     if (!workerRef.current) {
-      // Use static worker file from public directory to avoid bundler issues
-      workerRef.current = new Worker("/workers/dataWorker.js")
+      workerRef.current = new Worker(
+        new URL("../../workers/dataWorker.ts", import.meta.url)
+      )
     }
 
     const worker = workerRef.current
@@ -391,8 +391,6 @@ export function PreprocessingChart({
           if (message.requestId && latestRequestIdRef.current && message.requestId !== latestRequestIdRef.current) {
             return
           }
-          // Log latency
-          console.timeEnd(`Worker Request ${message.requestId}`)
 
           setXData(message.payload.time)
           setYOriginal(message.payload.raw)
@@ -708,8 +706,6 @@ export function PreprocessingChart({
 
     const fetchHistogram = async () => {
       setHistogramLoading(true)
-      const startTime = performance.now()
-      console.log(`Starting histogram fetch for ${prominenceValues.length} peaks`)
       try {
         const intervalValues = peakIntervals || []
 
@@ -724,9 +720,6 @@ export function PreprocessingChart({
             metrics: histogramScales,
           }
         )
-
-        const endTime = performance.now()
-        console.log(`Histogram fetch completed in ${(endTime - startTime).toFixed(2)}ms`)
 
         // Validate histogram data before setting
         const isValidHistogram = (hist: any) => {
@@ -744,12 +737,6 @@ export function PreprocessingChart({
           width: isValidHistogram(response.width) ? response.width : { bins: [], counts: [] },
           interval: isValidHistogram(response.interval) ? response.interval : { bins: [], counts: [] },
         }
-
-        console.log("Histogram data validated:", {
-          amplitude: validatedResponse.amplitude.bins.length + " bins",
-          width: validatedResponse.width.bins.length + " bins",
-          interval: validatedResponse.interval.bins.length + " bins"
-        })
 
         setHistogramData(validatedResponse)
       } catch (error) {

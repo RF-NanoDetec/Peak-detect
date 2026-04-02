@@ -19,6 +19,22 @@ from .file_handler import load_single_file
 from .timing import get_tracker
 
 
+def _build_preview_head(
+    time_values: np.ndarray, amplitude_values: np.ndarray, rows: int = 5
+) -> str:
+    header = f"{'Time - Plot 0':>13} {'Amplitude - Plot 0':>18}"
+    if len(time_values) == 0 or len(amplitude_values) == 0:
+        return header
+
+    preview_rows = min(rows, len(time_values), len(amplitude_values))
+    lines = [header]
+    for time_value, amplitude_value in zip(
+        time_values[:preview_rows], amplitude_values[:preview_rows]
+    ):
+        lines.append(f"{time_value:13g} {amplitude_value:18g}")
+    return "\n".join(lines)
+
+
 def load_data_from_paths(
     paths: List[str],
     mode: str = "single",
@@ -29,7 +45,7 @@ def load_data_from_paths(
     protocol: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Load one or more data files and return combined arrays and a preview DataFrame.
+    Load one or more data files and return combined arrays plus a preview string.
 
     Parameters
     ----------
@@ -56,7 +72,6 @@ def load_data_from_paths(
         {
             "time": np.ndarray (float32, seconds),
             "amplitude": np.ndarray (float32),
-            "data": pandas.DataFrame with columns ['Time - Plot 0','Amplitude - Plot 0'],
             "loaded_files": List[str] (basenames),
             "count": int,
             "time_range": (float, float),
@@ -94,7 +109,7 @@ def load_data_from_paths(
         results.append(load_single_with_timing(0, paths[0]))
     else:
         max_workers = min(file_count, max(2, (os.cpu_count() or 4)))
-        results_buffer: List[Optional[Dict[str, Any]]] = [None] * file_count  # type: ignore
+        results_buffer: List[Optional[Dict[str, Any]]] = [None] * file_count
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
                 executor.submit(load_single_with_timing, idx, path): idx
@@ -191,26 +206,18 @@ def load_data_from_paths(
         if tracker:
             tracker.end_phase("dead_time_correction")
 
-    if tracker:
-        tracker.start_phase("create_dataframe")
-    df = pd.DataFrame(
-        {
-            "Time - Plot 0": combined_times,
-            "Amplitude - Plot 0": combined_amplitudes,
-        }
-    )
     loaded_files = [os.path.basename(p) for p in paths]
-
-    preview_head = df.head().to_string(index=False)
-    time_min = float(df["Time - Plot 0"].min()) if len(df) else 0.0
-    time_max = float(df["Time - Plot 0"].max()) if len(df) else 0.0
     if tracker:
-        tracker.end_phase("create_dataframe")
+        tracker.start_phase("summarize_data")
+    preview_head = _build_preview_head(combined_times, combined_amplitudes)
+    time_min = float(np.min(combined_times)) if total_points else 0.0
+    time_max = float(np.max(combined_times)) if total_points else 0.0
+    if tracker:
+        tracker.end_phase("summarize_data")
 
     return {
         "time": combined_times,
         "amplitude": combined_amplitudes,
-        "data": df,
         "loaded_files": loaded_files,
         "count": len(paths),
         "time_range": (time_min, time_max),

@@ -18,8 +18,6 @@ export function useWebSocket(taskId: string | null) {
       return
     }
 
-    console.log(`[WebSocket] Connecting for task ${taskId}`)
-
     // Connect to WebSocket
     wsClient.connect(taskId)
     setIsConnected(true)
@@ -27,14 +25,16 @@ export function useWebSocket(taskId: string | null) {
 
     // Subscribe to messages
     unsubscribeRef.current = wsClient.subscribe(taskId, (msg: WSProgressMessage) => {
-      console.log(`[WebSocket] Received message:`, msg)
       setMessage(msg)
       lastMessageTimeRef.current = Date.now()
+      if (wsTimeoutRef.current) {
+        clearTimeout(wsTimeoutRef.current)
+        wsTimeoutRef.current = null
+      }
     })
 
     // Set up polling fallback after 3 seconds of no WebSocket messages
     wsTimeoutRef.current = setTimeout(() => {
-      console.log(`[WebSocket] No message received in 3s, starting polling fallback`)
       startPolling(taskId)
     }, 3000)
 
@@ -57,13 +57,10 @@ export function useWebSocket(taskId: string | null) {
 
   const startPolling = (taskId: string) => {
     if (pollingIntervalRef.current) return // Already polling
-
-    console.log(`[Polling] Starting fallback polling for task ${taskId}`)
     
     const poll = async () => {
       try {
         const status = await apiClient.getTaskStatus(taskId)
-        console.log(`[Polling] Task status:`, status)
         
         const msg: WSProgressMessage = {
           type: 'progress',
@@ -79,7 +76,6 @@ export function useWebSocket(taskId: string | null) {
         
         // Stop polling if task is complete or failed
         if (status.status === 'completed' || status.status === 'failed') {
-          console.log(`[Polling] Task ${status.status}, stopping polling`)
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current)
             pollingIntervalRef.current = null
@@ -104,4 +100,3 @@ export function useWebSocket(taskId: string | null) {
     error: message?.error,
   }
 }
-

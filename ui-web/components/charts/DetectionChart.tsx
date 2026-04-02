@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react"
 import { UPlotChart, type Series } from "./UPlotChart"
 import { useTheme } from "@/hooks/use-theme"
 import { apiClient } from "@/lib/apiClient"
+import { parseResultBinary } from "@/lib/binaryParsers"
 
 // Maximum points to display for responsive rendering (per visible window)
 const MAX_DISPLAY_POINTS = 20000
@@ -111,8 +112,8 @@ export function DetectionChart({
   const { theme } = useTheme()
   const isDark = theme === "dark"
 
-  const [xDataFull, setXDataFull] = useState<number[] | null>(null)
-  const [yDataFull, setYDataFull] = useState<number[] | null>(null)
+  const [xDataFull, setXDataFull] = useState<Float64Array | null>(null)
+  const [yDataFull, setYDataFull] = useState<Float32Array | null>(null)
   const [fullRes, setFullRes] = useState(false)
   const [loadingFull, setLoadingFull] = useState(false)
   const [fullError, setFullError] = useState<string | null>(null)
@@ -132,9 +133,14 @@ export function DetectionChart({
       setLoadingFull(true)
       setFullError(null)
       try {
-        const base = await apiClient.getResult(resultId, { timeoutMs: 300000 })
+        const baseBuffer = await apiClient.getResultBinary(resultId, { timeoutMs: 300000 })
         if (cancelled) return
-        setXDataFull(base.time.map((t: number) => Math.max(0, t / 60)))
+        const base = parseResultBinary(baseBuffer)
+        const normalizedTime = new Float64Array(base.time.length)
+        for (let i = 0; i < base.time.length; i += 1) {
+          normalizedTime[i] = Math.max(0, base.time[i] / 60)
+        }
+        setXDataFull(normalizedTime)
         setYDataFull(base.amplitude)
       } catch (e: any) {
         if (cancelled) return
@@ -231,7 +237,6 @@ export function DetectionChart({
 
   // Build series: signal line + optional peak scatter
   const series = useMemo(() => {
-    console.time("Peak Series Generation")
     const result: Series[] = [
       {
         label: isDecimated ? `Signal (${xData.length.toLocaleString()} pts)` : "Signal",
@@ -294,7 +299,6 @@ export function DetectionChart({
         dataIndices: peakIndices,
       })
     }
-    console.timeEnd("Peak Series Generation")
 
     return result
   }, [xData, yData, peakX, peakY, isDark, isDecimated])

@@ -337,10 +337,6 @@ export function UPlotChart({
   filteredIndices,
   customScatter = false,
 }: UPlotChartProps) {
-  useEffect(() => {
-    console.log("UPlotChart: Mounted/Updated", { xDataLength: xData.length, seriesCount: series.length })
-  }, [xData.length, series.length])
-
   const containerRef = useRef<HTMLDivElement | null>(null)
   const uPlotInstanceRef = useRef<uPlot | null>(null)
   const offsetInfoRef = useRef<{ offset: number; unit: TimeUnit; decimals?: number } | null>(null)
