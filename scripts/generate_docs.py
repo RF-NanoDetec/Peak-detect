@@ -16,8 +16,8 @@ import subprocess
 from datetime import date
 import tempfile
 
-MARKDOWN_PATH = Path(__file__).resolve().parent.parent / "docs" / "user_manual.md"
-PDF_PATH = MARKDOWN_PATH.with_suffix(".pdf")
+MARKDOWN_DIR = Path(__file__).resolve().parent.parent / "docs"
+PUBLIC_DOCS_DIR = Path(__file__).resolve().parent.parent / "ui-web" / "public" / "docs"
 
 # Metadata
 APP_VERSION = None
@@ -39,12 +39,12 @@ def substitute_placeholders(src_markdown: Path) -> Path:
         .replace("{{ APP_VERSION }}", APP_VERSION)
     )
 
-    tmp_file = Path(tempfile.mkstemp(suffix=".md", prefix="user_manual_tmp_")[1])
+    tmp_file = Path(tempfile.mkstemp(suffix=".md", prefix=f"{src_markdown.stem}_tmp_")[1])
     tmp_file.write_text(md_text, encoding="utf-8")
     return tmp_file
 
 
-def convert_with_pandoc():
+def convert_with_pandoc(markdown_path: Path, output_pdf_path: Path, title: str):
     """Convert markdown to PDF using Pandoc via subprocess."""
     # Prefer xelatex for full Unicode support; fall back to pdflatex if not available
     preferred_engine = "xelatex"
@@ -61,18 +61,21 @@ def convert_with_pandoc():
         template = "default"
         # default template needs fontspec manually activated for xelatex; pandoc adds automatically when mainfont variable present
 
-    tmp_md = substitute_placeholders(MARKDOWN_PATH)
+    tmp_md = substitute_placeholders(markdown_path)
     
     # Change to docs directory so relative paths work
     import os
     original_dir = os.getcwd()
-    os.chdir(MARKDOWN_PATH.parent)
+    os.chdir(markdown_path.parent)
+
+    # Ensure output directory exists
+    output_pdf_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         "pandoc",
         str(tmp_md),
         "-o",
-        str(PDF_PATH),
+        str(output_pdf_path),
         "--from=markdown",
         "--toc",
         "--toc-depth=2",
@@ -80,18 +83,23 @@ def convert_with_pandoc():
         "--template",
         template,
         "--metadata",
-        f"title=Peak Analysis Tool User Manual",
+        f"title={title}",
         "--metadata",
         f"version={APP_VERSION}",
         f"--pdf-engine={preferred_engine}",
         "--citeproc",
         "--dpi",
         "300",
-        "--bibliography",
-        str(MARKDOWN_PATH.parent / "references.bib"),
-        "--csl",
-        str(MARKDOWN_PATH.parent / "nature.csl"),
+        # Only add bibliography if files exist
+        # "--bibliography", str(markdown_path.parent / "references.bib"),
+        # "--csl", str(markdown_path.parent / "nature.csl"),
     ]
+    
+    if (markdown_path.parent / "references.bib").exists():
+        cmd.extend(["--bibliography", str(markdown_path.parent / "references.bib")])
+    
+    if (markdown_path.parent / "nature.csl").exists():
+        cmd.extend(["--csl", str(markdown_path.parent / "nature.csl")])
 
     # Don't specify fonts on Windows unless we're sure they exist
     # This avoids font errors with MiKTeX
@@ -104,7 +112,8 @@ def convert_with_pandoc():
             ]
         )
 
-    print("Running:", " ".join(cmd))
+    print(f"Converting {markdown_path.name} -> {output_pdf_path.name}")
+    # print("Running:", " ".join(cmd))
     try:
         subprocess.check_call(cmd)
     finally:
@@ -119,10 +128,6 @@ def convert_with_pandoc():
 
 
 def main():
-    if not MARKDOWN_PATH.exists():
-        print("Markdown file not found:", MARKDOWN_PATH)
-        sys.exit(1)
-
     # Try to run pandoc directly
     try:
         subprocess.check_call(["pandoc", "--version"], stdout=subprocess.DEVNULL)
@@ -131,14 +136,21 @@ def main():
               and ensure it is on your PATH.")
         sys.exit(1)
 
-    try:
-        convert_with_pandoc()
-    except subprocess.CalledProcessError as e:
-        print("Error while converting with Pandoc:", e)
-        sys.exit(e.returncode)
+    files_to_convert = [
+        (MARKDOWN_DIR / "user_manual.md", PUBLIC_DOCS_DIR / "user_manual.pdf", "Peak Analysis Tool User Manual"),
+        (MARKDOWN_DIR / "mathematical_reference.md", PUBLIC_DOCS_DIR / "mathematical_reference.pdf", "Mathematical Reference"),
+    ]
 
-    print("PDF generated at", PDF_PATH)
-
+    for md_path, pdf_path, title in files_to_convert:
+        if not md_path.exists():
+            print(f"Warning: {md_path} not found, skipping.")
+            continue
+        
+        try:
+            convert_with_pandoc(md_path, pdf_path, title)
+            print(f"Success: Generated {pdf_path}")
+        except subprocess.CalledProcessError as e:
+            print(f"Error converting {md_path.name}: {e}")
 
 if __name__ == "__main__":
     main() 

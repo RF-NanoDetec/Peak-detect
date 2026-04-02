@@ -6,6 +6,13 @@ This script tests if the time resolution is correctly applied when loading
 data and carrying through to peak width calculations.
 """
 
+import pytest
+
+pytest.skip(
+    "Legacy integration test; run manually with `python tests/run_time_resolution_test.py`",
+    allow_module_level=True,
+)
+
 import os
 import sys
 import numpy as np

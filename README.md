@@ -1,207 +1,135 @@
 # Peak Analysis Tool
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Logo](logo/lightmode.svg)
+
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-brightgreen.svg)
-![License](https://img.shields.io/badge/license-Proprietary-red.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-A robust Python application for scientific peak analysis in time series data. Designed for researchers and analysts who need to detect, measure, and characterize signal peaks with precision.
+High-precision, browser-based analysis for time-series peaks. The tool loads raw detector traces, applies noise filtering (including photon-counter dead-time correction), detects peaks with fine-grained controls, and gives you fast visual feedback plus export-ready results.
 
-![Application Screenshot](resources/images/screenshot.png)
+![Application Screenshot](docs/figures/Peak_analysis.png)
 
-## 🚀 Features
+## What This App Does
 
-- **Flexible Data Import**: Load single files or process batch datasets
-- **Advanced Signal Processing**: Apply customizable filters to reduce noise
-- **Intelligent Peak Detection**: Automatic and manual peak detection with configurable parameters
-- **Comprehensive Analysis**: Calculate and visualize key peak metrics:
-  - Peak height and prominence
-  - Width at various relative heights
-  - Area under the curve
-  - Inter-peak intervals
-- **Interactive Visualization**: Explore results with interactive plots and detailed peak views
-- **Data Export**: Save results as CSV files or high-resolution plots
-- **Performance Optimized**: Efficient processing of large datasets with multi-threading support
-- **Modern UI**: Clean and responsive interface with light/dark theme support
+- Load individual or batched `.txt`, `.xls`, `.xlsx` files with optional experiment protocol metadata.
+- Apply preprocessing: Butterworth or Savitzky-Golay filters, custom time resolution, and dead-time correction for photon counters.
+- Detect peaks with configurable prominence, width, spacing, and automatic threshold suggestions.
+- Run double-peak analysis to quantify paired events (distance, prominence ratio, width ratio).
+- Explore interactive charts (uPlot-based) with synchronized previews of raw and filtered signals.
+- Export peaks, metadata, and protocol details to CSV/Excel and download high-resolution chart images.
+- Ship as a local web app: a single Windows executable or a Python + Next.js setup for development.
 
-## 📋 Requirements
+## Why It Is Great
 
-- **Python 3.8+**
-- **Core Dependencies**:
-  - NumPy (1.20+)
-  - Pandas (1.3+)
-  - Matplotlib (3.4+)
-  - SciPy (1.7+)
-  - Tkinter (8.6+)
-  - Seaborn (0.11+)
-  - Numba (optional, for performance acceleration)
+- Fast front end: uPlot with an isolated data worker keeps interactions smooth even on million-point traces.
+- Accurate processing: all analysis runs on full-resolution arrays; previews are decimated only for rendering.
+- Progress you can trust: long-running jobs stream updates over WebSockets so you know where you are.
+- Reproducible context: protocol metadata and corrections stay attached to your datasets and exports.
+- Ready to share: static Next.js export can be bundled with the FastAPI backend for one-click distribution.
 
-## 🔧 Installation
+## How the Workflow Fits Together
 
-### Standard Installation
+1. **Load**: Select one or many files (or enter absolute paths) and capture protocol metadata and time resolution. Enable dead-time correction for photon counters.
+2. **Preprocess**: Choose filter type and parameters; preview raw vs. filtered traces.
+3. **Detect**: Tune prominence, width, distance, relative height, and optional auto-thresholding; review detected peaks.
+4. **Analyze**: Inspect time-series overlays, throughput, and histograms; zoom into regions of interest.
+5. **Double Peaks**: Pair events by proximity and measure intensity/shape relationships.
+6. **Export**: Save tables (CSV/Excel/Text) and download publication-ready PNGs directly from the charts.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/RF-NanoDetec/Peak-detect.git
-   cd peak-analysis-tool
-   ```
+## Architecture at a Glance
 
-2. Create a virtual environment (recommended):
-   ```bash
-   python -m venv venv
-   
-   # Windows
-   venv\Scripts\activate
-   
-   # macOS/Linux
-   source venv/bin/activate
-   ```
+- **Backend**: FastAPI (`service/app.py`) with WebSocket progress streaming and binary-friendly endpoints for data/preview delivery.
+- **Frontend**: Next.js + TypeScript UI (`ui-web/`) using uPlot for high-density plots and a dedicated worker to manage typed-array buffers.
+- **Packaging**: Static Next.js export lives in `ui-web/out/` and is served by the backend; Windows builds ship as `PeakService.exe`.
+- **Core analysis**: Signal processing, dead-time correction, and peak/double-peak routines are implemented in `core/`.
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Installation and Running
 
-4. Run the application:
-   ```bash
-   python main.py
-   ```
+### Fast Start (Windows Executable)
+1. Download `PeakService.exe` from the release.
+2. Double-click it. The backend starts on `http://127.0.0.1:8765` and opens your default browser.
 
-### Installation for Development
+### Fast Start (Source Checkout on Windows)
+If you are running from this repository checkout, use the launcher:
+```powershell
+.\run_app.ps1
+```
+or double-click:
+```bat
+run_app.bat
+```
 
-For those who want to contribute to development:
+The launcher:
+- uses the project `.venv`
+- reuses an already-running app on port `8765`
+- opens the UI at `http://127.0.0.1:8765/load/`
 
+### Run from Source (recommended: `uv`)
 ```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
+# 1) Create and activate a virtual env
+uv venv
+.\.venv\Scripts\activate  # Windows PowerShell
 
-# Run tests
-pytest
+# 2) Install Python dependencies fast
+uv pip install -r requirements.txt
+
+# 3) Start the backend
+uv run python -m service.app
+# Browser opens at http://127.0.0.1:8765
 ```
 
-## 📊 Project Structure
-
-```
-peak_analysis_tool/
-│
-├── core/                  # Core analysis functionality
-│   ├── __init__.py        # Package initialization
-│   ├── peak_detection.py  # Peak detection algorithms and classes
-│   └── peak_analysis_utils.py  # Signal processing utilities
-│
-├── plotting/              # Data visualization components
-│   ├── __init__.py
-│   ├── raw_data.py        # Raw data visualization
-│   ├── data_processing.py # Data processing visualization
-│   ├── peak_visualization.py # Peak visualization functions
-│   └── analysis_visualization.py # Statistical visualization
-│
-├── ui/                    # User interface components
-│   ├── __init__.py
-│   ├── theme.py           # Theme management (light/dark)
-│   ├── tooltips.py        # Enhanced tooltips functionality
-│   └── status_indicator.py # Status indicator widget
-│
-├── config/                # Application configuration
-│   ├── __init__.py
-│   ├── environment.py     # Environment settings
-│   └── settings.py        # Application settings
-│
-├── utils/                 # General utilities
-│   ├── __init__.py
-│   └── performance.py     # Performance monitoring and optimization
-│
-├── resources/             # Static resources
-│   └── images/            # Application images and icons
-│
-├── main.py                # Main application entry point
-├── app.py                 # Application initialization
-├── requirements.txt       # Production dependencies
-├── requirements-dev.txt   # Development dependencies
-├── CHANGES.md             # Changelog
-├── INSTALL.md             # Detailed installation instructions
-└── README.md              # This file
+If you prefer pip:
+```bash
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m service.app
 ```
 
-## 📖 Usage Guide
-
-### Basic Usage
-
-1. **Launch the Application**:
-   ```bash
-   python main.py
-   ```
-
-2. **Load Data**:
-   - Click "Load File" to import a single data file
-   - Or use "Batch Mode" to process multiple files
-
-3. **Preprocess Data**:
-   - Apply filters to reduce noise (Low-pass, High-pass)
-   - Use the auto-cutoff feature for optimal filtering
-
-4. **Detect Peaks**:
-   - Set the detection threshold or use auto-threshold
-   - Adjust minimum peak distance and width parameters
-   - Run peak detection
-
-5. **Analyze Results**:
-   - Review the detected peaks in the grid view
-   - Examine peak characteristics in the data table
-   - View statistical summaries and distributions
-
-6. **Export Results**:
-   - Save peak data to CSV
-   - Export plots as high-resolution images
-   - Take screenshots of specific views
-
-### Advanced Usage
-
-#### Custom Filters
-
-Customize the filter parameters for specific signal types:
-
-```python
-# Example for optimizing filter settings
-cutoff = adjust_lowpass_cutoff(signal, sampling_rate, peak_count=20, normalization=0.5)
-filtered_signal = apply_butterworth_filter(4, cutoff, 'lowpass', sampling_rate, raw_signal)
+### Frontend Development
+```bash
+cd ui-web
+npm install
+npm run dev   # opens http://localhost:3000 with hot reload
 ```
 
-#### Batch Processing
+### Build the Static UI (served by the backend)
+```bash
+cd ui-web
+npm install
+npm run build
+npm run export   # outputs to ui-web/out
+cd ..
+python -m service.app  # now serves the static bundle automatically
+```
 
-For processing multiple files:
+## Documentation
 
-1. Enable Batch Mode in the interface
-2. Select a directory containing data files
-3. Configure common parameters for all files
-4. Start batch processing
-5. Review aggregated results
+- `docs/USER_MANUAL.md`: end-to-end usage and workflow.
+- `docs/user_interface.md`: UI walkthrough with screenshots.
+- `docs/mathematical_reference.md`: algorithms, formulas, and corrections.
+- PDF copies for distribution live under `docs/guides/` and `ui-web/public/docs/`.
 
-## 🔄 Performance Considerations
+## Performance Notes
 
-- For large datasets (>1M points), consider using decimation options
-- Enable multi-threading for batch processing by increasing MAX_WORKERS in config/settings.py
-- Monitor memory usage through the app's status bar
+- Preview decimation: large datasets are reduced with a min-max strategy for plotting only; processing/export always use full arrays.
+- Data worker: the UI owns typed-array buffers and returns index ranges instead of copying payloads, keeping panning/zooming responsive.
+- Binary-friendly endpoints: previews and downloads avoid JSON bloat and stream efficiently.
+- Progress visibility: long tasks (loading, preprocessing, detection) emit WebSocket updates so the UI stays in sync.
 
-## 🤝 Contributing
+## Tests and Checks
 
-Contributions are welcome! Please follow these steps:
+- Core tests: `pytest tests`
+- API smoke test for the web UI backend: `python tools/test_web_ui.py`
+- Timing and performance probes: see `tools/test_timing.py` and `tools/get_timing_data.py`
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and commit: `git commit -m 'Add some feature'`
-4. Push to the branch: `git push origin feature-name`
-5. Submit a pull request
+## License
 
-Please include tests for any new functionality and ensure documentation is updated.
+Released under the MIT License. See `LICENSE` for the full text.  
+© 2025 Dr. Lucjan Grzegorzewski.
 
-## 📜 License
+## Contact
 
-© 2025 Dr. Lucjan Grzegorzewski All rights reserved.
-
-This software is proprietary and confidential. Unauthorized copying, transfer, or use in any medium is strictly prohibited without prior written consent.
-
-## 📧 Contact
-
-For questions or support, please contact:
-- Email: lgrzegor@physnet.uni-hamburg.de
-- GitHub Issues: Submit issues through the repository's issue tracker 
+- Email: lucjan.grzegorzewski@uni-hamburg.de
+- GitHub Issues: use the repository issue tracker for bugs and feature requests

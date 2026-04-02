@@ -12,9 +12,21 @@ from . import environment
 from .environment import (
     APP_VERSION,
     DEBUG_MODE,
+    get_app_info,
+    is_frozen,
+    logger,
     resource_path,
     setup_logging,
-    is_frozen,
-    get_app_info,
-    logger
 )
+
+# Define public API
+__all__ = [
+    "environment",
+    "APP_VERSION",
+    "DEBUG_MODE",
+    "resource_path",
+    "setup_logging",
+    "is_frozen",
+    "get_app_info",
+    "logger",
+]

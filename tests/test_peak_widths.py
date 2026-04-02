@@ -2,6 +2,13 @@ import numpy as np
 from scipy.signal import find_peaks, peak_widths
 import matplotlib.pyplot as plt
 
+import pytest
+
+pytest.skip(
+    "Legacy exploratory script; keep for reference, skip in automated test runs",
+    allow_module_level=True,
+)
+
 # Create a simple signal with a clear peak
 t = np.linspace(0, 10, 1000)
 signal = np.exp(-(t-5)**2) + 0.1 * np.random.randn(1000)

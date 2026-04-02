@@ -1,0 +1,344 @@
+@import 'uplot/dist/uPlot.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light Mode: Precision & Elegance */
+    --background: 210 17% 98%;
+    /* #F8F9FA - Off-white */
+    --foreground: 222 47% 11%;
+    /* Deep Navy/Black for text */
+
+    --card: 0 0% 100%;
+    /* Pure White */
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 220 85% 45%;
+    /* Refined Blue #1a6fd9 */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 24 95% 53%;
+    /* Vibrant Orange #f97316 */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 24 95% 53%;
+    /* Match accent for focus rings */
+
+    --radius: 0.5rem;
+
+    /* Workflow State Colors */
+    --workflow-completed: 142 76% 36%;
+    /* Green for completed steps */
+    --workflow-active: 24 95% 53%;
+    /* Orange for current step */
+    --workflow-pending: 215 16% 70%;
+    /* Muted for future steps */
+
+    /* Chart Colors - Updated palette */
+    --chart-1: 24 95% 53%;
+    /* Orange (accent) */
+    --chart-2: 220 85% 45%;
+    /* Blue */
+    --chart-3: 262 83% 58%;
+    /* Purple */
+    --chart-4: 316 70% 50%;
+    /* Pink */
+    --chart-5: 142 76% 36%;
+    /* Green */
+  }
+
+  .dark {
+    /* Dark Room Mode: OLED Black */
+    --background: 0 0% 0%;
+    /* True Black */
+    --foreground: 210 40% 98%;
+    /* Off-white text */
+
+    --card: 240 4% 7%;
+    /* #121212 - Deep Charcoal */
+    --card-foreground: 210 40% 98%;
+
+    --popover: 240 4% 7%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 220 50% 25%;
+    /* Refined Slate-Blue */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 240 4% 16%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 25 95% 63%;
+    /* Soft Orange #fb923c */
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 25 95% 63%;
+    /* Match accent for focus rings */
+
+    /* Workflow State Colors - Dark Mode */
+    --workflow-completed: 142 70% 45%;
+    /* Brighter green for dark mode */
+    --workflow-active: 25 95% 63%;
+    /* Orange for current step */
+    --workflow-pending: 215 20% 45%;
+    /* Muted for future steps */
+
+    /* Chart Colors - Adjusted for Dark Mode */
+    --chart-1: 25 95% 63%;
+    /* Soft Orange (accent) */
+    --chart-2: 217 91% 60%;
+    /* Soft Blue */
+    --chart-3: 262 83% 65%;
+    /* Soft Purple */
+    --chart-4: 316 70% 60%;
+    /* Soft Pink */
+    --chart-5: 142 70% 50%;
+    /* Soft Green */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  /* Override Tailwind's base style to use standard property for better cross-browser support */
+  html {
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased tracking-tight;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display font-medium;
+  }
+
+  h3,
+  h4 {
+    @apply font-mono uppercase text-muted-foreground tracking-widest text-xs;
+  }
+
+  /* Minimalist Range Input Styling */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: transparent;
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* Track styling */
+  input[type="range"]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    background: hsl(var(--secondary));
+    border-radius: 999px;
+    border: none;
+  }
+
+  input[type="range"]::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    background: hsl(var(--secondary));
+    border-radius: 999px;
+    border: none;
+  }
+
+  /* Thumb styling - now uses accent color */
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: hsl(var(--accent));
+    border: 2px solid hsl(var(--background));
+    border-radius: 50%;
+    cursor: pointer;
+    margin-top: -5px;
+    /* (track height / 2) - (thumb height / 2) */
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 4px hsl(var(--accent) / 0.2);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: hsl(var(--accent));
+    border: 2px solid hsl(var(--background));
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  input[type="range"]::-moz-range-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 4px hsl(var(--accent) / 0.2);
+  }
+
+  /* Focus state */
+  input[type="range"]:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 4px hsl(var(--accent) / 0.3);
+  }
+
+  input[type="range"]:focus::-moz-range-thumb {
+    box-shadow: 0 0 0 4px hsl(var(--accent) / 0.3);
+  }
+
+  /* Number Input Spinner Styling */
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Custom number input controls - show on hover/focus */
+  .number-input-wrapper {
+    position: relative;
+  }
+
+  .number-input-wrapper input[type="number"] {
+    padding-right: 1.5rem;
+  }
+
+  /* Style selects for dark mode consistency */
+  select {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  select option {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  .animate-draw {
+    animation: draw 2s ease-in-out infinite;
+  }
+
+  @keyframes draw {
+    0% {
+      stroke-dashoffset: 100;
+    }
+
+    50% {
+      stroke-dashoffset: 0;
+    }
+
+    100% {
+      stroke-dashoffset: -100;
+    }
+  }
+
+  /* Subtle glow animation for active states */
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite;
+  }
+
+  @keyframes glow {
+
+    0%,
+    100% {
+      box-shadow: 0 0 3px hsl(var(--accent) / 0.3);
+    }
+
+    50% {
+      box-shadow: 0 0 12px hsl(var(--accent) / 0.5);
+    }
+  }
+
+  /* Pulse animation for workflow indicators */
+  .animate-pulse-accent {
+    animation: pulse-accent 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-accent {
+
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  /* Hover lift effect for cards */
+  .hover-lift {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Icon hover effects */
+  .icon-hover {
+    transition: transform 0.15s ease, color 0.15s ease;
+  }
+
+  .icon-hover:hover {
+    transform: scale(1.1);
+    color: hsl(var(--accent));
+  }
+
+  /* Button scale effect */
+  .btn-scale {
+    transition: transform 0.1s ease, box-shadow 0.15s ease;
+  }
+
+  .btn-scale:hover {
+    transform: scale(1.02);
+  }
+
+  .btn-scale:active {
+    transform: scale(0.98);
+  }
+}
