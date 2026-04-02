@@ -1,102 +1,147 @@
 # Peak Analysis Tool User Manual
 
-## Table of Contents
-1. [Introduction](#introduction)
-2. [Getting Started](#getting-started)
-3. [Workflow Overview](#workflow-overview)
-4. [Loading Data](#loading-data)
-5. [Processing & Detection](#process--detect)
-6. [Analysis & Visualization](#analysis--export)
-7. [Double Peak Analysis](#double-peak-analysis)
-8. [Exporting Results](#exporting-results)
-9. [Preferences](#preferences)
+## Purpose
 
----
+This manual describes how to operate the current browser-based Peak Analysis Tool as it exists today. It is the canonical operator guide for the current private/internal-use phase.
 
-## Introduction
+## Workflow overview
 
-The Peak Analysis Tool is a high-precision application for detecting, analyzing, and characterizing peaks in time-series data. It is designed for scientific use cases, such as single-molecule fluorescence or particle counting, where accurate peak detection and noise filtering are critical.
+The application follows this workflow:
+1. **Load Data**
+2. **Process & Detect**
+3. **Analyze Results**
+4. **Double Peak**
 
-## Getting Started
+**Export** is available as a separate page/action once the analysis results exist.
 
-### Installation
-- **Windows**: Run `PeakService.exe`.
-- **Source**: Run `python -m service.app`.
+## Before you begin
 
-The application interface will open automatically in your default web browser at `http://localhost:8765`.
+### Supported input files
+- `.txt`
+- `.xls`
+- `.xlsx`
 
-## Workflow Overview
+### How input files are interpreted
+- the backend reads the **first two columns only**
+- for `.txt`, parsing is **tab-delimited**
+- blank lines and `# comments` are skipped in `.txt`
+- the first column is treated as time-like input and is scaled by the configured global `time_resolution`
+- the second column is treated as amplitude / signal magnitude
 
-The application follows a structured workflow:
-1. **Load**: Import raw data files.
-2. **Process & Detect**: Filter noise and identify peaks.
-3. **Analyze**: View time-series results and distributions.
-4. **Export**: Save data and plots.
+### Important current limitation
+The application does **not** currently advertise automatic schema detection for richer file layouts. If your data uses a different structure, it should be normalized into the currently supported two-column layout before use.
 
-## Loading Data
+## 1. Load Data
 
-Navigate to the **Load Data** page to begin.
+**Primary route:** `/load`
 
-- **File Selection**: Click "Select Files" to choose `.txt`, `.xls`, or `.xlsx` files.
-- **Protocol Information**: Enter metadata about your experiment (Date, Setup, Sample ID, Laser Power, etc.) to keep it associated with the dataset.
-- **Settings**:
-  - **Time Resolution**: Set the time per sample (e.g., 0.1 ms).
-  - **Photon Correction**: Enable dead-time correction if using a photon counter. Enter the dead time in nanoseconds.
+This is the normal starting point for users.
 
-Recent sessions are saved and can be reloaded with a single click from the "Recent Sessions" list.
+### Recommended loading flow
+1. Click **Select Files**
+2. Choose one or more `.txt`, `.xls`, or `.xlsx` files
+3. Review the local preview of the first selected file
+4. Set the time resolution
+5. Optionally enable photon-counter dead-time correction
+6. Optionally fill in protocol metadata
+7. Click **Load Files**
 
-## Process & Detect
+### Recent sessions
+The UI can restore previously used file groups through the **Recent Sessions** list.
 
-This is the core analysis step.
+### Internal/API-oriented loading path
+The backend also exposes an absolute-path file-loading endpoint. This is not the primary end-user workflow and should be treated as an internal/API-oriented path.
 
-### 1. Signal Filtering
-Apply a digital filter to reduce noise before detection.
-- **Filter Type**:
-  - **Butterworth**: General-purpose noise reduction.
-  - **Savitzky-Golay**: Preserves peak shape better while smoothing.
-- **Parameters**:
-  - **Cutoff Frequency (Hz)**: Frequencies above this are removed.
-  - **Order**: Sharpness of the filter cutoff.
-  - **Window Length**: Number of points for smoothing (Savitzky-Golay).
+## 2. Process & Detect
 
-### 2. Peak Detection
-Configure algorithms to find valid peaks.
-- **Prominence**: How much a peak stands out from the surrounding baseline.
-- **Min Distance**: Minimum samples between peaks.
-- **Width Min/Max**: Accepted width range in milliseconds.
-- **Rel Height**: The relative height (0.0-1.0) at which width is measured.
-- **Prominence Ratio**: Filters noise by comparing prominence to absolute amplitude.
+**Primary route:** `/preprocess`
 
-Click **Detect Peaks** to run the algorithm. Use **Auto Threshold** for an initial estimate.
+This step combines preprocessing setup and peak detection control.
 
-## Analysis & Export
+### Filtering options
+- **None** ? pass-through
+- **Butterworth** ? low-pass filtering
+- **Savitzky-Golay** ? smoothing with local polynomial fitting
 
-View the detected peaks in context of the full time series.
+### Detection controls
+Users can configure:
+- prominence threshold
+- minimum distance
+- width constraints
+- relative height
+- prominence ratio
 
-- **Interactive Plot**: Zoom and pan to inspect individual peaks.
-- **Throughput**: See the rate of peaks over time.
-- **Histograms**: Analyze distributions of peak amplitudes and intervals.
-- **Export**: Use the integrated Export controls to save peak data (CSV) or download the current chart view as an image.
+Auto-threshold and related helper controls are available for faster initial setup.
 
-## Double Peak Analysis
+## 3. Analyze Results
 
-For experiments involving paired events (e.g., double-labeled particles).
+**Primary route:** `/analyze`
 
-- **Pairing Logic**: Peaks are paired based on their temporal proximity.
-- **Metrics**:
-  - **Distance**: Time between paired peaks.
-  - **Prominence Ratio**: Ratio of the second peak's intensity to the first.
-  - **Width Ratio**: Comparison of peak shapes.
-- **Thresholds**: Set min/max ranges for these metrics to filter valid pairs.
+The analysis page is for inspecting the processed results after peak detection.
 
-## Exporting Results
+Typical uses:
+- review signal plots and detected peaks
+- inspect summary metrics
+- inspect histogram-style or derived views tied to the detected results
 
-Save your work for publication or further analysis.
+## 4. Double Peak
 
-- **Data Formats**: CSV, Excel, Text.
-- **Metadata**: Option to include protocol details in the header.
-- **Images**: Click the **Camera** icon on any chart to save a high-resolution PNG.
+**Primary route:** `/double`
 
-## Preferences
+Use this page to examine consecutive peak pairs and apply double-peak-specific thresholds.
 
-Customize the application appearance (Light/Dark mode) and default analysis parameters.
+Typical outputs include:
+- distance between paired events
+- pair prominence ratios
+- pair width ratios
+- filtered subsets of candidate pairs
+
+## 5. Export
+
+**Primary route:** `/export`
+
+Export is intentionally handled on a separate page.
+
+Current export scope includes:
+- single-peak outputs
+- double-peak outputs
+- combined outputs
+- metadata-aware table export paths driven by the dedicated export page
+
+Chart image export exists in the chart views themselves and should not be confused with the dedicated `/export` page.
+
+## Protocol metadata
+
+During loading, the tool can store experiment metadata such as:
+- measurement date / start time
+- setup
+- sample number
+- particle
+- concentration
+- buffer and buffer concentration
+- ND filter
+- laser power
+- stamp
+- notes
+
+These fields are optional but useful for internal traceability.
+
+## Photon-counter correction
+
+If your detector exhibits dead-time effects, enable dead-time correction during loading. The configured dead time is applied during the backend load phase and stored alongside correction metadata.
+
+## Recommended operator checks
+
+Before trusting a run, confirm:
+- the file preview looks structurally correct
+- the time resolution matches the experiment
+- filtering has not erased real peaks
+- detection thresholds are not dominated by noise
+- exports correspond to the correct result set
+
+## Current boundaries
+
+This manual describes the **current** product behavior only. It does not promise:
+- support for arbitrary file schemas
+- automatic richer-format detection
+- a public/open-source support workflow

@@ -1,154 +1,121 @@
-# Mathematical Reference and Algorithm Documentation
+# Mathematical Reference and Processing Notes
 
-This document provides a detailed mathematical description of the algorithms used in the Peak Analysis Tool. It is intended for researchers and developers who wish to understand the underlying signal processing and physical corrections implemented in the software.
+This document summarizes the scientific and algorithmic basis of the current Peak Analysis Tool implementation.
 
-## 1. Peak Detection
+## 1. Signal ingestion assumptions
 
-The core peak detection relies on identifying local maxima that satisfy specific criteria regarding prominence, width, and distance.
+The current loader assumes a simple two-column input model:
+- column 1: time-like values
+- column 2: amplitude values
 
-### 1.1 Detection Algorithm
-The peak detection is primarily based on the prominence of peaks. A peak is defined as a local maximum $x_p$ at index $i_p$ such that:
+For text input, parsing is tab-delimited and ignores blank lines and comment lines beginning with `#`.
 
-$$
-x_{i_p} \ge x_{i} \quad \forall i \in [i_p - w, i_p + w]
-$$
-
-where $w$ is the window size.
-
-The algorithm uses `scipy.signal.find_peaks` with enhanced pre- and post-processing.
-
-### 1.2 Prominence and Filtering
-Peak prominence ($P$) measures how much a peak stands out from the surrounding baseline. It is defined as the vertical distance between the peak and its lowest contour line.
+The first column is scaled into seconds using the configured global `time_resolution`:
 
 $$
-P_i = h_i - \max(\min(h_{left}, h_{right}))
+t_i = x_i \cdot \Delta t
 $$
 
-where $h_i$ is the peak height, and $h_{left}, h_{right}$ are the heights of the nearest higher peaks or signal boundaries.
+where:
+- $x_i$ is the raw value read from column 1
+- $\Delta t$ is the configured `time_resolution`
 
-**Subpeak Filtering:**
-To distinguish main signal peaks from noise or sub-structures, we implement a **Prominence Ratio** filter. A peak is discarded if its prominence is small relative to its absolute height:
+In batch mode, timestamp-aware offsets may be applied. If timestamp handling is not usable, segments are concatenated continuously using the previous segment boundary.
 
-$$
-R_{prom} = \frac{P_i}{H_i} < \tau_{ratio}
-$$
+## 2. Peak detection
 
-where $H_i$ is the absolute height of the peak and $\tau_{ratio}$ is the configurable threshold (default: 0.5). This is crucial for filtering out noise riding on top of larger signal variations.
+Peak detection is built on local-maximum identification with configurable prominence, spacing, and width constraints.
 
-### 1.3 Peak Width Estimation
-Peak widths are calculated at a relative height (default 50%, FWHM). For a peak at $i_p$ with height $H$ and baseline $B$, the width is measuring at level $L$:
+The implementation uses `scipy.signal.find_peaks` and associated peak-property utilities.
 
-$$
-L = H - \text{rel\_height} \times (H - B)
-$$
+### 2.1 Prominence
 
-Linear interpolation is used to find the exact intersection points with the signal curve to provide sub-sample accuracy.
-
-## 2. Signal Processing
-
-### 2.1 Butterworth Low-Pass Filter
-To reduce high-frequency noise, we apply a digital Butterworth filter. The transfer function of an $N$-th order Butterworth low-pass filter is given by:
+Peak prominence measures how far a peak rises above its surrounding baseline:
 
 $$
-|H(j\omega)|^2 = \frac{1}{1 + (\frac{\omega}{\omega_c})^{2N}}
+P_i = H_i - B_i
 $$
 
-where $\omega_c$ is the cutoff frequency.
+where $H_i$ is the peak height and $B_i$ is the effective contour/baseline level returned by the peak-property calculation.
 
-**Adaptive Cutoff Frequency:**
-The software can automatically determine an optimal cutoff frequency $\omega_c$ based on the signal content. It estimates the average width ($\bar{W}$) of the narrowest 10% of peaks (representing the fastest signal features) and sets:
+### 2.2 Prominence-ratio filtering
+
+The tool also supports filtering on the ratio between prominence and absolute amplitude:
 
 $$
-f_c = \frac{1}{\bar{W}} \times \text{normalization\_factor}
+R_{prom} = \frac{P_i}{A_i}
 $$
 
-This ensures the filter preserves the shape of the sharpest real peaks while attenuating faster noise.
+where $A_i$ is the absolute amplitude of the peak. This helps suppress small sub-peaks riding on larger structures.
 
-### 2.2 Savitzky-Golay Filter
-As an alternative smoothing method, a Savitzky-Golay filter can be applied. This performs a local polynomial regression to smooth the data. For a window of length $2M+1$ and polynomial order $k$, the smoothed point $y_j$ is:
+### 2.3 Peak width
+
+Width is measured at a configurable relative height:
+
+$$
+L = H - r(H-B)
+$$
+
+where:
+- $H$ is the peak height
+- $B$ is the baseline
+- $r$ is `rel_height`
+
+Linear interpolation is used for sub-sample crossing estimates.
+
+## 3. Preprocessing
+
+### 3.1 Butterworth low-pass filter
+
+For low-pass filtering, the tool uses a Butterworth response:
+
+$$
+|H(j\omega)|^2 = \frac{1}{1 + (\omega/\omega_c)^{2N}}
+$$
+
+where $\omega_c$ is the cutoff frequency and $N$ is the filter order.
+
+### 3.2 Savitzky-Golay smoothing
+
+Savitzky-Golay preprocessing performs a local polynomial fit over a sliding window:
 
 $$
 y_j = \sum_{i=-M}^{M} C_i x_{j+i}
 $$
 
-where $C_i$ are convolution coefficients derived from least-squares fitting of the polynomial. The window length is automatically estimated as $1.5 \times$ the average peak width if not specified.
+where the coefficients $C_i$ are derived from the least-squares polynomial fit.
 
-## 3. Physical Corrections
+## 4. Dead-time correction
 
-### 3.1 Dead-Time Correction
-Photon counting detectors often exhibit a "dead time" ($\tau_D$) after registering a photon, during which they are blind to subsequent events. This leads to non-linearity at high count rates. We correct for this using the non-paralyzable model.
+When enabled, the application applies a non-paralyzable detector dead-time correction during loading.
 
 Let:
-*   $R_{measured}$: The measured count rate (counts/second).
-*   $\tau_D$: The detector dead time (seconds, typically ~43 ns for our detectors).
-*   $R_{true}$: The actual incident photon rate.
+- $R_{measured}$ be the measured count rate
+- $\tau_D$ be the detector dead time
+- $R_{true}$ be the corrected rate
 
-The relationship is:
-
-$$
-R_{measured} = \frac{R_{true}}{1 + R_{true}\tau_D}
-$$
-
-Inverting this to solve for the true rate:
+Then:
 
 $$
 R_{true} = \frac{R_{measured}}{1 - R_{measured}\tau_D}
 $$
 
-The correction factor $F_{corr}$ applied to the raw signal counts $C_{raw}$ is:
+The same factor is applied to the raw counts/signal. Near saturation, the correction factor is clamped to avoid numerical instability.
 
-$$
-C_{corr} = C_{raw} \times \frac{1}{1 - R_{measured}\tau_D}
-$$
+## 5. Decimation and visualization
 
-**Singularity Handling:**
-The correction approaches infinity as $R_{measured} \to 1/\tau_D$ (saturation). We clamp the correction factor to a maximum (default 10x) to prevent numerical instability near saturation:
+Large datasets may be decimated for plotting responsiveness, but this is a visualization concern rather than a scientific change to the underlying result arrays. Analysis and export logic operate on the full-resolution arrays stored by the backend.
 
-$$
-F_{corr} = \min \left( \frac{1}{1 - R_{measured}\tau_D}, F_{max} \right)
-$$
+## 6. Double-peak analysis
 
-## 4. Analysis Metrics
+Double-peak analysis operates on consecutive peaks and evaluates pairwise quantities such as:
+- peak-to-peak distance
+- start-to-start distance
+- amplitude ratio
+- width ratio
 
-### 4.1 Peak Area (Integration)
-The total photon count for a burst (Area) is calculated using the trapezoidal rule over the peak window $[a, b]$:
+A pair is considered a matching double-peak candidate only when it falls inside the configured threshold ranges for the relevant metrics.
 
-$$
-Area = \int_{a}^{b} (S(t) - B) dt \approx \sum_{i=a}^{b-1} \frac{(S_{i} - B) + (S_{i+1} - B)}{2} \Delta t
-$$
+## 7. Current model boundary
 
-where $S(t)$ is the signal, $B$ is the local background level (minimum value in the window), and $\Delta t$ is the sampling interval.
-
-### 4.2 Signal-to-Noise Ratio (SNR)
-The SNR for each peak is calculated relative to the baseline noise:
-
-$$
-\text{SNR} = \frac{H_{peak} - \mu_{baseline}}{\sigma_{baseline}}
-$$
-
-where $\mu_{baseline}$ and $\sigma_{baseline}$ are the mean and standard deviation of the signal in non-peak regions. We use a Robust estimator for $\sigma_{baseline}$ based on the Median Absolute Deviation (MAD):
-
-$$
-\sigma_{robust} \approx 1.4826 \times \text{median}(|x - \text{median}(x)|)
-$$
-
-This prevents large peaks from inflating the noise estimate.
-
-## References
-1.  Virtanen, P. et al. "SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python". *Nature Methods*, 2020.
-2.  Savitzky, A., & Golay, M. J. E. "Smoothing and Differentiation of Data by Simplified Least Squares Procedures". *Analytical Chemistry*, 1964.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+This reference describes the **current implementation only**. It does not claim support for automatic schema detection or richer explicit-time-vector ingestion beyond the existing two-column loader assumptions.

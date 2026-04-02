@@ -1,135 +1,134 @@
 # Peak Analysis Tool
 
-![Logo](logo/lightmode.svg)
+![Peak Analysis Tool interface](docs/figures/Peak_analysis.png)
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.8+-brightgreen.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+> **Repository status:** private/internal-use documentation and development workspace.
+> The repository is not offered as open-source software and is being kept in an all-rights-reserved posture while future commercial licensing terms are defined.
 
-High-precision, browser-based analysis for time-series peaks. The tool loads raw detector traces, applies noise filtering (including photon-counter dead-time correction), detects peaks with fine-grained controls, and gives you fast visual feedback plus export-ready results.
+Peak Analysis Tool is a browser-based application for loading detector traces, preprocessing noisy time-series data, detecting peaks, inspecting distributions, running double-peak analysis, and exporting analysis-ready results.
 
-![Application Screenshot](docs/figures/Peak_analysis.png)
+## Intended Audience
 
-## What This App Does
+This repository is currently maintained for:
+- internal research and development
+- controlled collaborator review
+- future commercial product preparation
 
-- Load individual or batched `.txt`, `.xls`, `.xlsx` files with optional experiment protocol metadata.
-- Apply preprocessing: Butterworth or Savitzky-Golay filters, custom time resolution, and dead-time correction for photon counters.
-- Detect peaks with configurable prominence, width, spacing, and automatic threshold suggestions.
-- Run double-peak analysis to quantify paired events (distance, prominence ratio, width ratio).
-- Explore interactive charts (uPlot-based) with synchronized previews of raw and filtered signals.
-- Export peaks, metadata, and protocol details to CSV/Excel and download high-resolution chart images.
-- Ship as a local web app: a single Windows executable or a Python + Next.js setup for development.
+It is **not** presented as a public contribution or reuse-ready open-source project.
 
-## Why It Is Great
+## What the application does today
 
-- Fast front end: uPlot with an isolated data worker keeps interactions smooth even on million-point traces.
-- Accurate processing: all analysis runs on full-resolution arrays; previews are decimated only for rendering.
-- Progress you can trust: long-running jobs stream updates over WebSockets so you know where you are.
-- Reproducible context: protocol metadata and corrections stay attached to your datasets and exports.
-- Ready to share: static Next.js export can be bundled with the FastAPI backend for one-click distribution.
+The current web application supports a fixed workflow:
+1. **Load Data** - choose files with the browser file picker or restore a recent session
+2. **Process & Detect** - apply optional filtering and run peak detection
+3. **Analyze Results** - inspect detected peaks, metrics, and derived plots
+4. **Double Peak** - analyze consecutive peak pairs
 
-## How the Workflow Fits Together
+**Export** is available as a separate page/action after data has been loaded and analyzed.
 
-1. **Load**: Select one or many files (or enter absolute paths) and capture protocol metadata and time resolution. Enable dead-time correction for photon counters.
-2. **Preprocess**: Choose filter type and parameters; preview raw vs. filtered traces.
-3. **Detect**: Tune prominence, width, distance, relative height, and optional auto-thresholding; review detected peaks.
-4. **Analyze**: Inspect time-series overlays, throughput, and histograms; zoom into regions of interest.
-5. **Double Peaks**: Pair events by proximity and measure intensity/shape relationships.
-6. **Export**: Save tables (CSV/Excel/Text) and download publication-ready PNGs directly from the charts.
+Core capabilities currently implemented:
+- local upload of `.txt`, `.xls`, and `.xlsx` input files
+- protocol metadata capture during loading
+- photon-counter dead-time correction during load
+- Butterworth and Savitzky-Golay preprocessing
+- peak detection with prominence, distance, width, and ratio controls
+- time-series, histogram, and double-peak analysis views
+- export of single-peak, double-peak, and combined outputs
 
-## Architecture at a Glance
+## Supported input data
 
-- **Backend**: FastAPI (`service/app.py`) with WebSocket progress streaming and binary-friendly endpoints for data/preview delivery.
-- **Frontend**: Next.js + TypeScript UI (`ui-web/`) using uPlot for high-density plots and a dedicated worker to manage typed-array buffers.
-- **Packaging**: Static Next.js export lives in `ui-web/out/` and is served by the backend; Windows builds ship as `PeakService.exe`.
-- **Core analysis**: Signal processing, dead-time correction, and peak/double-peak routines are implemented in `core/`.
+The current loader behavior is intentionally narrow and should be documented as such:
+- supported files: `.txt`, `.xls`, `.xlsx`
+- the loader reads the **first two columns only**
+- `.txt` files are parsed as **tab-delimited** text
+- blank lines and `#` comments are ignored in `.txt` files
+- time values come from the first column and are scaled using the configured global `time_resolution`
+- batch loading can apply timestamp offsets; if timestamp parsing is not usable, the backend falls back to continuous concatenation
 
-## Installation and Running
+**Not currently documented as supported:** richer file-format auto-detection, explicit-time-vector format detection, or arbitrary multi-column schema inference.
 
-### Fast Start (Windows Executable)
-1. Download `PeakService.exe` from the release.
-2. Double-click it. The backend starts on `http://127.0.0.1:8765` and opens your default browser.
+## Current user flow
 
-### Fast Start (Source Checkout on Windows)
-If you are running from this repository checkout, use the launcher:
+### Load Data
+The normal user path is the browser file picker. Recent sessions can be restored directly in the UI. Absolute-path loading exists on the backend API, but it should be treated as an internal/API-oriented path rather than the primary end-user workflow.
+
+### Process & Detect
+Users can optionally filter the signal, configure detection parameters, and run peak detection before moving into result analysis.
+
+### Analyze Results
+The analysis page is used for inspecting derived metrics and plots from detected peaks.
+
+### Double Peak
+The double-peak page is dedicated to paired-event analysis and related thresholds.
+
+### Export
+Export is handled on its own page rather than embedded as the main analysis workflow step.
+
+## Architecture at a glance
+
+- **`service/`** - FastAPI backend, file loading endpoints, export endpoints, task/progress services
+- **`core/`** - numerical routines for loading, preprocessing, detection, correction, analysis, and export helpers
+- **`ui-web/`** - Next.js / TypeScript user interface and workflow pages
+- **`docs/`** - canonical product documentation, supplemental guides, historical notes, and engineering reports
+
+## Running the application
+
+### Windows launcher
+From this checkout, start the application with:
+
 ```powershell
 .\run_app.ps1
 ```
+
 or double-click:
+
 ```bat
 run_app.bat
 ```
 
-The launcher:
-- uses the project `.venv`
-- reuses an already-running app on port `8765`
-- opens the UI at `http://127.0.0.1:8765/load/`
+The launcher reuses the local `.venv`, starts or reuses the backend on port `8765`, and opens the application at `http://127.0.0.1:8765/load/`.
 
-### Run from Source (recommended: `uv`)
-```bash
-# 1) Create and activate a virtual env
-uv venv
-.\.venv\Scripts\activate  # Windows PowerShell
+### Run from source
 
-# 2) Install Python dependencies fast
-uv pip install -r requirements.txt
-
-# 3) Start the backend
-uv run python -m service.app
-# Browser opens at http://127.0.0.1:8765
-```
-
-If you prefer pip:
-```bash
+```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 python -m service.app
 ```
 
-### Frontend Development
-```bash
+### Frontend development
+
+```powershell
 cd ui-web
 npm install
-npm run dev   # opens http://localhost:3000 with hot reload
+npm run dev
 ```
 
-### Build the Static UI (served by the backend)
-```bash
-cd ui-web
-npm install
-npm run build
-npm run export   # outputs to ui-web/out
-cd ..
-python -m service.app  # now serves the static bundle automatically
-```
+## Canonical documentation path
 
-## Documentation
+Start with these files:
+- `docs/README.md` - authoritative documentation index
+- `docs/USER_MANUAL.md` - end-user workflow and operating guidance
+- `docs/user_interface.md` - route-by-route UI guide with screenshots
+- `docs/mathematical_reference.md` - mathematical and scientific basis
 
-- `docs/USER_MANUAL.md`: end-to-end usage and workflow.
-- `docs/user_interface.md`: UI walkthrough with screenshots.
-- `docs/mathematical_reference.md`: algorithms, formulas, and corrections.
-- PDF copies for distribution live under `docs/guides/` and `ui-web/public/docs/`.
+Supplemental guides under `docs/guides/` remain available for scoped reference, but they are not the primary reader path.
 
-## Performance Notes
+## Repository boundaries for Phase 1
 
-- Preview decimation: large datasets are reduced with a min-max strategy for plotting only; processing/export always use full arrays.
-- Data worker: the UI owns typed-array buffers and returns index ranges instead of copying payloads, keeping panning/zooming responsive.
-- Binary-friendly endpoints: previews and downloads avoid JSON bloat and stream efficiently.
-- Progress visibility: long tasks (loading, preprocessing, detection) emit WebSocket updates so the UI stays in sync.
+This repository phase is focused on documentation clarity and internal/commercial posture.
 
-## Tests and Checks
+It does **not** currently include:
+- a public/open-source support promise
+- a general public issue/support workflow
+- feature work for richer explicit-time-vector upload formats
+- a finalized commercial license grant
 
-- Core tests: `pytest tests`
-- API smoke test for the web UI backend: `python tools/test_web_ui.py`
-- Timing and performance probes: see `tools/test_timing.py` and `tools/get_timing_data.py`
+## Future follow-up (not implemented in Phase 1)
 
-## License
+A later planning phase may define how the tool should handle richer upload formats, including files that carry more explicit timing metadata. That work is not represented as current functionality.
 
-Released under the MIT License. See `LICENSE` for the full text.  
-© 2025 Dr. Lucjan Grzegorzewski.
+## Internal contact
 
-## Contact
-
-- Email: lucjan.grzegorzewski@uni-hamburg.de
-- GitHub Issues: use the repository issue tracker for bugs and feature requests
+For internal licensing, review coordination, or product questions, contact the repository owner directly through your existing internal communication channel.
