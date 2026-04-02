@@ -1,0 +1,64 @@
+{
+  "pid": 25020,
+  "parent_pid": 1148,
+  "started_at": "2026-04-02T18:39:35.578Z",
+  "cwd": "C:\\Users\\lucek\\Desktop\\irene\\peak_analysis\\new_environment",
+  "notify_script": "C:\\Users\\lucek\\AppData\\Roaming\\npm\\node_modules\\oh-my-codex\\dist\\scripts\\notify-hook.js",
+  "poll_ms": 250,
+  "pid_file": "C:\\Users\\lucek\\Desktop\\irene\\peak_analysis\\new_environment\\.omx\\state\\notify-fallback.pid",
+  "max_lifetime_ms": 21600000,
+  "tracked_files": 2,
+  "seen_turns": 1,
+  "dispatch_drain": {
+    "enabled": true,
+    "max_per_tick": 5,
+    "run_count": 5121,
+    "leader_only": true,
+    "last_tick_at": "2026-04-02T19:02:33.220Z",
+    "last_result": {
+      "processed": 0,
+      "skipped": 0,
+      "failed": 0
+    },
+    "last_error": null
+  },
+  "leader_nudge": {
+    "enabled": true,
+    "leader_only": true,
+    "stale_threshold_ms": 180000,
+    "precomputed_leader_stale": true,
+    "last_tick_at": "2026-04-02T19:02:33.220Z",
+    "last_error": null,
+    "run_count": 5121
+  },
+  "ralph_continue_steer": {
+    "enabled": true,
+    "cadence_ms": 60000,
+    "message": "Ralph loop active continue",
+    "active": false,
+    "last_state_check_at": "2026-04-02T19:02:33.224Z",
+    "last_sent_at": "",
+    "cooldown_anchor_at": "",
+    "last_reason": "blocked_by_current_session",
+    "last_error": null,
+    "state_path": "",
+    "pane_id": "",
+    "pane_current_command": "",
+    "current_phase": "",
+    "shared_timestamp_path": "C:\\Users\\lucek\\Desktop\\irene\\peak_analysis\\new_environment\\.omx\\state\\ralph-last-steer-at",
+    "shared_last_sent_at": "",
+    "singleton_lock_path": "C:\\Users\\lucek\\Desktop\\irene\\peak_analysis\\new_environment\\.omx\\state\\ralph-continue-steer.lock"
+  },
+  "fallback_auto_nudge": {
+    "enabled": true,
+    "stall_ms": 5000,
+    "last_tick_at": "2026-04-02T19:02:33.222Z",
+    "last_turn_at": "2026-04-02T18:47:07.668Z",
+    "last_turn_count": 1,
+    "last_message": "Mode: code-review  \nResult: strong app foundation, but a few hot paths still bypass the fast archite",
+    "last_reason": "eligible_but_not_sent",
+    "last_error": null,
+    "last_nudged_signature": "",
+    "last_nudged_at": ""
+  }
+}

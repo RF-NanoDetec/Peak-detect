@@ -24,12 +24,12 @@ Functions:
     get_app_info: Get formatted system and application information
 """
 
-import os
 import json
-import sys
 import logging
-from pathlib import Path
+import os
 import platform
+import sys
+from pathlib import Path
 
 # Application version
 APP_VERSION = "2.0.0"
@@ -71,45 +71,47 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 LOG_FILE = LOG_DIR / "app.log"
 PERFORMANCE_LOG_FILE = LOG_DIR / "performance.log"
 
+
 def resource_path(relative_path):
     """
     Get the absolute path to a resource file.
-    
+
     This function resolves resource paths correctly in both development mode
     and when running as a bundled application (PyInstaller).
-    
+
     Parameters:
         relative_path (str): Path relative to the application's base directory
-            
+
     Returns:
         str: Absolute path to the resource
-        
+
     Example:
         >>> image_path = resource_path("resources/images/logo.png")
         >>> config_path = resource_path("config/settings.ini")
     """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = getattr(sys, '_MEIPASS', str(BASE_DIR))
+        base_path = getattr(sys, "_MEIPASS", str(BASE_DIR))
         return os.path.join(base_path, relative_path)
     except Exception:
         return os.path.join(os.path.abspath("."), relative_path)
 
+
 def setup_logging(level=None):
     """
     Configure the application's logging system.
-    
+
     This function sets up handlers for both console and file logging,
     establishes formatting, and sets appropriate log levels based on
     the application mode.
-    
+
     Parameters:
         level (int, optional): Logging level to use (e.g., logging.DEBUG).
             If None, uses logging.DEBUG in debug mode and logging.INFO otherwise.
-            
+
     Returns:
         logging.Logger: Configured root logger instance
-        
+
     Example:
         >>> logger = setup_logging(logging.DEBUG)
         >>> logger.info("Application started")
@@ -117,67 +119,68 @@ def setup_logging(level=None):
     """
     if level is None:
         level = logging.DEBUG if DEBUG_MODE else logging.INFO
-        
+
     # Create logger
     logger = logging.getLogger("peak_analysis")
     logger.setLevel(level)
-    
+
     # Create file handler
     file_handler = logging.FileHandler(LOG_FILE)
     file_handler.setLevel(level)
-    
+
     # Create console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(level)
-    
+
     # Create formatter
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
-    
+
     # Add handlers to logger
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-    
+
     return logger
+
 
 # Initialize logger
 logger = setup_logging()
 
 # User preferences file
 USER_PREFS_FILE = os.path.join(
-    os.path.expanduser("~"), 
-    ".peak_analysis", 
-    "preferences.json"
+    os.path.expanduser("~"), ".peak_analysis", "preferences.json"
 )
 
 # Ensure user preferences directory exists
 os.makedirs(os.path.dirname(USER_PREFS_FILE), exist_ok=True)
 
+
 def is_frozen():
     """
     Determine if the application is running as a bundled executable.
-    
+
     This function checks if the application is running from a bundled executable
     created with tools like PyInstaller.
-    
+
     Returns:
         bool: True if running as a bundled executable, False if running in development mode
-        
+
     Example:
         >>> if is_frozen():
         >>>     print("Running from bundled executable")
         >>> else:
         >>>     print("Running in development mode")
     """
-    return hasattr(sys, 'frozen') and hasattr(sys, '_MEIPASS')
+    return hasattr(sys, "frozen") and hasattr(sys, "_MEIPASS")
 
 
 # -----------------------------
 # User preferences persistence
 # -----------------------------
+
 
 def load_user_preferences():
     """
@@ -185,7 +188,7 @@ def load_user_preferences():
     """
     try:
         if os.path.exists(USER_PREFS_FILE):
-            with open(USER_PREFS_FILE, 'r', encoding='utf-8') as f:
+            with open(USER_PREFS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
     except Exception as e:
         logger.warning(f"Failed to load preferences: {e}")
@@ -198,22 +201,23 @@ def save_user_preferences(prefs: dict):
     """
     try:
         os.makedirs(os.path.dirname(USER_PREFS_FILE), exist_ok=True)
-        with open(USER_PREFS_FILE, 'w', encoding='utf-8') as f:
+        with open(USER_PREFS_FILE, "w", encoding="utf-8") as f:
             json.dump(prefs or {}, f, indent=2)
     except Exception as e:
         logger.warning(f"Failed to save preferences: {e}")
 
+
 def get_app_info():
     """
     Get formatted information about the application and system environment.
-    
+
     This function collects and formats various pieces of information about
     the runtime environment, including Python version, OS details, and
     application mode.
-    
+
     Returns:
         str: Multi-line string with formatted application and system information
-        
+
     Example:
         >>> info = get_app_info()
         >>> print(info)
@@ -224,7 +228,7 @@ def get_app_info():
     # Format into a multi-line string
     mode = "Production" if not DEBUG_MODE else "Development"
     exe_mode = "Bundled Executable" if is_frozen() else "Development Mode"
-    
+
     info_str = (
         f"Peak Analysis Tool v{APP_VERSION}\n"
         f"Python: {platform.python_version()} ({sys.version})\n"
@@ -233,11 +237,12 @@ def get_app_info():
         f"Execution: {exe_mode}\n"
         f"Base Directory: {BASE_DIR}"
     )
-    
+
     return info_str
+
 
 # Print environment info in debug mode
 if DEBUG_MODE:
     logger.debug(f"App Info:\n{get_app_info()}")
     logger.debug(f"Resource Directory: {RESOURCE_DIR}")
-    logger.debug(f"Log Directory: {LOG_DIR}") 
+    logger.debug(f"Log Directory: {LOG_DIR}")

@@ -40,7 +40,11 @@ class TaskManager:
         """
         task_id = str(uuid.uuid4())
         with self._lock:
-            self._tasks[task_id] = {"status": TaskStatus.PENDING, "result": None, "error": None}
+            self._tasks[task_id] = {
+                "status": TaskStatus.PENDING,
+                "result": None,
+                "error": None,
+            }
 
         def progress_callback(update: Dict[str, Any]):
             if on_progress:
@@ -58,16 +62,22 @@ class TaskManager:
                 with self._lock:
                     self._tasks[task_id]["status"] = TaskStatus.COMPLETED
                     self._tasks[task_id]["result"] = result
-                logger.info(f"Task {task_id}: Completed successfully, sending final progress update")
+                logger.info(
+                    f"Task {task_id}: Completed successfully, sending final progress update"
+                )
                 # Send final completion message via progress callback
-                progress_callback({"progress": 100, "status": "completed", "result": result})
+                progress_callback(
+                    {"progress": 100, "status": "completed", "result": result}
+                )
             except Exception as exc:
                 logger.exception(f"Task {task_id}: Failed with exception")
                 with self._lock:
                     self._tasks[task_id]["status"] = TaskStatus.FAILED
                     self._tasks[task_id]["error"] = str(exc)
                 # Send final failure message via progress callback
-                progress_callback({"progress": 0, "status": "failed", "error": str(exc)})
+                progress_callback(
+                    {"progress": 0, "status": "failed", "error": str(exc)}
+                )
 
         self._executor.submit(run)
         return task_id
@@ -79,9 +89,10 @@ class TaskManager:
     def cancel(self, task_id: str) -> bool:
         # Cooperative cancellation not implemented; placeholder for future
         with self._lock:
-            if task_id in self._tasks and self._tasks[task_id]["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING):
+            if task_id in self._tasks and self._tasks[task_id]["status"] in (
+                TaskStatus.PENDING,
+                TaskStatus.RUNNING,
+            ):
                 self._tasks[task_id]["status"] = TaskStatus.CANCELLED
                 return True
         return False
-
-

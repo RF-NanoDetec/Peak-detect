@@ -79,4 +79,6 @@ ui-web/.turbo/
 
 # OS specific
 .DS_Store
-Thumbs.db 
+Thumbs.db
+# Windows reserved device names (invalid in Git index if created by mistake)
+nul

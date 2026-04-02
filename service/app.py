@@ -136,6 +136,22 @@ else:
 
 static_dir = base_path / "ui-web" / "out"
 next_static_dir = static_dir / "_next"
+
+# Serve documentation PDFs (user manual, mathematical reference) if available
+docs_candidates = [
+    static_dir / "docs",
+    base_path / "ui-web" / "public" / "docs",
+    base_path / "docs" / "guides",
+    base_path / "docs",
+]
+docs_dir = next((path for path in docs_candidates if path.exists()), None)
+if docs_dir:
+    logger.info(f"Serving documentation files from {docs_dir}")
+    app.mount("/docs", StaticFiles(directory=str(docs_dir)), name="docs")
+else:
+    logger.warning(
+        "Documentation files not found. User manual and mathematical reference links may not work."
+    )
 if static_dir.exists() and next_static_dir.exists():
     logger.info(f"Serving static files from {static_dir}")
 
