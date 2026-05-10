@@ -12,6 +12,15 @@ const nextConfig = {
   trailingSlash: true,
   webpack: (config) => {
     config.externals = [...(config.externals || []), { canvas: 'canvas' }];
+    config.watchOptions = {
+      ...(config.watchOptions || {}),
+      ignored: [
+        '**/.next/**',
+        '**/out/**',
+        '**/*.log',
+        '**/logs/**',
+      ],
+    };
     return config;
   },
 };

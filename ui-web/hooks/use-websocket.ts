@@ -67,7 +67,7 @@ export function useWebSocket(taskId: string | null) {
           taskId,
           progress: status.progress || 0,
           message: '',
-          status: status.status as any,
+          status: status.status,
           result: status.result,
           error: status.error,
         }

@@ -1,8 +1,10 @@
-import { BarChart3, Download } from "lucide-react"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { workflowSteps } from "@/components/layout/workflow"
+
+const exportStep = workflowSteps.find((step) => step.id === "export")!
 
 interface AnalyzeControlsProps {
   hasResults: boolean
@@ -99,9 +101,9 @@ export function AnalyzeControls({
       </Accordion>
 
       <Button variant="outline" className="w-full" asChild>
-        <Link href="/export">
-          <Download className="h-4 w-4 mr-2" />
-          Export Data
+        <Link href={exportStep.href}>
+          <exportStep.icon className="h-4 w-4 mr-2" />
+          {exportStep.label}
         </Link>
       </Button>
     </div>

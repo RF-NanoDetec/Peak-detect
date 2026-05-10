@@ -14,6 +14,7 @@ import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useProtocolStore } from "@/lib/stores/protocolStore"
 import { useResultsStore } from "@/lib/stores/resultsStore"
 import { parseFilePreview, type LocalPreviewResult } from "@/lib/localDataParser"
+import type { RecentSession } from "@/lib/types"
 
 // File handling helpers
 const sessionHandleCache = new Map<string, FileSystemFileHandle[]>()
@@ -43,6 +44,92 @@ const cacheSessionFiles = (files: File[], handles?: FileSystemFileHandle[]) => {
   if (handles) {
     sessionHandleCache.set(key, handles)
   }
+}
+
+const getRelativeDirectory = (file: File) => {
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+  if (!relativePath) return null
+  const pathParts = relativePath.split("/").filter(Boolean)
+  if (pathParts.length <= 1) return null
+  pathParts.pop()
+  return pathParts.join("/")
+}
+
+const getCommonDirectory = (files: File[]) => {
+  const directories = files.map(getRelativeDirectory).filter((dir): dir is string => Boolean(dir))
+  if (directories.length !== files.length || directories.length === 0) return null
+  const firstDirectory = directories[0]
+  return directories.every((dir) => dir === firstDirectory) ? firstDirectory : null
+}
+
+const getSharedFilenamePattern = (fileNames: string[]) => {
+  if (fileNames.length < 2) return null
+  const stems = fileNames.map((name) => name.replace(/\.[^.]+$/, ""))
+  const shortest = stems.reduce((a, b) => (a.length <= b.length ? a : b), stems[0])
+  let prefixLength = 0
+  while (
+    prefixLength < shortest.length &&
+    stems.every((stem) => stem[prefixLength]?.toLowerCase() === shortest[prefixLength].toLowerCase())
+  ) {
+    prefixLength += 1
+  }
+
+  const prefix = shortest
+    .slice(0, prefixLength)
+    .replace(/[\s._-]*\d*[\s._-]*$/, "")
+    .trim()
+
+  return prefix.length >= 4 ? prefix : null
+}
+
+const describeRecentSessionOrigin = (files: File[]): Pick<RecentSession, "originLabel" | "originKind"> => {
+  const directory = getCommonDirectory(files)
+  if (directory) {
+    return {
+      originLabel: directory,
+      originKind: "folder",
+    }
+  }
+
+  const filenamePattern = getSharedFilenamePattern(files.map((file) => file.name))
+  if (filenamePattern) {
+    return {
+      originLabel: filenamePattern,
+      originKind: "filename-pattern",
+    }
+  }
+
+  return {
+    originLabel: files.length === 1 ? files[0].name : "Local file selection",
+    originKind: "local-selection",
+  }
+}
+
+const describeLoadError = (error: any) => {
+  if (error?.message === "Network Error" || error?.code === "ERR_NETWORK") {
+    return "Cannot reach the local analysis service at http://127.0.0.1:8765. Start the backend with run_app.ps1 or python -m service.app, then try loading again."
+  }
+
+  if (error?.code === "ECONNABORTED") {
+    return "Loading timed out. The file may be large or the local service may be busy."
+  }
+
+  if (error.response?.data) {
+    const data = error.response.data
+    if (typeof data.detail === 'string') {
+      return data.detail
+    }
+    if (Array.isArray(data.detail)) {
+      return data.detail.map((err: any) =>
+        `${err.loc?.join('.')}: ${err.msg}`
+      ).join(', ')
+    }
+    if (data.message) {
+      return data.message
+    }
+  }
+
+  return error?.message || 'Failed to load files'
 }
 
 const restoreCachedFiles = async (fileGroup: string[]): Promise<File[] | null> => {
@@ -95,18 +182,21 @@ export default function LoadDataPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files)
-      setSelectedFiles(files)
-      toast.info(`Selected ${files.length} file(s)`)
-      cacheSessionFiles(files)
+      handleSelectedFiles(files)
     }
+  }
+
+  const handleSelectedFiles = (files: File[]) => {
+    setSelectedFiles(files)
+    toast.info(`Selected ${files.length} file(s)`)
+    cacheSessionFiles(files)
   }
 
   const openFileSelectionFlow = async () => {
     if ('showOpenFilePicker' in window) {
       const files = await selectFilesWithHandles()
       if (files && files.length > 0) {
-        setSelectedFiles(files)
-        toast.info(`Selected ${files.length} file(s)`)
+        handleSelectedFiles(files)
         return
       }
     }
@@ -196,7 +286,7 @@ export default function LoadDataPage() {
       setMeta(response.meta)
       
       const fileNames = selectedFiles.map(f => f.name)
-      addRecentFiles(fileNames)
+      addRecentFiles(fileNames, describeRecentSessionOrigin(selectedFiles))
       cacheSessionFiles(selectedFiles)
 
       const previewData = await apiClient.getDataPreview(response.resultId)
@@ -207,30 +297,14 @@ export default function LoadDataPage() {
       setTimeout(() => router.push('/preprocess'), 500)
     } catch (error: any) {
       console.error('Failed to load files:', error)
-      
-      let errorMessage = 'Failed to load files'
-      if (error.response?.data) {
-        const data = error.response.data
-        if (typeof data.detail === 'string') {
-          errorMessage = data.detail
-        } else if (Array.isArray(data.detail)) {
-          errorMessage = data.detail.map((err: any) => 
-            `${err.loc?.join('.')}: ${err.msg}`
-          ).join(', ')
-        } else if (data.message) {
-          errorMessage = data.message
-        }
-      } else if (error.message) {
-        errorMessage = error.message
-      }
-      
-      toast.error(errorMessage)
+      toast.error(describeLoadError(error))
     } finally {
       setLoading(false)
     }
   }
 
-  const handleRecentFilesClick = async (fileGroup: string[]) => {
+  const handleRecentFilesClick = async (session: RecentSession) => {
+    const fileGroup = session.files
     const cachedFiles = await restoreCachedFiles(fileGroup)
     if (cachedFiles) {
       setSelectedFiles(cachedFiles)
@@ -257,18 +331,6 @@ export default function LoadDataPage() {
     fileInputRef.current?.click()
   }
 
-  const formatRecentFileDisplay = (fileGroup: string[]) => {
-    if (fileGroup.length === 1) {
-      return fileGroup[0]
-    }
-    return (
-      <>
-        {fileGroup[0]}{' '}
-        <span className="text-muted-foreground">+ {fileGroup.length - 1}</span>
-      </>
-    )
-  }
-
   return (
     <PageShell>
       <PageVisualization>
@@ -281,9 +343,10 @@ export default function LoadDataPage() {
           protocol={protocol}
           updateProtocol={updateProtocol}
           onSelectFiles={openFileSelectionFlow}
+          onDropFiles={handleSelectedFiles}
+          onLoadFiles={handleLoadFiles}
           recentFiles={recentFiles}
           onRecentClick={handleRecentFilesClick}
-          renderRecentLabel={formatRecentFileDisplay}
         />
       </PageVisualization>
       <PageControls>
@@ -296,16 +359,11 @@ export default function LoadDataPage() {
           className="hidden"
         />
         <LoadControls
-          selectedFiles={selectedFiles}
-          loading={loading}
           timeResolutionMs={timeResolutionMs}
           onTimeResolutionChange={handleTimeResolutionChange}
           photonCorrection={photonCorrection}
           setApplyCorrection={setApplyCorrection}
           setDeadTimeNs={setDeadTimeNs}
-          onFileSelect={handleFileSelect}
-          onSelectClick={openFileSelectionFlow}
-          onLoadClick={handleLoadFiles}
         />
       </PageControls>
     </PageShell>

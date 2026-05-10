@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "peak-service",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "service.app"],
+      "port": 8765
+    },
+    {
+      "name": "ui-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ui-web", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}

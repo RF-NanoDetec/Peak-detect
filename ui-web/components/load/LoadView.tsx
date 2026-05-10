@@ -1,13 +1,12 @@
-import { FolderOpen, Upload, Clock, ChevronRight, FileText } from "lucide-react"
+import { AlertCircle, CheckCircle, ChevronRight, Clock, FileText, FolderOpen, PlayCircle, UploadCloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingState } from "@/components/ui/loading-state"
-import { ProtocolInfo } from "@/lib/types"
+import { ProtocolInfo, RecentSession } from "@/lib/types"
 import type { LocalPreviewResult } from "@/lib/localDataParser"
-import { ReactNode } from "react"
+import { workflowSteps } from "@/components/layout/workflow"
 
 interface LoadViewProps {
   selectedFiles: File[]
@@ -18,9 +17,10 @@ interface LoadViewProps {
   protocol: ProtocolInfo
   updateProtocol: <K extends keyof ProtocolInfo>(key: K, value: ProtocolInfo[K]) => void
   onSelectFiles: () => void
-  recentFiles: string[][]
-  onRecentClick: (fileGroup: string[]) => void
-  renderRecentLabel: (fileGroup: string[]) => ReactNode
+  onDropFiles: (files: File[]) => void
+  onLoadFiles: () => void
+  recentFiles: RecentSession[]
+  onRecentClick: (session: RecentSession) => void
 }
 
 export function LoadView({
@@ -32,9 +32,10 @@ export function LoadView({
   protocol,
   updateProtocol,
   onSelectFiles,
+  onDropFiles,
+  onLoadFiles,
   recentFiles,
   onRecentClick,
-  renderRecentLabel,
 }: LoadViewProps) {
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -42,10 +43,10 @@ export function LoadView({
         {selectedFiles.length === 0 ? (
           <LoadLandingHero
             onSelectFiles={onSelectFiles}
+            onDropFiles={onDropFiles}
             recentFiles={recentFiles}
             onRecentClick={onRecentClick}
             loading={loading}
-            renderRecentLabel={renderRecentLabel}
           />
         ) : (
           <LocalPreviewPanel
@@ -54,6 +55,8 @@ export function LoadView({
             preview={localPreview}
             fileCount={selectedFiles.length}
             onSelectFiles={onSelectFiles}
+            onLoadFiles={onLoadFiles}
+            loadInProgress={loading}
           />
         )}
 
@@ -65,66 +68,103 @@ export function LoadView({
 
 function LoadLandingHero({
   onSelectFiles,
+  onDropFiles,
   recentFiles,
   onRecentClick,
   loading,
-  renderRecentLabel,
 }: {
   onSelectFiles: () => void
-  recentFiles: string[][]
-  onRecentClick: (fileGroup: string[]) => void
+  onDropFiles: (files: File[]) => void
+  recentFiles: RecentSession[]
+  onRecentClick: (session: RecentSession) => void
   loading: boolean
-  renderRecentLabel: (fileGroup: string[]) => ReactNode
 }) {
   const validRecents = recentFiles
-    .filter((group): group is string[] => Array.isArray(group) && group.length > 0)
+    .filter((session): session is RecentSession => Array.isArray(session.files) && session.files.length > 0)
     .slice(0, 4)
 
   return (
-    <div className="space-y-8 max-w-2xl mx-auto pt-12">
-      <EmptyState
-        title="Load Measurement Data"
-        description="Import your time-series data files (.txt, .xls, .xlsx) to begin the analysis workflow."
-        action={
-          <Button size="lg" onClick={onSelectFiles} disabled={loading} className="min-w-[200px]">
-            Select Files
-          </Button>
-        }
-      />
+    <div className="space-y-8 max-w-3xl mx-auto pt-10">
+      <section className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        <div className="px-6 pt-6 text-center">
+          <h2 className="text-2xl font-semibold tracking-tight">Load Measurement Data</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Import your time-series data files to begin the analysis workflow.
+          </p>
+        </div>
 
-      <div className="grid grid-cols-3 gap-4 text-left max-w-lg mx-auto">
-        {[
-          { label: "Load", desc: "Import raw data files", color: "bg-primary" },
-          { label: "Process", desc: "Filter & detect peaks", color: "bg-muted-foreground/30" },
-          { label: "Analyze", desc: "View metrics & export", color: "bg-muted-foreground/30" },
-        ].map((step, i) => (
-          <div key={i} className="p-3 rounded-lg border bg-card/50">
+        <div className="p-6">
+          <div
+            className="rounded-lg border border-dashed bg-muted/25 px-6 py-10 text-center transition-colors hover:bg-muted/40"
+            onDragOver={(event) => {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = "copy"
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const files = Array.from(event.dataTransfer.files).filter((file) =>
+                /\.(txt|xls|xlsx)$/i.test(file.name)
+              )
+              if (files.length > 0) {
+                onDropFiles(files)
+              }
+            }}
+          >
+            <UploadCloud className="mx-auto h-10 w-10 text-accent" />
+            <p className="mt-4 text-sm font-medium">Drag and drop files here</p>
+            <p className="mt-1 text-xs text-muted-foreground">or choose files from your computer</p>
+            <Button size="lg" onClick={onSelectFiles} disabled={loading} className="mt-5 min-w-[180px]">
+              Select Files
+            </Button>
+            <p className="mt-4 text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
+              Accepted formats: .txt, .xls, .xlsx
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-3 gap-3 text-left max-w-xl mx-auto">
+        {workflowSteps.slice(1).map((step) => (
+          <div key={step.id} className="p-3 rounded-lg border bg-card/50">
             <div className="font-medium text-sm mb-1 flex items-center gap-2">
-              <div className={`h-1.5 w-1.5 rounded-full ${step.color}`} />
+              <step.icon className="h-3.5 w-3.5 text-accent" />
               {step.label}
             </div>
-            <p className="text-[10px] text-muted-foreground">{step.desc}</p>
+            <p className="text-[10px] text-muted-foreground">{step.description}</p>
           </div>
         ))}
       </div>
 
       {validRecents.length > 0 && (
         <div className="space-y-4 pt-8 border-t">
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground uppercase tracking-wider">
             <Clock className="h-4 w-4" />
-            Recent Sessions
+            RECENT SESSIONS
           </div>
 
           <div className="grid gap-2">
-            {validRecents.map((group, idx) => (
+            {validRecents.map((session, idx) => (
               <button
-                key={`${group.join('|')}-${idx}`}
-                className="group w-full flex items-center justify-between rounded-lg border bg-card/50 px-4 py-3 text-sm hover:bg-accent hover:text-accent-foreground transition-colors text-left"
-                onClick={() => onRecentClick(group)}
+                key={`${session.files.join('|')}-${session.loadedAt ?? 'legacy'}-${idx}`}
+                className="group w-full flex items-center justify-between gap-4 rounded-lg border bg-card/50 px-4 py-3 text-sm hover:bg-accent hover:text-accent-foreground transition-colors text-left"
+                onClick={() => onRecentClick(session)}
                 disabled={loading}
               >
-                <span className="truncate font-medium">{renderRecentLabel(group)}</span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-accent-foreground/80" />
+                    <span className="truncate font-medium">{formatRecentSessionTitle(session)}</span>
+                  </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground group-hover:text-accent-foreground/80">
+                    <span>{formatRecentSessionDate(session.loadedAt)}</span>
+                    <span aria-hidden="true">/</span>
+                    <span>{formatRecentSessionCount(session.files.length)}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-accent-foreground">
+                  Open
+                  <ChevronRight className="h-4 w-4" />
+                </span>
               </button>
             ))}
           </div>
@@ -134,18 +174,45 @@ function LoadLandingHero({
   )
 }
 
+function formatRecentSessionTitle(session: RecentSession) {
+  if (session.originLabel) return session.originLabel
+  if (session.files.length <= 1) return session.files[0] ?? "Untitled session"
+  return "Mixed file selection"
+}
+
+function formatRecentSessionDate(loadedAt?: string) {
+  if (!loadedAt) return "Date unknown"
+  const date = new Date(loadedAt)
+  if (Number.isNaN(date.getTime())) return "Date unknown"
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
+}
+
+function formatRecentSessionCount(fileCount: number) {
+  return `${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"}`
+}
+
 function LocalPreviewPanel({
   loading,
   error,
   preview,
   fileCount,
   onSelectFiles,
+  onLoadFiles,
+  loadInProgress,
 }: {
   loading: boolean
   error: string | null
   preview: LocalPreviewResult | null
   fileCount: number
   onSelectFiles: () => void
+  onLoadFiles: () => void
+  loadInProgress: boolean
 }) {
   const header =
     preview && preview.columns.length > 0
@@ -163,15 +230,32 @@ function LocalPreviewPanel({
   if (error) {
     return (
       <div className="rounded-xl border bg-card p-6 min-h-[320px] flex items-center justify-center">
-        <EmptyState
-          title="Preview failed"
-          description={error}
-          action={
-            <Button variant="outline" size="sm" onClick={onSelectFiles}>
-              Try Selecting Files Again
+        <div className="max-w-md text-center">
+          <AlertCircle className="mx-auto h-10 w-10 text-muted-foreground" />
+          <h3 className="mt-4 text-lg font-semibold tracking-tight">Preview unavailable</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {error}
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            The files are still selected. You can load them now or choose a different set.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button variant="outline" size="sm" onClick={onSelectFiles} disabled={loadInProgress}>
+              <FolderOpen className="h-4 w-4 mr-2" />
+              Choose Different Files
             </Button>
-          }
-        />
+            <Button onClick={onLoadFiles} size="sm" disabled={loadInProgress}>
+              {loadInProgress ? (
+                "Loading..."
+              ) : (
+                <>
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                  Load and Continue
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -187,10 +271,22 @@ function LocalPreviewPanel({
             Showing first file ({fileCount} selected)
           </p>
         </div>
-        <Button variant="outline" onClick={onSelectFiles} size="sm">
-          <FolderOpen className="h-4 w-4 mr-2" />
-          Choose Different Files
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onSelectFiles} size="sm" disabled={loadInProgress}>
+            <FolderOpen className="h-4 w-4 mr-2" />
+            Choose Different Files
+          </Button>
+          <Button onClick={onLoadFiles} size="sm" disabled={loadInProgress}>
+            {loadInProgress ? (
+              "Loading..."
+            ) : (
+              <>
+                <PlayCircle className="h-4 w-4 mr-2" />
+                Load and Continue
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -203,6 +299,13 @@ function LocalPreviewPanel({
             <p className="text-xs text-muted-foreground mt-0.5">
               {preview.rowsParsed.toLocaleString()} rows • {preview.durationMs.toFixed(1)} ms
             </p>
+          </div>
+        </div>
+
+        <div className="border-b bg-background/60 px-4 py-2">
+          <div className="flex items-center gap-2 text-xs text-accent">
+            <CheckCircle className="h-3.5 w-3.5" />
+            Preview ready. Review the ranges, then load the files to continue to detection.
           </div>
         </div>
 

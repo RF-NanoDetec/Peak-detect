@@ -137,6 +137,16 @@ else:
 static_dir = base_path / "ui-web" / "out"
 next_static_dir = static_dir / "_next"
 
+# Avoid stale HTML shells when testing (hashed JS/CSS under /_next remain cache-friendly).
+def _html_file_response(path: Path) -> FileResponse:
+    return FileResponse(
+        path,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
 # Serve documentation PDFs (user manual, mathematical reference) if available
 docs_candidates = [
     static_dir / "docs",
@@ -163,11 +173,11 @@ if static_dir.exists() and next_static_dir.exists():
     async def serve_root():
         index_path = static_dir / "index.html"
         if index_path.exists():
-            return FileResponse(index_path)
+            return _html_file_response(index_path)
         # Try Next.js App Router structure: app/page.html
         app_page_path = static_dir / "app" / "page.html"
         if app_page_path.exists():
-            return FileResponse(app_page_path)
+            return _html_file_response(app_page_path)
         # If neither exists, return helpful error
         return {
             "error": "Static files not found",
@@ -185,22 +195,30 @@ if static_dir.exists() and next_static_dir.exists():
         # Try to serve the requested file
         file_path = static_dir / full_path
         if file_path.is_file():
+            if file_path.suffix.lower() == ".html":
+                return _html_file_response(file_path)
             return FileResponse(file_path)
+
+        # Next static export writes route files as route/index.html.
+        # Requests such as /load/ arrive here as a directory path.
+        index_path = file_path / "index.html"
+        if index_path.is_file():
+            return _html_file_response(index_path)
 
         # For HTML files or routes, try to find .html version
         html_path = static_dir / f"{full_path}.html"
         if html_path.is_file():
-            return FileResponse(html_path)
+            return _html_file_response(html_path)
 
         # Try Next.js App Router structure: app/{path}/page.html
         app_route_path = static_dir / "app" / full_path / "page.html"
         if app_route_path.exists():
-            return FileResponse(app_route_path)
+            return _html_file_response(app_route_path)
 
         # Fallback to index.html for SPA routing
         index_path = static_dir / "index.html"
         if index_path.exists():
-            return FileResponse(index_path)
+            return _html_file_response(index_path)
 
         return {"error": "Not found", "path": full_path}
 else:

@@ -3,55 +3,39 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  FileUp,
-  Filter,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   Check,
-  GitBranch,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "@/hooks/use-sidebar"
 import { Button } from "@/components/ui/button"
-
-const steps = [
-  {
-    id: "load",
-    label: "Load Data",
-    icon: FileUp,
-    href: "/load",
-    canComplete: true,
-  },
-  {
-    id: "preprocess",
-    label: "Process & Detect",
-    icon: Filter,
-    href: "/preprocess",
-    canComplete: true,
-  },
-  {
-    id: "analyze",
-    label: "Analyze Results",
-    icon: BarChart3,
-    href: "/analyze",
-    canComplete: false,
-  },
-  {
-    id: "double",
-    label: "Double Peak",
-    icon: GitBranch,
-    href: "/double",
-    canComplete: false,
-  }
-]
+import { useDataStore } from "@/lib/stores/dataStore"
+import { useResultsStore } from "@/lib/stores/resultsStore"
+import { advancedWorkflowSteps, workflowSteps } from "@/components/layout/workflow"
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { collapsed, toggleCollapsed, effectiveCollapsed, isSmallScreen } = useSidebar()
+  const { toggleCollapsed, effectiveCollapsed } = useSidebar()
+  const { resultId } = useDataStore()
+  const { detectionResults } = useResultsStore()
+  const hasData = Boolean(resultId)
+  const hasPeaks = Boolean(detectionResults?.peak_times?.length)
 
-  // Find the current step index
-  const currentStepIndex = steps.findIndex(step => pathname.startsWith(step.href))
+  const currentStepIndex = workflowSteps.findIndex(step => pathname.startsWith(step.href))
+  const getStepState = (stepId: string, index: number) => {
+    if (stepId === "load") return hasData ? "Ready" : "Start"
+    if (stepId === "preprocess") return hasPeaks ? "Complete" : hasData ? "Next" : "Locked"
+    if (stepId === "analyze") return hasPeaks ? "Ready" : "After detection"
+    if (stepId === "export") return hasPeaks ? "Ready" : "After detection"
+    return currentStepIndex > index ? "Complete" : `Step ${index + 1}`
+  }
+  const isStepComplete = (stepId: string) => {
+    if (stepId === "load") return hasData
+    if (stepId === "preprocess") return hasPeaks
+    if (stepId === "analyze") return hasPeaks
+    return false
+  }
 
   return (
     <aside
@@ -76,7 +60,7 @@ export function Sidebar() {
           variant="ghost"
           size="icon"
           onClick={toggleCollapsed}
-          className="h-8 w-8 shrink-0 transition-transform duration-150 hover:scale-110 hover:text-accent"
+          className="topbar-icon-button h-8 w-8 shrink-0 transition-transform duration-150 hover:scale-110 hover:text-foreground"
           title={effectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {effectiveCollapsed ? (
@@ -91,16 +75,16 @@ export function Sidebar() {
         "relative flex-1 py-6 space-y-2 overflow-y-auto no-scrollbar",
         effectiveCollapsed ? "px-2" : "px-4"
       )}>
-        {steps.map((step, index) => {
+        {workflowSteps.map((step, index) => {
           const Icon = step.icon
           const isActive = pathname.startsWith(step.href)
-          const isCompleted = step.canComplete && currentStepIndex > index
+          const isCompleted = isStepComplete(step.id)
 
           return (
             <div key={step.id} className="relative">
               {/* Connector Line - only show when expanded */}
-              {!effectiveCollapsed && index < steps.length - 1 && (
-                <div className="absolute left-[27px] top-[48px] bottom-[-22px] w-[4px] overflow-hidden rounded-full">
+              {!effectiveCollapsed && index < workflowSteps.length - 1 && (
+                <div className="pointer-events-none absolute left-[27px] top-[48px] bottom-[-22px] z-10 w-[4px] overflow-hidden rounded-full">
                   <div className="absolute inset-0 bg-muted-foreground/15" />
                   {(isCompleted || isActive) && (
                     <div
@@ -116,7 +100,7 @@ export function Sidebar() {
               <Link
                 href={step.href}
                 className={cn(
-                  "relative flex items-center rounded-md text-sm font-medium transition-all duration-200 group border",
+                  "relative z-0 flex items-center rounded-md text-sm font-medium transition-all duration-200 group border",
                   effectiveCollapsed
                     ? "justify-center p-3"
                     : "gap-3 px-3 py-3",
@@ -138,12 +122,12 @@ export function Sidebar() {
                   )} />
                 )}
                 <div className={cn(
-                  "relative flex items-center justify-center h-8 w-8 rounded-full border-2 transition-all duration-200 shrink-0",
+                  "relative z-20 flex items-center justify-center h-8 w-8 rounded-full border-2 transition-all duration-200 shrink-0",
                   isActive
-                    ? "border-accent/50 bg-accent/10 text-accent"
+                    ? "border-accent bg-accent/10 text-accent"
                     : isCompleted
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : "border-muted-foreground/20 bg-background text-muted-foreground group-hover:border-accent/50 group-hover:scale-105"
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-muted-foreground bg-background text-muted-foreground group-hover:border-foreground group-hover:bg-muted/70 group-hover:text-foreground group-hover:scale-105"
                 )}>
                   {isActive && (
                     <span className="absolute inset-[-2px] rounded-full border border-accent/15" aria-hidden />
@@ -172,7 +156,7 @@ export function Sidebar() {
                         isCompleted ? "text-accent/70" :
                           "text-muted-foreground"
                     )}>
-                      {isCompleted ? "Completed" : `Step ${index + 1}`}
+                      {getStepState(step.id, index)}
                     </span>
                   </div>
                 )}
@@ -180,6 +164,37 @@ export function Sidebar() {
             </div>
           )
         })}
+        {!effectiveCollapsed && (
+          <div className="pt-5 mt-5 border-t">
+            <div className="px-1 pb-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+              Advanced
+            </div>
+            {advancedWorkflowSteps.map((step) => {
+              const Icon = step.icon
+              const isActive = pathname.startsWith(step.href)
+              return (
+                <Link
+                  key={step.id}
+                  href={step.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-sm transition-colors",
+                    isActive
+                      ? "bg-accent/8 text-accent border-accent/15"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{step.label}</div>
+                    <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+                      {step.sectionLabel}
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        )}
       </nav>
     </aside>
   )

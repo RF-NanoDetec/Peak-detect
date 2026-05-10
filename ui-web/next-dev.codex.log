@@ -1,0 +1,23 @@
+
+> peak-tool-ui@0.1.0 dev
+> next dev -H 127.0.0.1 -p 3000
+
+  ▲ Next.js 14.2.33
+  - Local:        http://127.0.0.1:3000
+  - Network:      http://127.0.0.1:3000
+
+ ✓ Starting...
+ ✓ Ready in 3.8s
+ ○ Compiling /load ...
+ ✓ Compiled /load in 5.8s (1215 modules)
+ GET /load/ 200 in 6306ms
+ ✓ Compiled in 820ms (516 modules)
+ ✓ Compiled in 148ms (501 modules)
+ GET /load/ 200 in 108ms
+  ▲ Next.js 14.2.33
+  - Local:        http://127.0.0.1:3000
+  - Network:      http://127.0.0.1:3000
+
+ ✓ Starting...
+ ✓ Ready in 4s
+[?25h

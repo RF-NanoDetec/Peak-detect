@@ -7,9 +7,7 @@ import { UPlotChart } from "./UPlotChart"
 import { UPlotHistogram } from "./UPlotHistogram"
 import { HistogramCard } from "./HistogramCard"
 import { useTheme } from "@/hooks/use-theme"
-import type { DataPreviewResponse } from "@/lib/types"
 import { parseResultBinary } from "@/lib/binaryParsers"
-import { Button } from "@/components/ui/button"
 
 interface PreprocessingChartProps {
   resultId: string
@@ -26,7 +24,6 @@ interface PreprocessingChartProps {
     widths: number[]
     width_heights?: number[]
   } | null
-  previewData?: DataPreviewResponse | null
   prominenceThreshold?: number
   distance?: number
   widthMs?: string
@@ -82,8 +79,50 @@ type AxisScaleOption = "linear" | "log"
 type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
+const TARGET_POINTS = 2500
+const RANGE_OVERSCAN_MULTIPLIER = 3
 
 const cleanNumbers = (values: number[] = []) => values.filter((v) => Number.isFinite(v))
+const lowerBound = (values: ArrayLike<number>, target: number) => {
+  let lo = 0
+  let hi = values.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (values[mid] < target) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+const upperBound = (values: ArrayLike<number>, target: number) => {
+  let lo = 0
+  let hi = values.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (values[mid] <= target) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+const expandRange = (range: WorkerRange, bounds: WorkerRange, multiplier = RANGE_OVERSCAN_MULTIPLIER): WorkerRange => {
+  if (!range || !bounds) return range
+  if (
+    !Number.isFinite(range.min) ||
+    !Number.isFinite(range.max) ||
+    !Number.isFinite(bounds.min) ||
+    !Number.isFinite(bounds.max) ||
+    range.max <= range.min ||
+    bounds.max <= bounds.min
+  ) {
+    return range
+  }
+
+  const span = range.max - range.min
+  const padding = span * Math.max(0, multiplier - 1) / 2
+  return {
+    min: Math.max(bounds.min, range.min - padding),
+    max: Math.min(bounds.max, range.max + padding),
+  }
+}
 const mean = (values: number[]) => {
   const arr = cleanNumbers(values)
   if (!arr.length) return null
@@ -107,7 +146,6 @@ export function PreprocessingChart({
   peakAmplitudes = [],
   peakIntervals = [],
   peakProperties = null,
-  previewData = null,
   prominenceThreshold,
   distance,
   widthMs,
@@ -168,20 +206,19 @@ export function PreprocessingChart({
     y: Float32Array
   } | null>(null)
 
-  const [fullRes, setFullRes] = useState<boolean>(false)
   const [zoomRange, setZoomRange] = useState<WorkerRange>(null)
   const [dynamicDownsampling, setDynamicDownsampling] = useState<boolean>(true)
   const [workerReady, setWorkerReady] = useState(false)
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const zoomStateFrameRef = useRef<number | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const lastRangeRef = useRef<WorkerRange>(null)
   const pendingRangeRef = useRef<WorkerRange>(null)
   const zoomRangeRef = useRef<WorkerRange>(null)
+  const timeRangeRef = useRef<WorkerRange>(null)
   const latestRequestIdRef = useRef<string | null>(null)
   const requestCounterRef = useRef(0)
-  const chartContainerRef = useRef<HTMLDivElement | null>(null)
-  const [chartWidth, setChartWidth] = useState<number>(800)
   const { theme } = useTheme()
   const isDark = theme === "dark"
   const accentColor = isDark ? "#fb923c" : "#f97316"
@@ -192,41 +229,19 @@ export function PreprocessingChart({
     interval: isDark ? "#a78bfa" : "#8b5cf6",   // Purple/violet for peak distance
   }
 
-  // Dynamic target points based on chart width for responsive performance
-  // ~2 points per pixel, capped between 1000-2500 for smooth interaction
-  const TARGET_POINTS = useMemo(() => {
-    const calculated = Math.round(chartWidth * 2)
-    return Math.min(Math.max(calculated, 1000), 2500)
-  }, [chartWidth])
+  // Keep the plot budget stable across window sizes. uPlot still fills the
+  // available width, but a larger window no longer asks the worker to draw more samples.
   const ZOOM_THRESHOLD = 0.1
-
-  // Track chart container width for responsive point targeting
-  useEffect(() => {
-    const container = chartContainerRef.current
-    if (!container) return
-
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (entry) {
-        const w = Math.floor(entry.contentRect.width)
-        setChartWidth((prev) => {
-          // Only update if change is significant (>50px) to avoid excessive re-renders
-          if (Math.abs(prev - w) > 50) {
-            return w
-          }
-          return prev
-        })
-      }
-    })
-    ro.observe(container)
-    return () => ro.disconnect()
-  }, [])
 
   const resetZoom = useCallback(() => {
     setZoomRange(null)
     lastRangeRef.current = null
     pendingRangeRef.current = null
     zoomRangeRef.current = null
+    if (zoomStateFrameRef.current != null) {
+      cancelAnimationFrame(zoomStateFrameRef.current)
+      zoomStateFrameRef.current = null
+    }
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current)
       debounceTimerRef.current = null
@@ -240,7 +255,9 @@ export function PreprocessingChart({
     // For very narrow windows (<= 200 ms span), request the full slice with no decimation
     const spanMinutes = range ? Math.max(0, range.max - range.min) : null
     const spanMs = spanMinutes != null ? spanMinutes * 60 * 1000 : null
-    const effectiveTarget = spanMs != null && spanMs <= 200 ? Number.MAX_SAFE_INTEGER : TARGET_POINTS
+    const effectiveTarget = spanMs != null && spanMs <= 200
+      ? Number.MAX_SAFE_INTEGER
+      : TARGET_POINTS * RANGE_OVERSCAN_MULTIPLIER
 
     worker.postMessage({
       type: 'GET_RANGE',
@@ -252,14 +269,14 @@ export function PreprocessingChart({
         zoomThreshold: ZOOM_THRESHOLD,
       },
     })
-  }, [TARGET_POINTS, dynamicDownsampling])
+  }, [dynamicDownsampling])
 
   const requestRange = useCallback((range: WorkerRange | null) => {
     const normalizedRange = range ?? null
     pendingRangeRef.current = normalizedRange
     const worker = workerRef.current
     if (!worker || !workerReady) return
-    dispatchRangeRequest(worker, normalizedRange)
+    dispatchRangeRequest(worker, expandRange(normalizedRange, timeRangeRef.current))
   }, [dispatchRangeRequest, workerReady])
 
   useEffect(() => {
@@ -383,8 +400,9 @@ export function PreprocessingChart({
             total_points: message.payload.totalPoints,
             time_range: message.payload.timeRange,
           }))
+          timeRangeRef.current = message.payload.timeRange
           const targetRange = pendingRangeRef.current ?? (dynamicDownsampling ? zoomRange : null)
-          dispatchRangeRequest(worker, targetRange ?? null)
+          dispatchRangeRequest(worker, expandRange(targetRange ?? null, timeRangeRef.current))
           break
         }
         case "RANGE_DATA": {
@@ -437,82 +455,48 @@ export function PreprocessingChart({
     }
   }, [])
 
-  // Load data (preview by default) and hydrate the worker
+  // Load the full dataset once, then let the worker return downsampled display windows.
   useEffect(() => {
     if (!resultId) return
     let active = true
-
-    const applyPreviewResponse = (response: DataPreviewResponse) => {
-      if (!active) return
-      resetZoom()
-      const previewRange = response.time.length > 0
-        ? { min: response.time[0] / 60, max: response.time[response.time.length - 1] / 60 }
-        : null
-      setInfo({
-        original_points: response.total_points,
-        displayed_points: response.time.length,
-        decimated: response.decimated,
-        time_range: previewRange,
-      })
-      sendDatasetToWorker({
-        time: response.time,
-        amplitude: response.amplitude,
-        filtered: response.filtered_amplitude || null,
-        totalPoints: response.total_points,
-        timeRange: response.time.length > 0
-          ? { min: response.time[0], max: response.time[response.time.length - 1] }
-          : undefined,
-      })
-    }
 
     const fetchData = async () => {
       setLoading(true)
       setError(null)
       try {
-        if (!fullRes && !filteredResultId && previewData) {
-          applyPreviewResponse(previewData)
-          setLoading(false)
-          return
+        const baseBuffer = await apiClient.getResultBinary(resultId, { timeoutMs: 300000 })
+        if (!active) return
+        const base = parseResultBinary(baseBuffer)
+        let filtered: ReturnType<typeof parseResultBinary> | null = null
+        if (filteredResultId) {
+          const filteredBuffer = await apiClient.getResultBinary(filteredResultId, { timeoutMs: 300000 })
+          if (!active) return
+          filtered = parseResultBinary(filteredBuffer)
         }
+        if (!active) return
 
-        if (fullRes) {
-          const baseBuffer = await apiClient.getResultBinary(resultId, { timeoutMs: 300000 })
-          if (!active) return
-          const base = parseResultBinary(baseBuffer)
-          let filtered: ReturnType<typeof parseResultBinary> | null = null
-          if (filteredResultId) {
-            const filteredBuffer = await apiClient.getResultBinary(filteredResultId, { timeoutMs: 300000 })
-            if (!active) return
-            filtered = parseResultBinary(filteredBuffer)
-          }
-          if (!active) return
+        resetZoom()
+        const rangeSeconds = base.time.length > 0
+          ? { min: base.time[0], max: base.time[base.time.length - 1] }
+          : null
+        const rangeMinutes = rangeSeconds
+          ? { min: rangeSeconds.min / 60, max: rangeSeconds.max / 60 }
+          : null
+        setInfo({
+          original_points: base.time.length,
+          displayed_points: 0,
+          decimated: base.time.length > TARGET_POINTS,
+          time_range: rangeMinutes,
+        })
+        timeRangeRef.current = rangeMinutes
 
-          resetZoom()
-          const rangeSeconds = base.time.length > 0
-            ? { min: base.time[0], max: base.time[base.time.length - 1] }
-            : null
-          const rangeMinutes = rangeSeconds
-            ? { min: rangeSeconds.min / 60, max: rangeSeconds.max / 60 }
-            : null
-          setInfo({
-            original_points: base.time.length,
-            displayed_points: 0,
-            decimated: base.time.length > TARGET_POINTS,
-            time_range: rangeMinutes,
-          })
-
-          sendDatasetToWorker({
-            time: base.time,
-            amplitude: base.amplitude,
-            filtered: filtered ? filtered.amplitude : null,
-            totalPoints: base.time.length,
-            timeRange: rangeSeconds || undefined,
-          })
-        } else {
-          const response = await apiClient.getDataPreview(resultId, filteredResultId || undefined, { full: false })
-          if (!active) return
-          applyPreviewResponse(response)
-        }
+        sendDatasetToWorker({
+          time: base.time,
+          amplitude: base.amplitude,
+          filtered: filtered ? filtered.amplitude : null,
+          totalPoints: base.time.length,
+          timeRange: rangeSeconds || undefined,
+        })
       } catch (e: any) {
         if (!active) return
         console.error(e)
@@ -529,7 +513,7 @@ export function PreprocessingChart({
       active = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultId, filteredResultId, fullRes])
+  }, [resultId, filteredResultId])
 
   const handleZoomChange = useCallback((range: { min: number; max: number }) => {
     if (!workerReady) return
@@ -541,17 +525,24 @@ export function PreprocessingChart({
     if (!rangeChanged) return
 
     lastRangeRef.current = range
-    setZoomRange(range)
     zoomRangeRef.current = range
+    if (zoomStateFrameRef.current != null) {
+      cancelAnimationFrame(zoomStateFrameRef.current)
+    }
+    zoomStateFrameRef.current = requestAnimationFrame(() => {
+      zoomStateFrameRef.current = null
+      setZoomRange(zoomRangeRef.current)
+    })
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current)
     }
 
-    // Faster debounce (50ms) for smoother interaction during zoom/pan
+    // Keep data-window refresh off the hot pointer path; uPlot pans immediately
+    // within the buffered range, then the worker catches up after input settles.
     debounceTimerRef.current = setTimeout(() => {
       requestRange(range)
-    }, 50)
+    }, 80)
   }, [requestRange, workerReady])
 
   // Cleanup debounce timer
@@ -561,17 +552,12 @@ export function PreprocessingChart({
         clearTimeout(debounceTimerRef.current)
         debounceTimerRef.current = null
       }
+      if (zoomStateFrameRef.current != null) {
+        cancelAnimationFrame(zoomStateFrameRef.current)
+        zoomStateFrameRef.current = null
+      }
     }
   }, [])
-
-  // Re-request data when TARGET_POINTS changes (due to resize)
-  useEffect(() => {
-    if (workerReady && workerRef.current) {
-      const currentRange = zoomRangeRef.current ?? zoomRange ?? null
-      requestRange(currentRange)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [TARGET_POINTS])
 
   const summary = useMemo(() => {
     const totalPeaks = peakTimes?.length || 0
@@ -814,7 +800,6 @@ export function PreprocessingChart({
     // Peaks overlay as point series (sparse)
     // Convert peak times to minutes and map to current xData indices
     const peakSeries = (peakTimes?.length || 0) > 0 ? (() => {
-      const peakXMin = (peakTimes || []).map(t => Math.max(0, t / 60))
       const peakYVals = peakAmplitudes || []
 
       // Get visible range to filter peaks
@@ -822,9 +807,14 @@ export function PreprocessingChart({
       const visibleMax = xData.length > 0 ? xData[xData.length - 1] : 0
 
       const sparse = new Array(xData.length).fill(null) as (number | null)[]
-      peakXMin.forEach((px, i) => {
+      const startPeak = lowerBound(peakTimes, visibleMin * 60)
+      const endPeak = upperBound(peakTimes, visibleMax * 60)
+      const peakIndices: number[] = []
+
+      for (let i = startPeak; i < endPeak; i += 1) {
+        const px = Math.max(0, peakTimes[i] / 60)
         // Only show peaks in visible range
-        if (px < visibleMin || px > visibleMax) return
+        if (px < visibleMin || px > visibleMax) continue
 
         // Find nearest index in xData using binary search
         let idx = -1
@@ -844,8 +834,9 @@ export function PreprocessingChart({
         }
         if (idx >= 0 && idx < sparse.length) {
           sparse[idx] = peakYVals[i]
+          peakIndices.push(idx)
         }
-      })
+      }
       return [{
         label: "Peaks",
         color: isDark ? "#f87171" : "#ef4444",
@@ -853,6 +844,7 @@ export function PreprocessingChart({
         data: sparse as any,
         points: true,
         pointSize: 4,
+        dataIndices: peakIndices,
       }]
     })() : []
 
@@ -901,31 +893,19 @@ export function PreprocessingChart({
             {info.decimated && (
               <> <span className="text-muted-foreground/50">(target: {TARGET_POINTS.toLocaleString()})</span></>
             )}
-            {dynamicDownsampling && fullRes && zoomRange && (
+            {dynamicDownsampling && zoomRange && (
               <> • zoomed: {formatZoomRange(zoomRange)}</>
             )}
             {" • "}
             <span className="text-muted-foreground/70">Scroll to zoom • Double-click to reset</span>
           </p>
         )}
-        {/* Toggle buttons below info text, aligned left */}
-        <div className="flex flex-wrap items-center gap-2 mt-2">
-          <Button
-            variant={fullRes ? "outline" : "default"}
-            size="sm"
-            onClick={() => setFullRes(!fullRes)}
-            disabled={loading}
-            className="text-[11px] h-7 px-3 whitespace-nowrap"
-          >
-            {fullRes ? "Reduce Resolution (Preview)" : "Load Full Resolution"}
-          </Button>
-        </div>
       </div>
 
       {/* Chart and Statistics side-by-side */}
       <div className="flex flex-col xl:flex-row gap-4 px-4 pb-6 min-w-0">
         {/* uPlot chart */}
-        <div ref={chartContainerRef} className="flex-1 min-w-0" style={{ minWidth: 300 }}>
+        <div className="flex-1 min-w-0" style={{ minWidth: 300 }}>
           <UPlotChart
             xData={xData}
             series={series}
@@ -934,6 +914,7 @@ export function PreprocessingChart({
             height={400}
             widthSegments={widthSegments || undefined}
             xRange={zoomRange || undefined} // Preserve zoom when data updates
+            xBounds={info?.time_range || undefined}
             onXRangeChange={handleZoomChange}
             onResetZoom={() => {
               resetZoom()

@@ -1,0 +1,166 @@
+
+> peak-tool-ui@0.1.0 dev
+> next dev --hostname 127.0.0.1 --port 3000
+
+  ▲ Next.js 14.2.33
+  - Local:        http://127.0.0.1:3000
+  - Network:      http://127.0.0.1:3000
+
+ ✓ Starting...
+ ✓ Ready in 1778ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /load in 12.4s (1183 modules)
+ GET /load/?fresh=1 200 in 705ms
+ GET /load/?previewfix=1 200 in 7877ms
+ GET /_next/static/webpack/d2ab20e92bac8fa7.webpack.hot-update.json 404 in 13152ms
+ GET /load/?fresh=1 200 in 130ms
+ GET /load/?previewfix=1 200 in 66ms
+ GET /load/?previewfix=1 200 in 61ms
+ GET /load/ 200 in 73ms
+ ✓ Compiled /icon.svg in 457ms (626 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 552ms
+ ○ Compiling /preprocess ...
+ ✓ Compiled /preprocess in 1475ms (1245 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 13ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ ○ Compiling /analyze ...
+ ✓ Compiled /analyze in 896ms (1217 modules)
+ ✓ Compiled /icon.svg in 155ms (677 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 216ms
+ ○ Compiling /export ...
+ ✓ Compiled /export in 840ms (1263 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 14ms
+ ○ Compiling /double ...
+ ✓ Compiled /double in 731ms (1279 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 13ms
+ GET /preprocess/ 200 in 268ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ ✓ Compiled in 2.1s (1279 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 1756ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 15ms
+ GET /preprocess/ 200 in 190ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ GET /preprocess/ 200 in 65ms
+ GET /preprocess/ 200 in 64ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 8ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 8ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 5ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ ○ Compiling / ...
+ ✓ Compiled / in 639ms (1273 modules)
+ GET / 307 in 829ms
+ GET / 307 in 90ms
+ GET /load/ 200 in 183ms
+ GET /load/?previewfix=1 200 in 82ms
+ GET /load/?fresh=1 200 in 82ms
+ GET /load/ 200 in 87ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 19ms
+ ✓ Compiled in 737ms (1288 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 11ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 6ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 7ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 8ms
+ ✓ Compiled in 1142ms (1280 modules)
+ ✓ Compiled in 595ms (1280 modules)
+ ✓ Compiled in 557ms (1280 modules)
+ ✓ Compiled in 925ms (1280 modules)
+ ✓ Compiled in 778ms (1280 modules)
+ ✓ Compiled in 743ms (1248 modules)
+ GET /load/ 200 in 222ms
+ ✓ Compiled in 929ms (1248 modules)
+ ✓ Compiled /icon.svg in 160ms (694 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 243ms
+ ✓ Compiled in 1183ms (1280 modules)
+ ✓ Compiled in 497ms (1280 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 27ms
+ GET /preprocess/ 200 in 262ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 7ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 9ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 8ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 20ms
+ ✓ Compiled in 1294ms (1284 modules)
+ ✓ Compiled in 931ms (1280 modules)
+ ✓ Compiled in 751ms (1278 modules)
+ ✓ Compiled in 833ms (1276 modules)
+ ✓ Compiled in 1474ms (1238 modules)
+ ✓ Compiled in 738ms (1238 modules)
+ ✓ Compiled /icon.svg in 218ms (689 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 310ms
+ ✓ Compiled in 1269ms (1270 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 18ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 7ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 27ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 8ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 12ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 18ms
+ GET /icon.svg?9d8912e9b58c39b4 200 in 9ms
+ ✓ Compiled in 1719ms (1238 modules)
+ ✓ Compiled in 1043ms (1238 modules)
+ ✓ Compiled in 464ms (1223 modules)
+ ✓ Compiled in 1155ms (1238 modules)
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 941ms (1226 modules)
+ GET /_next/static/css/app/layout.css?v=1778395616043 404 in 195ms
+ GET /_next/static/css/app/layout.css?v=1778395616043 404 in 61ms
+ ○ Compiling /icon.svg ...
+ ✓ Compiled /icon.svg in 578ms (690 modules)
+ GET /icon.svg?9d8912e9b58c39b4 200 in 710ms
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 3s (1484 modules)
+ GET /preprocess/ 500 in 3325ms
+ ○ Compiling / ...
+ ✓ Compiled / in 638ms (738 modules)
+ GET / 404 in 1515ms
+ GET /preprocess/ 404 in 1546ms
+ GET / 404 in 432ms
+ GET / 404 in 448ms
+ GET / 404 in 477ms
+ GET / 404 in 448ms
+ GET / 404 in 446ms
+ GET / 404 in 436ms
+ GET / 404 in 452ms
+ GET / 404 in 440ms
+ GET / 404 in 670ms
+ GET / 404 in 651ms
+ ✓ Compiled in 1627ms (1492 modules)
+ GET / 500 in 3160ms
+ GET / 500 in 69ms
+ GET / 500 in 114ms
+ GET / 500 in 76ms
+ GET / 500 in 149ms
+ GET / 500 in 31ms
+ GET / 500 in 31ms
+ GET / 500 in 26ms
+ GET / 500 in 250ms
+ GET / 500 in 35ms
+ GET / 500 in 22ms
+ GET / 500 in 47ms
+ GET / 500 in 94ms
+ GET / 500 in 39ms
+ GET / 500 in 29ms
+ GET / 500 in 28ms
+ GET / 500 in 39ms
+ GET / 500 in 88ms
+ GET / 500 in 48ms
+ GET / 500 in 34ms
+ GET / 500 in 29ms
+ GET / 500 in 24ms
+ GET / 500 in 24ms
+ GET / 500 in 22ms
+ GET / 500 in 23ms
+ GET / 500 in 31ms
+ GET / 500 in 22ms
+ GET /preprocess/ 500 in 33ms
+ GET / 500 in 23ms
+ GET / 500 in 86ms
+ GET / 500 in 117ms
+ GET / 500 in 143ms
+ GET / 500 in 137ms
+ GET / 500 in 112ms
+ GET / 500 in 133ms
+ GET / 500 in 117ms
+ GET / 500 in 26ms
+ GET / 500 in 21ms
+[?25h

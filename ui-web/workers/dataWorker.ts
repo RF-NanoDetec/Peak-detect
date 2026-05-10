@@ -140,6 +140,28 @@ const binarySearch = (array: Float64Array, value: number, findUpperBound: boolea
   return clampRange(result, 0, array.length)
 }
 
+const lowerBoundNumeric = (array: Float64Array, value: number) => {
+  let low = 0
+  let high = array.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (array[mid] < value) low = mid + 1
+    else high = mid
+  }
+  return low
+}
+
+const upperBoundNumeric = (array: Float64Array, value: number) => {
+  let low = 0
+  let high = array.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (array[mid] <= value) low = mid + 1
+    else high = mid
+  }
+  return low
+}
+
 const createSequentialIndices = (start: number, end: number) => {
   const length = Math.max(end - start, 0)
   const indices = new Uint32Array(length)
@@ -181,7 +203,16 @@ const buildWidthSegmentsForRange = (visibleRange: Range) => {
   const x1: number[] = []
   const y: number[] = []
 
-  for (let i = 0; i < count; i += 1) {
+  let start = 0
+  let end = count
+  if (visibleRange) {
+    const startIdx = binarySearch(timeData, visibleRange.min, false)
+    const endIdx = binarySearch(timeData, visibleRange.max, true)
+    start = Math.max(0, Math.min(count, lowerBoundNumeric(peakRightIps, Math.max(0, startIdx - 1))))
+    end = Math.max(start, Math.min(count, upperBoundNumeric(peakLeftIps, Math.min(timeData.length - 1, endIdx + 1))))
+  }
+
+  for (let i = start; i < end; i += 1) {
     const startIdx = peakLeftIps[i]
     const endIdx = peakRightIps[i]
     if (!Number.isFinite(startIdx) || !Number.isFinite(endIdx)) {
@@ -363,11 +394,10 @@ const buildRangeData = (
     const span = lastTime - firstTime
     const requestedMin = clampRange(range.min, firstTime, lastTime)
     const requestedMax = clampRange(range.max, firstTime, lastTime)
-    const ratio = (requestedMax - requestedMin) / span
 
-    if (ratio <= zoomThreshold) {
-      const low = Math.max(0, binarySearch(timeData, requestedMin, false) - 1)
-      const high = Math.min(timeData.length, binarySearch(timeData, requestedMax, true) + 1)
+    if (requestedMax > requestedMin && span > 0) {
+      const low = Math.max(0, binarySearch(timeData, requestedMin, false))
+      const high = Math.min(timeData.length, binarySearch(timeData, requestedMax, true))
       startIdx = Math.max(0, Math.min(low, timeData.length - 1))
       endIdx = Math.max(startIdx + 1, high)
       visibleRange = { min: requestedMin, max: requestedMax }

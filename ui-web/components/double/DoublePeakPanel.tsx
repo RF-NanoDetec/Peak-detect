@@ -3,7 +3,7 @@
 import { useMemo, useCallback, useState, useEffect, type Dispatch, type SetStateAction } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { StepperInput } from "@/components/ui/stepper-input"
+import { UnitStepperInput } from "@/components/ui/unit-input"
 import { UPlotHistogram } from "@/components/charts/UPlotHistogram"
 import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
@@ -275,7 +275,7 @@ export function DoublePeakPanel({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Distance [ms]
+            Distance
             <InfoTooltip content="Time separation between two peaks in a potential pair. Peaks too close or too far apart are not considered pairs." />
           </CardTitle>
           <CardDescription>Distance between consecutive peaks</CardDescription>
@@ -283,8 +283,9 @@ export function DoublePeakPanel({
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium">Min (ms)</label>
-              <StepperInput
+              <label className="text-xs font-medium">Min</label>
+              <UnitStepperInput
+                unit="ms"
                 value={thresholds.distance[0]}
                 onValueChange={(value) => updateThreshold("distance", 0, value, { min: resolutionMs })}
                 step={0.1}
@@ -293,8 +294,9 @@ export function DoublePeakPanel({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Max (ms)</label>
-              <StepperInput
+              <label className="text-xs font-medium">Max</label>
+              <UnitStepperInput
+                unit="ms"
                 value={thresholds.distance[1]}
                 onValueChange={(value) => updateThreshold("distance", 1, value, { min: thresholds.distance[0] })}
                 step={1}
@@ -339,8 +341,9 @@ export function DoublePeakPanel({
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium">Min (%)</label>
-              <StepperInput
+              <label className="text-xs font-medium">Min</label>
+              <UnitStepperInput
+                unit="%"
                 value={thresholds.promOverAmp[0]}
                 onValueChange={(value) => updateThreshold("promOverAmp", 0, value, { min: 0, max: 200 })}
                 step={1}
@@ -350,8 +353,9 @@ export function DoublePeakPanel({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Max (%)</label>
-              <StepperInput
+              <label className="text-xs font-medium">Max</label>
+              <UnitStepperInput
+                unit="%"
                 value={thresholds.promOverAmp[1]}
                 onValueChange={(value) => updateThreshold("promOverAmp", 1, value, { min: 0, max: 200 })}
                 step={1}

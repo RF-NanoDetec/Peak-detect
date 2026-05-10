@@ -7,20 +7,17 @@ import uPlot from "uplot"
 
 import { Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  SCALE_DISTRIBUTIONS,
+  cleanupUPlotInstance,
+  defaultRange,
+  formatAxisNumber,
+  safeArrayMax,
+  safeArrayMin,
+  safeLogAxisSplits,
+} from "./uplotUtils"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
-
-// Cleanup helper to properly destroy uPlot instance and prevent memory leaks
-const cleanupUPlotInstance = (instanceRef: React.MutableRefObject<uPlot | null>) => {
-  if (instanceRef.current) {
-    try {
-      instanceRef.current.destroy()
-    } catch (e) {
-      // Ignore errors during cleanup
-    }
-    instanceRef.current = null
-  }
-}
 
 interface HistogramData {
   bins: number[]
@@ -45,77 +42,6 @@ interface UPlotHistogramProps {
   verticalLines?: Array<{ value: number; color?: string; label?: string }>
 }
 
-const formatAxisNumber = (value: number | null | undefined): string => {
-  if (value == null || Number.isNaN(value)) return ""
-  if (value === 0) return "0"
-  const abs = Math.abs(value)
-  if (abs < 0.001 || abs > 10000) return value.toExponential(1)
-  if (abs >= 100) return value.toFixed(0)
-  if (abs >= 10) return value.toFixed(1)
-  if (abs >= 1) return value.toFixed(2)
-  return value.toFixed(3)
-}
-
-const SCALE_DISTRIBUTIONS = {
-  LOG: 3,
-  ARCSINH: 4,
-} as const
-
-// Safe min/max for arrays - avoids stack overflow from spread operator with large arrays
-const safeArrayMin = (arr: number[]): number => {
-  if (arr.length === 0) return 0
-  let min = arr[0]
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] < min) min = arr[i]
-  }
-  return min
-}
-
-const safeArrayMax = (arr: number[]): number => {
-  if (arr.length === 0) return 0
-  let max = arr[0]
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] > max) max = arr[i]
-  }
-  return max
-}
-
-const defaultRange = (scaleType: AxisScaleType) =>
-  scaleType === "linear" ? { min: 0, max: 100 } : { min: 0.1, max: 1000 }
-
-// Safe log axis splits function that limits the number of splits to prevent RangeError
-// uPlot's default logAxisSplits can create too many elements when the range spans many orders of magnitude
-const safeLogAxisSplits = (u: uPlot, axisIdx: number, scaleMin: number, scaleMax: number, foundIncr: number, foundSpace: number): number[] => {
-  // Ensure valid inputs
-  if (!Number.isFinite(scaleMin) || !Number.isFinite(scaleMax) || scaleMin <= 0 || scaleMax <= scaleMin) {
-    return [1, 10, 100]
-  }
-  
-  const splits: number[] = []
-  const logMin = Math.floor(Math.log10(scaleMin))
-  const logMax = Math.ceil(Math.log10(scaleMax))
-  
-  // Limit to max 6 orders of magnitude to prevent array overflow
-  const maxOrders = 6
-  const startExp = Math.max(logMin, logMax - maxOrders)
-  const endExp = Math.min(logMax, logMin + maxOrders)
-  
-  // Generate splits at powers of 10
-  for (let exp = startExp; exp <= endExp; exp++) {
-    const val = Math.pow(10, exp)
-    if (val >= scaleMin * 0.9 && val <= scaleMax * 1.1) {
-      splits.push(val)
-    }
-  }
-  
-  // Ensure we have at least 2 splits
-  if (splits.length < 2) {
-    splits.length = 0
-    splits.push(scaleMin, scaleMax)
-  }
-  
-  return splits
-}
 
 export function UPlotHistogram({
   data,

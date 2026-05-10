@@ -27,7 +27,7 @@ interface PageControlsProps {
 
 export function PageControls({ children, className, widthClassName }: PageControlsProps) {
   const { rightPanelCollapsed, toggleRightPanel } = useSidebar()
-  const panelWidthClasses = widthClassName || "w-[320px] lg:w-[380px] xl:w-[420px]"
+  const panelWidthClasses = widthClassName || "w-[280px] lg:w-[300px] xl:w-[320px]"
 
   return (
     <>

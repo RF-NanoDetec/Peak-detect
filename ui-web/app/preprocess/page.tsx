@@ -16,7 +16,7 @@ import { useResultsStore } from "@/lib/stores/resultsStore"
 
 export default function PreprocessPage() {
   const router = useRouter()
-  const { resultId, previewData, filteredResultId, setFilteredResultId } = useDataStore()
+  const { resultId, filteredResultId, setFilteredResultId } = useDataStore()
   const { params, updateParam } = useParamsStore()
   const { detectionResults, setDetectionResults } = useResultsStore()
   
@@ -32,7 +32,7 @@ export default function PreprocessPage() {
     if (status === 'completed' && result) {
       toast.success("Preprocessing completed")
       
-      if (result.resultId) {
+      if (typeof result.resultId === 'string') {
         setFilteredResultId(result.resultId)
       }
       
@@ -149,7 +149,6 @@ export default function PreprocessPage() {
           filteredResultId={filteredResultId}
           params={params}
           detectionResults={detectionResults}
-          previewData={previewData}
           onLoadData={() => router.push('/load')}
         />
       </PageVisualization>

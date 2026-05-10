@@ -37,6 +37,9 @@ type ScaleType = "linear" | "log"
 
 type Range = { min: number; max: number } | null
 
+const MAX_ANALYSIS_POINTS = 50000
+const MAX_THROUGHPUT_BINS = 20000
+
 const axisButtonClass = (active: boolean) =>
   `px-2.5 py-1 rounded-md border text-[10px] font-medium transition-colors ${
     active
@@ -108,23 +111,27 @@ const computeBinnedThroughput = (peakTimes: number[], binWidthSeconds = 10) => {
   const timesSorted = [...peakTimes].sort((a, b) => a - b)
   const start = timesSorted[0]
   const end = timesSorted[timesSorted.length - 1]
-  const binCount = Math.max(1, Math.ceil((end - start) / binWidthSeconds))
+  const span = Math.max(0, end - start)
+  const requestedBinWidth = Number.isFinite(binWidthSeconds) && binWidthSeconds > 0 ? binWidthSeconds : 10
+  const rawBinCount = Math.max(1, Math.ceil(span / requestedBinWidth))
+  const binCount = Math.min(rawBinCount, MAX_THROUGHPUT_BINS)
+  const effectiveBinWidth = rawBinCount > MAX_THROUGHPUT_BINS && span > 0
+    ? span / MAX_THROUGHPUT_BINS
+    : requestedBinWidth
 
   const counts = new Array(binCount).fill(0)
   for (const t of timesSorted) {
-    const idx = Math.min(binCount - 1, Math.floor((t - start) / binWidthSeconds))
+    const idx = Math.min(binCount - 1, Math.floor((t - start) / effectiveBinWidth))
     counts[idx] += 1
   }
 
   const binCentersMinutes: number[] = []
   const throughputPerBin: number[] = []
   for (let i = 0; i < binCount; i += 1) {
-    const binStart = start + i * binWidthSeconds
-    const binCenterSec = binStart + binWidthSeconds / 2
+    const binStart = start + i * effectiveBinWidth
+    const binCenterSec = binStart + effectiveBinWidth / 2
     binCentersMinutes.push(Math.max(0, binCenterSec / 60))
-    // Normalize to peaks per second by dividing by bin width
-    // This ensures consistent units regardless of bin width
-    throughputPerBin.push(counts[i] / binWidthSeconds)
+    throughputPerBin.push(counts[i] / effectiveBinWidth)
   }
 
   return { binCentersMinutes, throughputPerBin }
@@ -132,17 +139,89 @@ const computeBinnedThroughput = (peakTimes: number[], binWidthSeconds = 10) => {
 
 const computeMovingAverage = (values: number[], windowSize = 5): number[] => {
   if (!values.length || windowSize <= 1) return values.slice()
+  const normalizedWindow = Math.max(1, Math.floor(windowSize))
   const result: number[] = []
+  let sum = 0
+  let finiteCount = 0
   for (let i = 0; i < values.length; i += 1) {
-    let sum = 0
-    let count = 0
-    for (let j = Math.max(0, i - windowSize + 1); j <= i; j += 1) {
-      sum += values[j]
-      count += 1
+    const incoming = values[i]
+    if (Number.isFinite(incoming)) {
+      sum += incoming
+      finiteCount += 1
     }
-    result.push(count > 0 ? sum / count : 0)
+
+    const outgoingIndex = i - normalizedWindow
+    if (outgoingIndex >= 0) {
+      const outgoing = values[outgoingIndex]
+      if (Number.isFinite(outgoing)) {
+        sum -= outgoing
+        finiteCount -= 1
+      }
+    }
+
+    result.push(finiteCount > 0 ? sum / finiteCount : Number.NaN)
   }
   return result
+}
+
+const preparePeakSeries = (
+  peakTimes: number[],
+  peakAmplitudes: number[],
+  peakWidths: number[],
+  timeResolution?: number,
+) => {
+  const scale =
+    typeof timeResolution === "number" && Number.isFinite(timeResolution)
+      ? timeResolution * 1000
+      : 1
+  const count = Math.min(peakTimes.length, peakAmplitudes.length)
+  const times: number[] = []
+  const amplitudes: number[] = []
+  const widthsMs: number[] = []
+
+  for (let i = 0; i < count; i += 1) {
+    const time = peakTimes[i]
+    const amplitude = peakAmplitudes[i]
+    if (!Number.isFinite(time) || !Number.isFinite(amplitude)) continue
+
+    times.push(time)
+    amplitudes.push(amplitude)
+
+    const width = peakWidths[i]
+    widthsMs.push(Number.isFinite(width) ? width * scale : Number.NaN)
+  }
+
+  const sourceCount = times.length
+  if (sourceCount <= MAX_ANALYSIS_POINTS) {
+    return { times, amplitudes, widthsMs, allTimes: times, sourceCount, displayedCount: sourceCount }
+  }
+
+  const step = Math.ceil(sourceCount / MAX_ANALYSIS_POINTS)
+  const sampledTimes: number[] = []
+  const sampledAmplitudes: number[] = []
+  const sampledWidthsMs: number[] = []
+
+  for (let i = 0; i < sourceCount; i += step) {
+    sampledTimes.push(times[i])
+    sampledAmplitudes.push(amplitudes[i])
+    sampledWidthsMs.push(widthsMs[i])
+  }
+
+  const lastIndex = sourceCount - 1
+  if (sampledTimes[sampledTimes.length - 1] !== times[lastIndex]) {
+    sampledTimes.push(times[lastIndex])
+    sampledAmplitudes.push(amplitudes[lastIndex])
+    sampledWidthsMs.push(widthsMs[lastIndex])
+  }
+
+  return {
+    times: sampledTimes,
+    amplitudes: sampledAmplitudes,
+    widthsMs: sampledWidthsMs,
+    allTimes: times,
+    sourceCount,
+    displayedCount: sampledTimes.length,
+  }
 }
 
 export function AnalyzeTimeSeries({
@@ -166,26 +245,22 @@ export function AnalyzeTimeSeries({
   const prevAmpScaleRef = useRef<ScaleType>(ampScale)
   const prevWidthScaleRef = useRef<ScaleType>(widthScale)
 
-  // Prepare all data points (no downsampling)
-  const xTimesMinutes = useMemo(
-    () => peakTimes.map((t) => Math.max(0, t / 60)),
-    [peakTimes],
+  const preparedSeries = useMemo(
+    () => preparePeakSeries(peakTimes, peakAmplitudes, peakWidths, timeResolution),
+    [peakTimes, peakAmplitudes, peakWidths, timeResolution],
   )
 
-  const widthsMs = useMemo(() => {
-    if (!peakWidths.length) return [] as number[]
-    const scale =
-      typeof timeResolution === "number" && Number.isFinite(timeResolution)
-        ? timeResolution * 1000
-        : 1
-    return peakWidths.map((w) => w * scale)
-  }, [peakWidths, timeResolution])
+  // Prepare aligned chart data; very large results are sampled for rendering only.
+  const xTimesMinutes = useMemo(
+    () => preparedSeries.times.map((t) => Math.max(0, t / 60)),
+    [preparedSeries.times],
+  )
 
 
   // Compute dynamic opacity based on number of points
   const pointOpacity = useMemo(
-    () => computePointOpacity(peakTimes.length, isDark),
-    [peakTimes.length, isDark]
+    () => computePointOpacity(preparedSeries.displayedCount, isDark),
+    [preparedSeries.displayedCount, isDark]
   )
   
   // Cooler scatter dots with dynamic opacity; distinct mean line for contrast
@@ -196,15 +271,20 @@ export function AnalyzeTimeSeries({
 
   // Compute rolling mean for prominence data
   const amplitudeRollingMean = useMemo(() => {
-    if (!peakAmplitudes.length) return [] as number[]
-    return computeMovingAverage(peakAmplitudes as number[], rollingMeanWindow)
-  }, [peakAmplitudes, rollingMeanWindow])
+    if (!preparedSeries.amplitudes.length) return [] as number[]
+    return computeMovingAverage(preparedSeries.amplitudes, rollingMeanWindow)
+  }, [preparedSeries.amplitudes, rollingMeanWindow])
 
   // Compute rolling mean for width data
   const widthRollingMean = useMemo(() => {
-    if (!widthsMs.length) return [] as number[]
-    return computeMovingAverage(widthsMs, rollingMeanWindow)
-  }, [widthsMs, rollingMeanWindow])
+    const finiteWidths = preparedSeries.widthsMs.filter(Number.isFinite)
+    if (!finiteWidths.length) return [] as number[]
+
+    const rollingValues = computeMovingAverage(preparedSeries.widthsMs, rollingMeanWindow)
+    return rollingValues.map((value, index) =>
+      Number.isFinite(preparedSeries.widthsMs[index]) ? value : Number.NaN,
+    )
+  }, [preparedSeries.widthsMs, rollingMeanWindow])
 
   const amplitudeSeries: Series[] = useMemo(
     () => [
@@ -212,7 +292,7 @@ export function AnalyzeTimeSeries({
         label: "Peak prominence",
         color: pointColor,
         width: 0,
-        data: peakAmplitudes as number[],
+        data: preparedSeries.amplitudes,
         points: true,
         pointSize: 3,
       },
@@ -223,7 +303,7 @@ export function AnalyzeTimeSeries({
         data: amplitudeRollingMean,
       },
     ],
-    [pointColor, peakAmplitudes, amplitudeRollingMean, rollingMeanColor],
+    [pointColor, preparedSeries.amplitudes, amplitudeRollingMean, rollingMeanColor],
   )
 
   const widthSeries: Series[] = useMemo(
@@ -232,7 +312,7 @@ export function AnalyzeTimeSeries({
         label: "Peak width (ms)",
         color: pointColor,
         width: 0,
-        data: widthsMs,
+        data: preparedSeries.widthsMs,
         points: true,
         pointSize: 3,
       },
@@ -243,7 +323,7 @@ export function AnalyzeTimeSeries({
         data: widthRollingMean,
       },
     ],
-    [pointColor, widthsMs, widthRollingMean, rollingMeanColor],
+    [pointColor, preparedSeries.widthsMs, widthRollingMean, rollingMeanColor],
   )
 
   // Compute ranges - linear starts at 0, log auto-detects from data
@@ -263,14 +343,14 @@ export function AnalyzeTimeSeries({
       }
     }
     
-    processArray(peakAmplitudes as number[])
+    processArray(preparedSeries.amplitudes)
     processArray(amplitudeRollingMean)
     
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) return null
     
     // Create a small array with just min/max for computeRange
     return computeRange([minVal, maxVal], ampScale, ampScale === "linear" ? 0 : undefined)
-  }, [peakAmplitudes, amplitudeRollingMean, ampScale])
+  }, [preparedSeries.amplitudes, amplitudeRollingMean, ampScale])
   
   const widthRange = useMemo(() => {
     let minVal = Infinity
@@ -286,17 +366,17 @@ export function AnalyzeTimeSeries({
       }
     }
     
-    processArray(widthsMs)
+    processArray(preparedSeries.widthsMs)
     processArray(widthRollingMean)
     
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) return null
     
     return computeRange([minVal, maxVal], widthScale, widthScale === "linear" ? 0 : undefined)
-  }, [widthsMs, widthRollingMean, widthScale])
+  }, [preparedSeries.widthsMs, widthRollingMean, widthScale])
   
   const { binCentersMinutes, throughputPerBin } = useMemo(
-    () => computeBinnedThroughput(peakTimes, binWidthSeconds),
-    [peakTimes, binWidthSeconds],
+    () => computeBinnedThroughput(preparedSeries.allTimes, binWidthSeconds),
+    [preparedSeries.allTimes, binWidthSeconds],
   )
   const movingAverage = useMemo(
     () => computeMovingAverage(throughputPerBin, 5),
@@ -345,7 +425,7 @@ export function AnalyzeTimeSeries({
     setSharedXRange(null)
   }, [])
 
-  if (!peakTimes.length || !peakAmplitudes.length) {
+  if (!preparedSeries.times.length || !preparedSeries.amplitudes.length) {
     return (
       <div className={`flex items-center justify-center h-full ${className}`}>
         <p className="text-sm text-muted-foreground">No detected peaks to analyze</p>
@@ -355,6 +435,11 @@ export function AnalyzeTimeSeries({
 
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
+      {preparedSeries.sourceCount > preparedSeries.displayedCount && (
+        <p className="text-[11px] text-muted-foreground px-1">
+          Displaying {preparedSeries.displayedCount.toLocaleString()} of {preparedSeries.sourceCount.toLocaleString()} peaks for chart performance.
+        </p>
+      )}
       {/* Prominence */}
       <div className="border rounded-lg bg-card/60 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/20">

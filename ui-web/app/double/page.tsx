@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { GitBranch } from "lucide-react"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
@@ -13,6 +12,10 @@ import { DoublePeakPanel } from "@/components/double/DoublePeakPanel"
 import { DoublePeakScatter } from "@/components/double/DoublePeakScatter"
 import type { DoublePeakThresholds } from "@/components/double/types"
 import type { PairMetrics } from "@/components/double/metrics"
+import { advancedWorkflowSteps, workflowSteps } from "@/components/layout/workflow"
+
+const doublePeakStep = advancedWorkflowSteps.find((step) => step.id === "double")!
+const preprocessStep = workflowSteps.find((step) => step.id === "preprocess")!
 
 export default function DoublePeakPage() {
   const router = useRouter()
@@ -164,7 +167,7 @@ export default function DoublePeakPage() {
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="text-center space-y-4 max-w-md">
               <div className="mx-auto w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
-                <GitBranch className="h-8 w-8 text-accent" />
+                <doublePeakStep.icon className="h-8 w-8 text-accent" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold">No Pair Data</h3>
@@ -172,8 +175,8 @@ export default function DoublePeakPage() {
                   Run peak detection to analyze consecutive peak pairs
                 </p>
               </div>
-              <Button onClick={() => router.push('/preprocess')}>
-                Go to Process & Detect
+              <Button onClick={() => router.push(preprocessStep.href)}>
+                Go to {preprocessStep.label}
               </Button>
             </div>
           </div>
@@ -182,9 +185,9 @@ export default function DoublePeakPage() {
       <PageControls widthClassName="w-[360px] lg:w-[430px] xl:w-[500px]">
         <div className="space-y-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Double Peak</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">{doublePeakStep.label}</h2>
             <p className="text-sm text-muted-foreground">
-              Analyze pairs of consecutive peaks
+              {doublePeakStep.description}
             </p>
           </div>
 
@@ -202,7 +205,7 @@ export default function DoublePeakPage() {
           ) : (
             <div className="text-center py-8 space-y-3">
               <div className="mx-auto w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
-                <GitBranch className="h-6 w-6 text-accent" />
+                <doublePeakStep.icon className="h-6 w-6 text-accent" />
               </div>
               <div>
                 <h3 className="text-sm font-semibold">No Peak Data</h3>
@@ -210,8 +213,8 @@ export default function DoublePeakPage() {
                   Detect peaks first to analyze pairs
                 </p>
               </div>
-              <Button size="sm" onClick={() => router.push('/preprocess')}>
-                Go to Process & Detect
+              <Button size="sm" onClick={() => router.push(preprocessStep.href)}>
+                Go to {preprocessStep.label}
               </Button>
             </div>
           )}

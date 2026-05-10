@@ -360,6 +360,7 @@ export function DetectionChart({
           yLabel="Counts"
           height={400}
           xRange={xRange}
+          xBounds={xDataRaw.length ? { min: xDataRaw[0], max: xDataRaw[xDataRaw.length - 1] } : undefined}
           onXRangeChange={setXRange}
           onResetZoom={handleResetZoom}
         />

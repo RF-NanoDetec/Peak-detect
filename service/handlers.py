@@ -3,10 +3,9 @@ from __future__ import annotations
 import os
 import struct
 import tempfile
-from io import BytesIO, StringIO
+from io import StringIO
 from typing import Any, Dict, List
 
-import matplotlib
 import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -35,29 +34,14 @@ from .models import (
     ProcessRunRequest,
     TaskStatusResponse,
 )
-from .plotting import generate_peak_regions_plot  # Only used for peak inspection now
+from .routes.dependencies import get_store, get_task_manager
+from .routes.system import router as system_router
 from .storage import InMemoryStore
 
-matplotlib.use("Agg")  # Use non-GUI backend
 import logging
 
-import matplotlib.pyplot as plt
-
 router = APIRouter(prefix="/api")
-
-
-def get_store(request: Request) -> InMemoryStore:
-    store = getattr(request.app.state, "store", None)
-    if not store:
-        raise HTTPException(status_code=500, detail="Storage not initialized")
-    return store
-
-
-def get_task_manager(request: Request) -> TaskManager:
-    tm = getattr(request.app.state, "task_manager", None)
-    if not tm:
-        raise HTTPException(status_code=500, detail="Task manager not initialized")
-    return tm
+router.include_router(system_router)
 
 
 @router.post("/files/open", response_model=LoadFilesResponse)
@@ -362,10 +346,6 @@ def get_data_preview(
                 response["filtered_amplitude"] = filtered_amp_dec.tolist()
 
     return response
-
-
-# Removed /data/plot-image and /data/plot-detection-image endpoints
-# All charts now use uPlot for interactive rendering on the frontend
 
 
 @router.post("/preprocess/run")
@@ -902,154 +882,6 @@ def auto_threshold(
     return {"prominence_threshold": float(threshold_int)}
 
 
-@router.post("/detect/inspect-peaks")
-def inspect_peaks(
-    payload: Dict[str, Any], store: InMemoryStore = Depends(get_store)
-) -> Dict[str, Any]:
-    """
-    Generate peak inspection plot showing individual peaks in 2x5 grid (CACHED).
-    Requires both original and filtered data, plus detection parameters.
-
-    OPTIMIZATION: Images are cached per (result_id, params, offset) for instant navigation.
-    """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    # Extract parameters
-    result_id = payload.get("resultId")
-    filtered_result_id = payload.get("filteredResultId")
-    offset = payload.get("offset", 0)
-
-    # Detection parameters
-    prominence_threshold = payload.get("prominence_threshold", 20.0)
-    distance = payload.get("distance", 30)
-    rel_height = payload.get("rel_height", 0.8)
-    width_ms = payload.get("width_ms", "0.1,200")
-    prominence_ratio = payload.get("prominence_ratio", 0.8)
-    time_resolution = payload.get("time_resolution", 1e-4)
-
-    if not result_id:
-        raise HTTPException(status_code=400, detail="resultId required")
-
-    # Get filtered data (needed for checking if it exists)
-    if not filtered_result_id:
-        raise HTTPException(
-            status_code=400, detail="filteredResultId required for peak inspection"
-        )
-
-    # Check image cache first
-    params_dict = {
-        "prominence_threshold": prominence_threshold,
-        "distance": distance,
-        "rel_height": rel_height,
-        "width_ms": width_ms,
-        "prominence_ratio": prominence_ratio,
-        "time_resolution": time_resolution,
-    }
-
-    cached_image = cache_module.get_peak_inspection_image(
-        result_id, filtered_result_id, offset, params_dict
-    )
-    if cached_image is not None:
-        # Also need to get peak count for total_peaks (could cache this too, but it's fast)
-        cached_detection = cache_module.get_peak_detection_result(
-            filtered_result_id, params_dict
-        )
-        if cached_detection is not None:
-            peaks, _ = cached_detection
-            logger.info(
-                f"Peak inspection: using cached image (offset={offset}, total_peaks={len(peaks)})"
-            )
-            return {
-                "image": cached_image,
-                "format": "png",
-                "encoding": "base64",
-                "total_peaks": len(peaks),
-                "showing_offset": offset,
-            }
-
-    # Get original data
-    base = store.get_result(result_id)
-    if not base:
-        raise HTTPException(status_code=404, detail="Result not found")
-
-    filtered_result = store.get_result(filtered_result_id)
-    if not filtered_result:
-        raise HTTPException(status_code=404, detail="Filtered result not found")
-
-    # Run peak detection to get peaks and properties
-    time_values = base["time"]
-    amplitude_raw = base["amplitude"]
-    amplitude_filtered = filtered_result["amplitude"]
-
-    # Check detection cache first
-    cached_detection = cache_module.get_peak_detection_result(
-        filtered_result_id, params_dict
-    )
-
-    if cached_detection is not None:
-        peaks, properties = cached_detection
-        logger.info(
-            f"Peak inspection: using cached detection result ({len(peaks)} peaks)"
-        )
-    else:
-        # Convert width from ms to samples
-        if isinstance(width_ms, str):
-            width_values = width_ms.strip().split(",")
-        else:
-            width_values = [str(v) for v in width_ms]
-
-        sampling_rate = 1.0 / time_resolution
-        width_p = [
-            int(float(value.strip()) * sampling_rate / 1000) for value in width_values
-        ]
-
-        # Detect peaks
-        peaks, properties = find_peaks_with_window(
-            amplitude_filtered,
-            width=width_p,
-            prominence=prominence_threshold,
-            distance=distance,
-            rel_height=rel_height,
-            prominence_ratio=prominence_ratio,
-        )
-
-        # Cache the detection result
-        cache_module.cache_peak_detection_result(
-            filtered_result_id, params_dict, peaks, properties
-        )
-
-    if len(peaks) == 0:
-        return {
-            "image": None,
-            "format": "png",
-            "encoding": "base64",
-            "total_peaks": 0,
-            "message": "No peaks detected with current parameters",
-        }
-
-    logger.info(f"Peak inspection: {len(peaks)} peaks detected, offset={offset}")
-
-    # Generate plot
-    img_base64 = generate_peak_regions_plot(
-        time_values, amplitude_raw, amplitude_filtered, peaks, properties, offset=offset
-    )
-
-    # Cache the image
-    cache_module.cache_peak_inspection_image(
-        result_id, filtered_result_id, offset, params_dict, img_base64
-    )
-
-    return {
-        "image": img_base64,
-        "format": "png",
-        "encoding": "base64",
-        "total_peaks": len(peaks),
-        "showing_offset": offset,
-    }
-
-
 @router.post("/detect/histograms")
 def generate_histograms(
     payload: Dict[str, Any], store: InMemoryStore = Depends(get_store)
@@ -1203,30 +1035,6 @@ def generate_double_peak_histograms(
         raise HTTPException(
             status_code=500, detail=f"Error calculating histogram data: {str(e)}"
         )
-
-
-@router.get("/cache/stats")
-def get_cache_stats() -> Dict[str, Any]:
-    """Get cache statistics for monitoring performance improvements."""
-    return cache_module.get_cache_stats()
-
-
-@router.delete("/cache/clear")
-def clear_caches() -> Dict[str, str]:
-    """Clear all caches (useful for testing or memory management)."""
-    cache_module.clear_all_caches()
-    return {"message": "All caches cleared successfully"}
-
-
-@router.get("/params", response_model=Params)
-def get_params(request: Request) -> Params:
-    return getattr(request.app.state, "params_default", Params())
-
-
-@router.put("/params", response_model=Params)
-def put_params(new_params: Params, request: Request) -> Params:
-    request.app.state.params_default = new_params
-    return new_params
 
 
 @router.post("/process/run")
@@ -1454,59 +1262,6 @@ def export_peaks_csv(
     )
 
 
-@router.get("/performance/timing/{result_id}")
-def get_timing_report(
-    result_id: str, store: InMemoryStore = Depends(get_store)
-) -> Dict[str, Any]:
-    """
-    Get performance timing report for a specific result ID.
-
-    Returns detailed timing breakdown for data loading, filtering, or peak detection.
-    """
-    logger = logging.getLogger(__name__)
-    logger.debug(f"Getting timing data for result_id: {result_id}")
-
-    timing = store.get_timing(result_id)
-    if not timing:
-        all_timings = store.get_all_timings()
-        logger.debug(f"Available timing IDs: {list(all_timings.keys())}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Timing data not found for result ID: {result_id}. Available IDs: {list(all_timings.keys())[:5]}",
-        )
-    return timing
-
-
-@router.get("/performance/timing")
-def get_all_timing_reports(
-    store: InMemoryStore = Depends(get_store),
-) -> Dict[str, Dict[str, Any]]:
-    """
-    Get all performance timing reports.
-
-    Returns a dictionary mapping result IDs to their timing summaries.
-    """
-    logger = logging.getLogger(__name__)
-    all_timings = store.get_all_timings()
-    logger.debug(
-        f"Returning {len(all_timings)} timing reports: {list(all_timings.keys())}"
-    )
-    return all_timings
-
-
-@router.get("/performance/debug")
-def debug_timing(store: InMemoryStore = Depends(get_store)) -> Dict[str, Any]:
-    """
-    Debug endpoint to check timing storage.
-    """
-    all_timings = store.get_all_timings()
-    return {
-        "total_timings": len(all_timings),
-        "timing_ids": list(all_timings.keys()),
-        "sample": all_timings.get(list(all_timings.keys())[0]) if all_timings else None,
-    }
-
-
 @router.post("/export/double-peaks/csv")
 def export_double_peaks_csv(
     payload: Dict[str, Any], store: InMemoryStore = Depends(get_store)
@@ -1544,69 +1299,6 @@ def export_double_peaks_csv(
         iter([output.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=double_peaks.csv"},
-    )
-
-
-@router.get("/export/plot/image")
-def export_plot_image(
-    resultId: str,
-    filteredResultId: str = None,
-    format: str = "png",
-    dpi: int = 300,
-    store: InMemoryStore = Depends(get_store),
-):
-    """Export current plot as an image."""
-
-    base = store.get_result(resultId)
-    if not base:
-        raise HTTPException(status_code=404, detail="Result not found")
-
-    time_data = base["time"]
-    amp_data = base["amplitude"]
-
-    # Get filtered data if provided
-    filtered_amp = None
-    if filteredResultId:
-        filtered_result = store.get_result(filteredResultId)
-        if filtered_result:
-            filtered_amp = filtered_result["amplitude"]
-
-    # Create plot
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    # Plot original
-    ax.plot(time_data, amp_data, label="Original", alpha=0.7)
-
-    # Plot filtered if available
-    if filtered_amp is not None:
-        ax.plot(time_data, filtered_amp, label="Filtered", linewidth=1.5)
-
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Amplitude")
-    ax.set_title("Signal Data")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-
-    # Save to bytes buffer
-    buf = BytesIO()
-    fig.savefig(buf, format=format, dpi=dpi, bbox_inches="tight")
-    buf.seek(0)
-    plt.close(fig)
-
-    # Determine media type
-    media_types = {
-        "png": "image/png",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "svg": "image/svg+xml",
-        "pdf": "application/pdf",
-    }
-    media_type = media_types.get(format.lower(), "application/octet-stream")
-
-    return StreamingResponse(
-        buf,
-        media_type=media_type,
-        headers={"Content-Disposition": f"attachment; filename=plot.{format}"},
     )
 
 

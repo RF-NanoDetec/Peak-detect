@@ -1,14 +1,29 @@
 {
   "version": 1,
-  "active": false,
-  "skill": "analyze",
-  "keyword": "analyze",
+  "active": true,
+  "skill": "deep-interview",
+  "keyword": "interview me",
   "phase": "planning",
-  "activated_at": "2026-04-02T19:43:14.601Z",
-  "updated_at": "2026-04-02T19:43:14.601Z",
+  "activated_at": "2026-05-09T18:59:45.708Z",
+  "updated_at": "2026-05-09T19:01:11.503Z",
   "source": "keyword-detector",
   "session_id": "",
-  "thread_id": "019d4f7e-7856-7ff2-af41-f540899e10b9",
-  "turn_id": "019d4fb7-a424-7562-b2c3-9b4b99356e0d",
-  "completed_at": "2026-04-02T19:45:20.869Z"
+  "thread_id": "019e0e1c-05f4-7511-9c66-22930b537b64",
+  "turn_id": "019e0e1c-0682-7130-8495-eefb030fd0c3",
+  "input_lock": {
+    "active": true,
+    "scope": "deep-interview-auto-approval",
+    "acquired_at": "2026-05-09T18:59:45.708Z",
+    "blocked_inputs": [
+      "yes",
+      "y",
+      "proceed",
+      "continue",
+      "ok",
+      "sure",
+      "go ahead",
+      "next i should"
+    ],
+    "message": "Deep interview is active; auto-approval shortcuts are blocked until the interview finishes."
+  }
 }

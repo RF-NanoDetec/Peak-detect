@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useMemo, useCallback, useEffect } from "react"
-import { Download, Loader2, CheckCircle, FileSpreadsheet, AlertCircle } from "lucide-react"
+import { Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Separator } from "@/components/ui/separator"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
@@ -20,8 +21,12 @@ import { useRouter } from "next/navigation"
 import { computePairMetrics, filterPairsByThresholds } from "@/components/double/metrics"
 import type { DoublePeakThresholds } from "@/components/double/types"
 import type { PairMetrics } from "@/components/double/metrics"
+import { workflowSteps } from "@/components/layout/workflow"
 
 type ExportMode = "single" | "double" | "combined"
+const exportStep = workflowSteps.find((step) => step.id === "export")!
+const loadStep = workflowSteps.find((step) => step.id === "load")!
+const preprocessStep = workflowSteps.find((step) => step.id === "preprocess")!
 
 export default function ExportPage() {
   const router = useRouter()
@@ -234,14 +239,13 @@ export default function ExportPage() {
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-6 max-w-lg">
             <div className="mx-auto w-20 h-20 rounded-full bg-accent/10 flex items-center justify-center">
-              <FileSpreadsheet className="h-10 w-10 text-accent" />
+              <exportStep.icon className="h-10 w-10 text-accent" />
             </div>
             
             <div>
-              <h3 className="text-xl font-semibold">Export Your Data</h3>
+              <h3 className="text-xl font-semibold">{exportStep.label}</h3>
               <p className="text-sm text-muted-foreground mt-2">
-                Export peak detection results and double peak analysis data. 
-                Configure your export options in the panel on the right.
+                Download peak data once detection is complete. The status panel shows what is ready.
               </p>
             </div>
 
@@ -314,9 +318,9 @@ export default function ExportPage() {
       <PageControls>
         <div className="space-y-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Export</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">{exportStep.label}</h2>
             <p className="text-sm text-muted-foreground">
-              Export analysis results
+              Export detected peak data
             </p>
           </div>
 
@@ -365,9 +369,9 @@ export default function ExportPage() {
               <Button 
                 size="sm" 
                 variant="outline"
-                onClick={() => router.push(hasData ? '/preprocess' : '/load')}
+                onClick={() => router.push(hasData ? preprocessStep.href : loadStep.href)}
               >
-                {hasData ? "Go to Process & Detect" : "Go to Load Data"}
+                Go to {hasData ? preprocessStep.label : loadStep.label}
               </Button>
             </div>
           ) : (
@@ -465,14 +469,15 @@ export default function ExportPage() {
                       {/* Distance */}
                       <div className="space-y-2">
                         <label className="text-xs font-medium flex items-center gap-1">
-                          Distance (ms)
+                          Distance
                           <InfoTooltip content="Time separation between consecutive peaks in a pair" />
                         </label>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
                             <span className="text-[10px] text-muted-foreground">Min</span>
-                            <Input
+                            <UnitInput
                               type="number"
+                              unit="ms"
                               value={thresholds.distance[0]}
                               onChange={(e) => updateThreshold("distance", 0, parseFloat(e.target.value) || 0)}
                               step="0.1"
@@ -481,8 +486,9 @@ export default function ExportPage() {
                           </div>
                           <div className="space-y-1">
                             <span className="text-[10px] text-muted-foreground">Max</span>
-                            <Input
+                            <UnitInput
                               type="number"
+                              unit="ms"
                               value={thresholds.distance[1]}
                               onChange={(e) => updateThreshold("distance", 1, parseFloat(e.target.value) || 0)}
                               step="1"
@@ -607,7 +613,7 @@ export default function ExportPage() {
                 </>
               ) : (
                 <>
-                  <Download className="h-4 w-4 mr-2" />
+                  <exportStep.icon className="h-4 w-4 mr-2" />
                   Download {format.toUpperCase()}
                 </>
               )}

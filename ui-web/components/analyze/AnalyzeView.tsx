@@ -1,13 +1,16 @@
-import { BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { AnalyzeTimeSeries } from "@/components/charts/AnalyzeTimeSeries"
-import type { DetectPeaksResponse } from "@/lib/types"
+import type { DetectPeaksResponse, Parameters } from "@/lib/types"
+import { workflowSteps } from "@/components/layout/workflow"
+
+const analyzeStep = workflowSteps.find((step) => step.id === "analyze")!
+const preprocessStep = workflowSteps.find((step) => step.id === "preprocess")!
 
 interface AnalyzeViewProps {
   hasResults: boolean
   detectionResults: DetectPeaksResponse | null
-  params: any
+  params: Parameters
   binWidthSeconds: number
   rollingMeanWindow: number
   onDetectPeaks: () => void
@@ -25,12 +28,12 @@ export function AnalyzeView({
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <EmptyState
-          icon={BarChart3}
+          icon={analyzeStep.icon}
           title="No Analysis Results"
-          description="Complete peak detection to view analysis results."
+          description="Run peak detection to inspect peak prominence, width, and throughput before exporting."
           action={
             <Button onClick={onDetectPeaks}>
-              Detect Peaks
+              Go to {preprocessStep.label}
             </Button>
           }
         />
@@ -38,8 +41,29 @@ export function AnalyzeView({
     )
   }
 
+  const peakCount = detectionResults?.peak_times?.length || 0
+  const widthCount = detectionResults?.properties?.widths?.length || 0
+
   return (
     <div className="flex-1 p-4 space-y-4 overflow-auto">
+      <div className="rounded-lg border bg-card/70 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Detected peak analysis</h2>
+            <p className="text-xs text-muted-foreground">
+              Review distributions and time trends before exporting detected peak data.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-md border bg-muted/40 px-2.5 py-1">
+              {peakCount.toLocaleString()} peaks
+            </span>
+            <span className="rounded-md border bg-muted/40 px-2.5 py-1">
+              {widthCount.toLocaleString()} widths
+            </span>
+          </div>
+        </div>
+      </div>
       <AnalyzeTimeSeries
         className="flex-1"
         peakTimes={detectionResults?.peak_times || []}

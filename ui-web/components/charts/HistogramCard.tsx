@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { UPlotHistogram } from "./UPlotHistogram"
 import { cn } from "@/lib/utils"
@@ -24,26 +25,68 @@ interface HistogramCardProps {
 const ToggleButton = ({ 
   active, 
   onClick, 
-  children 
+  children,
+  title,
 }: { 
   active: boolean
   onClick: () => void
-  children: React.ReactNode 
+  children: ReactNode
+  title: string
 }) => (
   <button
+    type="button"
+    aria-pressed={active}
+    title={title}
     onClick={(e) => {
       e.stopPropagation()
       onClick()
     }}
     className={cn(
-      "text-[9px] px-1.5 py-0.5 rounded transition-colors font-medium",
+      "h-5 min-w-7 rounded-md border px-1.5 text-[9px] font-medium leading-none transition-colors",
+      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       active 
-        ? "bg-primary/10 text-primary hover:bg-primary/20" 
-        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        ? "border-accent bg-accent text-accent-foreground shadow-sm" 
+        : "border-border/50 text-muted-foreground hover:border-accent/60 hover:bg-accent/10 hover:text-foreground"
     )}
   >
     {children}
   </button>
+)
+
+const ScaleControl = ({
+  axis,
+  value,
+  onChange,
+}: {
+  axis: "X" | "Y"
+  value: AxisScaleOption
+  onChange: (value: AxisScaleOption) => void
+}) => (
+  <div className="flex items-center gap-1 rounded-md bg-muted/20 px-1 py-0.5">
+    <span className="font-mono text-[9px] font-semibold leading-none text-muted-foreground">
+      {axis}
+    </span>
+    <div
+      className="inline-flex items-center gap-0.5 text-muted-foreground"
+      role="group"
+      aria-label={`${axis} axis scale`}
+    >
+      <ToggleButton
+        active={value === "linear"}
+        onClick={() => onChange("linear")}
+        title={`${axis} axis linear scale`}
+      >
+        Lin
+      </ToggleButton>
+      <ToggleButton
+        active={value === "log"}
+        onClick={() => onChange("log")}
+        title={`${axis} axis log scale`}
+      >
+        Log
+      </ToggleButton>
+    </div>
+  </div>
 )
 
 export function HistogramCard({
@@ -64,26 +107,17 @@ export function HistogramCard({
 
   return (
     <Card className={cn("border bg-card shadow-sm overflow-hidden relative group", className)}>
-      {/* Header - Centered Title */}
-      <div className="flex items-center justify-center pt-3 pb-1 relative px-2">
-        <h3 className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
+      {/* Header */}
+      <div className="flex min-h-8 items-start justify-between gap-2 px-2 pb-1 pt-2.5">
+        <h3 className="min-w-0 truncate pt-1 text-xs font-semibold text-foreground/80 uppercase tracking-wider">
           {title}
         </h3>
         
-        {/* Toggles - Absolute right or floating on hover */}
+        {/* Compact scale controls */}
         {hasData && (
-          <div className="absolute right-2 top-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-background/95 backdrop-blur-sm border rounded shadow-sm px-1.5 py-1 z-20">
-            <div className="flex items-center gap-0.5">
-              <span className="text-[9px] font-bold text-muted-foreground/70 mr-1 select-none">X</span>
-              <ToggleButton active={xScale === "linear"} onClick={() => onXScaleChange("linear")}>Lin</ToggleButton>
-              <ToggleButton active={xScale === "log"} onClick={() => onXScaleChange("log")}>Log</ToggleButton>
-            </div>
-            <div className="w-px h-3 bg-border mx-0.5" />
-            <div className="flex items-center gap-0.5">
-              <span className="text-[9px] font-bold text-muted-foreground/70 mr-1 select-none">Y</span>
-              <ToggleButton active={yScale === "linear"} onClick={() => onYScaleChange("linear")}>Lin</ToggleButton>
-              <ToggleButton active={yScale === "log"} onClick={() => onYScaleChange("log")}>Log</ToggleButton>
-            </div>
+          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+            <ScaleControl axis="X" value={xScale} onChange={onXScaleChange} />
+            <ScaleControl axis="Y" value={yScale} onChange={onYScaleChange} />
           </div>
         )}
       </div>

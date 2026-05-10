@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { useTheme } from "@/hooks/use-theme"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 
 export default function PreferencesPage() {
   const { theme, toggleTheme } = useTheme()
@@ -70,9 +71,10 @@ export default function PreferencesPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Time Resolution (ms)</label>
-                <Input
+                <label className="text-sm font-medium">Time Resolution</label>
+                <UnitInput
                   type="number"
+                  unit="ms"
                   placeholder="0.1"
                   defaultValue="0.1"
                   step="0.01"

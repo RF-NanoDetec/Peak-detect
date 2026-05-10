@@ -1,26 +1,21 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { useTheme } from "@/hooks/use-theme"
 import uPlot from "uplot"
 import { Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import {
+  cleanupUPlotInstance,
+  formatAxisNumber,
+  safeArrayMax,
+  safeArrayMin,
+  safeLogAxisSplits,
+} from "./uplotUtils"
 
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
-
-// Cleanup helper to properly destroy uPlot instance and prevent memory leaks
-const cleanupUPlotInstance = (instanceRef: React.MutableRefObject<uPlot | null>) => {
-  if (instanceRef.current) {
-    try {
-      instanceRef.current.destroy()
-    } catch (e) {
-      // Ignore errors during cleanup
-    }
-    instanceRef.current = null
-  }
-}
 
 type NumberArray = number[] | Float32Array | Float64Array
 
@@ -56,6 +51,7 @@ interface UPlotChartProps {
   hLines?: { y: number; color?: string; dash?: number[]; label?: string }[]
   vLines?: { x: number; color?: string; dash?: number[]; label?: string }[]
   xRange?: { min: number; max: number } | null
+  xBounds?: { min: number; max: number } | null
   onXRangeChange?: (range: { min: number; max: number }) => void
   onYRangeChange?: (range: { min: number; max: number }) => void
   xScaleType?: "linear" | "log"
@@ -69,17 +65,6 @@ interface UPlotChartProps {
   pointColors?: string[] // Per-point colors for scatter plots
   filteredIndices?: number[] // Indices that pass filters (for dimming others)
   customScatter?: boolean // Enable custom scatter rendering (Double Peak only)
-}
-
-const formatAxisNumber = (value: number | null | undefined): string => {
-  if (value == null || Number.isNaN(value) || !Number.isFinite(value)) return ""
-  if (value === 0) return "0"
-  const abs = Math.abs(value)
-  if (abs < 0.001 || abs > 10000) return value.toExponential(1)
-  if (abs >= 100) return value.toFixed(0)
-  if (abs >= 10) return value.toFixed(1)
-  if (abs >= 1) return value.toFixed(2)
-  return value.toFixed(3)
 }
 
 // Point-in-polygon test using ray casting algorithm
@@ -99,57 +84,16 @@ function isPointInPolygon(x: number, y: number, polygon: { x: number; y: number 
 
 type TimeUnit = "min" | "s" | "ms"
 
-// Safe log axis splits function that limits the number of splits to prevent RangeError
-// uPlot's default logAxisSplits can create too many elements when the range spans many orders of magnitude
-const safeLogAxisSplits = (u: uPlot, axisIdx: number, scaleMin: number, scaleMax: number, foundIncr: number, foundSpace: number): number[] => {
-  // Ensure valid inputs
-  if (!Number.isFinite(scaleMin) || !Number.isFinite(scaleMax) || scaleMin <= 0 || scaleMax <= scaleMin) {
-    return [1, 10, 100]
-  }
-  
-  const splits: number[] = []
-  const logMin = Math.floor(Math.log10(scaleMin))
-  const logMax = Math.ceil(Math.log10(scaleMax))
-  
-  // Limit to max 6 orders of magnitude to prevent array overflow
-  const maxOrders = 6
-  const startExp = Math.max(logMin, logMax - maxOrders)
-  const endExp = Math.min(logMax, logMin + maxOrders)
-  
-  // Generate splits at powers of 10
-  for (let exp = startExp; exp <= endExp; exp++) {
-    const val = Math.pow(10, exp)
-    if (val >= scaleMin * 0.9 && val <= scaleMax * 1.1) {
-      splits.push(val)
-    }
-  }
-  
-  // Ensure we have at least 2 splits
-  if (splits.length < 2) {
-    splits.length = 0
-    splits.push(scaleMin, scaleMax)
-  }
-  
-  return splits
-}
+const formatTimeOffsetLabel = (offsetInfo: { offset: number; unit: TimeUnit; decimals?: number } | null): string => {
+  if (!offsetInfo) return ""
 
-// Safe min/max for arrays - avoids stack overflow from spread operator with large arrays
-const safeArrayMin = (arr: number[]): number => {
-  if (arr.length === 0) return 0
-  let min = arr[0]
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] < min) min = arr[i]
+  const { offset, unit, decimals } = offsetInfo
+  if (unit === "ms") {
+    const msDecimals = decimals ?? 0
+    return `+ ${offset.toFixed(msDecimals)} ms`
   }
-  return min
-}
-
-const safeArrayMax = (arr: number[]): number => {
-  if (arr.length === 0) return 0
-  let max = arr[0]
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] > max) max = arr[i]
-  }
-  return max
+  if (unit === "s") return `+ ${offset.toFixed(1)} s`
+  return `+ ${offset.toFixed(2)} min`
 }
 
 const computeRange = (
@@ -323,6 +267,7 @@ export function UPlotChart({
   hLines,
   vLines,
   xRange,
+  xBounds,
   onXRangeChange,
   onYRangeChange,
   xScaleType = "linear",
@@ -342,6 +287,8 @@ export function UPlotChart({
   const offsetInfoRef = useRef<{ offset: number; unit: TimeUnit; decimals?: number } | null>(null)
   const [width, setWidth] = useState<number>(800)
   const [mounted, setMounted] = useState(false)
+  const [xAxisOffsetLabel, setXAxisOffsetLabel] = useState("")
+  const [xAxisOffsetPosition, setXAxisOffsetPosition] = useState<{ left: number; top: number } | null>(null)
   const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number; x0: number; x1: number; y: number } | null>(null)
   const [hoveredPeak, setHoveredPeak] = useState<{ index: number; time: number; amplitude: number } | null>(null)
   const [hoveredDataPoint, setHoveredDataPoint] = useState<{ x: number; values: { label: string; value: number | null | undefined; color: string }[] } | null>(null)
@@ -362,11 +309,14 @@ export function UPlotChart({
   const filteredIndicesRef = useRef(filteredIndices)
   const enableLassoRef = useRef(enableLasso)
   const xScaleTypeRef = useRef(xScaleType)
+  const xAxisOffsetLabelRef = useRef("")
+  const xAxisOffsetPositionRef = useRef<{ left: number; top: number } | null>(null)
   
   // Refs for scale-related props to avoid recreating options on scale change
   const yScaleTypeRef = useRef(yScaleType)
   const yRangeRef = useRef(yRange)
   const xRangeRef = useRef(xRange)
+  const xBoundsRef = useRef(xBounds)
   const lastReportedXRangeRef = useRef<{ min: number; max: number } | null>(null)
   const lastReportedYRangeRef = useRef<{ min: number; max: number } | null>(null)
   const rangesEqual = (a: { min: number; max: number } | null | undefined, b: { min: number; max: number } | null | undefined, eps = 1e-6) => {
@@ -374,9 +324,65 @@ export function UPlotChart({
     return Math.abs(a.min - b.min) < eps && Math.abs(a.max - b.max) < eps
   }
 
+  const getXBounds = useCallback((u?: uPlot | null) => {
+    const bounds = xBoundsRef.current
+    if (
+      bounds &&
+      Number.isFinite(bounds.min) &&
+      Number.isFinite(bounds.max) &&
+      bounds.max > bounds.min
+    ) {
+      return bounds
+    }
+
+    const xVals = (u?.data?.[0] || xData) as ArrayLike<number>
+    if (!xVals || xVals.length === 0) return null
+    const min = xVals[0]
+    const max = xVals[xVals.length - 1]
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return null
+    return { min, max }
+  }, [xData])
+
+  const clampXRangeToBounds = useCallback((range: { min: number; max: number }, u?: uPlot | null) => {
+    if (!Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) {
+      return null
+    }
+
+    const bounds = getXBounds(u)
+    if (!bounds) return range
+
+    const boundsSpan = bounds.max - bounds.min
+    const span = range.max - range.min
+    if (span >= boundsSpan) return { ...bounds }
+
+    let min = range.min
+    let max = range.max
+    if (min < bounds.min) {
+      max += bounds.min - min
+      min = bounds.min
+    }
+    if (max > bounds.max) {
+      min -= max - bounds.max
+      max = bounds.max
+    }
+
+    min = Math.max(bounds.min, min)
+    max = Math.min(bounds.max, max)
+    return max > min ? { min, max } : { ...bounds }
+  }, [getXBounds])
+
   // Ref to track if we are currently updating scale from props
   // This prevents the setScale hook from firing callbacks when we programmatically set the scale
   const isUpdatingScaleRef = useRef(false)
+  const panStateRef = useRef<{
+    pointerId: number
+    startClientX: number
+    startMin: number
+    startMax: number
+  } | null>(null)
+  const panRafRef = useRef<number | null>(null)
+  const pendingPanRangeRef = useRef<{ min: number; max: number } | null>(null)
+  const readyCleanupRef = useRef<(() => void)[]>([])
 
   // Cache Sets for performance in draw loop
   const filteredSetRef = useRef<Set<number> | null>(null)
@@ -393,6 +399,7 @@ export function UPlotChart({
   xScaleTypeRef.current = xScaleType
   yRangeRef.current = yRange
   xRangeRef.current = xRange
+  xBoundsRef.current = xBounds
 
   // Update Sets when arrays change (shallow comparison is enough if references change)
   useMemo(() => {
@@ -627,6 +634,8 @@ export function UPlotChart({
       }
       
       // Destroy the uPlot instance to free memory
+      readyCleanupRef.current.forEach((cleanup) => cleanup())
+      readyCleanupRef.current = []
       cleanupUPlotInstance(uPlotInstanceRef)
       
       // Clear all state refs
@@ -673,11 +682,12 @@ export function UPlotChart({
     const axisColor = isDark ? "rgba(248,250,252,0.88)" : "rgba(15,23,42,0.65)"
     const axisFont = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
     const axisLabelFont = "600 12px 'Inter', 'Segoe UI', system-ui, sans-serif"
+    const currentXRange = xRangeRef.current
 
     // Dynamic x-axis label unit based on current visible span (xData is in minutes)
-    // Use xRange if available, otherwise fallback to basic defaults to avoid xData dependency
-    const currentXMin = xRange?.min ?? 0
-    const currentXMax = xRange?.max ?? 10 // Arbitrary default if no range/data, will be updated by scale
+    // Use the latest range ref so options do not churn on every pan frame.
+    const currentXMin = currentXRange?.min ?? 0
+    const currentXMax = currentXRange?.max ?? 10 // Arbitrary default if no range/data, will be updated by scale
     const visibleSpanMin = Math.max(0, currentXMax - currentXMin)
     const visibleSpanSec = visibleSpanMin * 60
     let timeUnitLabel: TimeUnit = "min"
@@ -758,11 +768,11 @@ export function UPlotChart({
             }
             : {}),
           // Validate xRange before applying - invalid ranges cause uPlot axis split errors
-          ...((xRange && 
-               Number.isFinite(xRange.min) && 
-               Number.isFinite(xRange.max) && 
-               xRange.max > xRange.min) 
-            ? { min: xRange.min, max: xRange.max } 
+          ...((currentXRange &&
+               Number.isFinite(currentXRange.min) &&
+               Number.isFinite(currentXRange.max) &&
+               currentXRange.max > currentXRange.min)
+            ? { min: currentXRange.min, max: currentXRange.max }
             : {}),
         },
         y: {
@@ -1012,18 +1022,22 @@ export function UPlotChart({
                   const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85
                   const min = u.scales.x.min!
                   const max = u.scales.x.max!
-                  const nxMin = xVal - (xVal - min) * factor
-                  const nxMax = xVal + (max - xVal) * factor
-                  u.setScale("x", { min: nxMin, max: nxMax })
+                  const nextRange = clampXRangeToBounds({
+                    min: xVal - (xVal - min) * factor,
+                    max: xVal + (max - xVal) * factor,
+                  }, u)
+                  if (nextRange) u.setScale("x", nextRange)
                 }
               } else {
                 const xVal = u.posToVal(leftPx, "x")
                 const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85
                 const min = u.scales.x.min!
                 const max = u.scales.x.max!
-                const nxMin = xVal - (xVal - min) * factor
-                const nxMax = xVal + (max - xVal) * factor
-                u.setScale("x", { min: nxMin, max: nxMax })
+                const nextRange = clampXRangeToBounds({
+                  min: xVal - (xVal - min) * factor,
+                  max: xVal + (max - xVal) * factor,
+                }, u)
+                if (nextRange) u.setScale("x", nextRange)
               }
             }, { passive: false })
 
@@ -1060,6 +1074,79 @@ export function UPlotChart({
                 }
               }
             })
+
+            const handlePanPointerDown = (e: PointerEvent) => {
+              if (enableLassoRef.current || e.button !== 0) return
+              const min = u.scales.x.min
+              const max = u.scales.x.max
+              if (
+                typeof min !== "number" ||
+                typeof max !== "number" ||
+                !Number.isFinite(min) ||
+                !Number.isFinite(max) ||
+                max <= min
+              ) return
+
+              panStateRef.current = {
+                pointerId: e.pointerId,
+                startClientX: e.clientX,
+                startMin: min,
+                startMax: max,
+              }
+              e.preventDefault()
+              over.style.cursor = "grabbing"
+              try {
+                over.setPointerCapture(e.pointerId)
+              } catch {
+                // ignore if pointer capture is not available
+              }
+            }
+
+            const handlePanPointerMove = (e: PointerEvent) => {
+              const pan = panStateRef.current
+              if (!pan || pan.pointerId !== e.pointerId || enableLassoRef.current) return
+
+              const span = pan.startMax - pan.startMin
+              const plotWidth = Math.max(1, u.bbox.width)
+              const deltaX = e.clientX - pan.startClientX
+              const deltaValue = -(deltaX / plotWidth) * span
+              const nextRange = clampXRangeToBounds({
+                min: pan.startMin + deltaValue,
+                max: pan.startMax + deltaValue,
+              }, u)
+
+              if (nextRange) {
+                e.preventDefault()
+                pendingPanRangeRef.current = nextRange
+                if (panRafRef.current == null) {
+                  panRafRef.current = requestAnimationFrame(() => {
+                    panRafRef.current = null
+                    const range = pendingPanRangeRef.current
+                    pendingPanRangeRef.current = null
+                    if (range && uPlotInstanceRef.current === u) {
+                      u.setScale("x", range)
+                    }
+                  })
+                }
+              }
+            }
+
+            const finishPan = (e: PointerEvent) => {
+              const pan = panStateRef.current
+              if (!pan || pan.pointerId !== e.pointerId) return
+              panStateRef.current = null
+              over.style.cursor = enableLassoRef.current ? "crosshair" : "grab"
+              try {
+                over.releasePointerCapture(e.pointerId)
+              } catch {
+                // ignore
+              }
+            }
+
+            over.addEventListener("pointerdown", handlePanPointerDown)
+            window.addEventListener("pointermove", handlePanPointerMove)
+            window.addEventListener("pointerup", finishPan)
+            window.addEventListener("pointercancel", finishPan)
 
             // Mouse move for width segment hover detection
             over.addEventListener("mousemove", (e: MouseEvent) => {
@@ -1124,7 +1211,26 @@ export function UPlotChart({
               setHoveredScatterPoint(null)
             })
 
-            over.style.cursor = "crosshair"
+            over.style.cursor = enableLassoRef.current ? "crosshair" : "grab"
+
+            readyCleanupRef.current.push(() => {
+              over.removeEventListener("pointerdown", handlePanPointerDown)
+              window.removeEventListener("pointermove", handlePanPointerMove)
+              window.removeEventListener("pointerup", finishPan)
+              window.removeEventListener("pointercancel", finishPan)
+            })
+          }
+        ],
+        destroy: [
+          () => {
+            if (panRafRef.current != null) {
+              cancelAnimationFrame(panRafRef.current)
+              panRafRef.current = null
+            }
+            pendingPanRangeRef.current = null
+            readyCleanupRef.current.forEach((cleanup) => cleanup())
+            readyCleanupRef.current = []
+            panStateRef.current = null
           }
         ],
         draw: [
@@ -1204,9 +1310,15 @@ export function UPlotChart({
             const segments = widthSegmentsRef.current
             if (segments && segments.length > 0) {
               ctx.save()
+              ctx.beginPath()
+              ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height)
+              ctx.clip()
               const capHeight = 8
+              const xMinVisible = u.scales.x.min
+              const xMaxVisible = u.scales.x.max
 
               segments.forEach((seg, idx) => {
+                if (xMinVisible != null && xMaxVisible != null && (seg.x1 < xMinVisible || seg.x0 > xMaxVisible)) return
                 const x0px = Math.round(u.valToPos(seg.x0, "x", true))
                 const x1px = Math.round(u.valToPos(seg.x1, "x", true))
                 const ypx = Math.round(u.valToPos(seg.y, "y", true))
@@ -1285,33 +1397,29 @@ export function UPlotChart({
               ctx.restore()
             }
 
-            // Draw offset annotation
-            if (offsetInfoRef.current) {
-              const { offset, unit, decimals } = offsetInfoRef.current
-              ctx.save()
+            const nextOffsetLabel = formatTimeOffsetLabel(offsetInfoRef.current)
+            if (xAxisOffsetLabelRef.current !== nextOffsetLabel) {
+              xAxisOffsetLabelRef.current = nextOffsetLabel
+              setXAxisOffsetLabel(nextOffsetLabel)
+            }
 
-              let offsetText = ""
-              if (unit === "ms") {
-                const msDecimals = decimals ?? 0
-                offsetText = `+ ${offset.toFixed(msDecimals)} ms`
-              } else if (unit === "s") {
-                offsetText = `+ ${offset.toFixed(1)} s`
-              } else {
-                offsetText = `+ ${offset.toFixed(2)} min`
-              }
-
-              ctx.font = "600 11px 'Inter', 'Segoe UI', system-ui, sans-serif"
-              ctx.fillStyle = isDark ? "rgba(248,250,252,0.75)" : "rgba(15,23,42,0.60)"
-              ctx.textAlign = "left"
-              ctx.textBaseline = "bottom"
-
-              const plotLeft = u.bbox.left
-              const plotBottom = u.bbox.top + u.bbox.height
-              const xPos = plotLeft + 5
-              const yPos = plotBottom - 3
-
-              ctx.fillText(offsetText, xPos, yPos)
-              ctx.restore()
+            const nextOffsetPosition = nextOffsetLabel && containerRef.current
+              ? (() => {
+                const overRect = u.over.getBoundingClientRect()
+                const containerRect = containerRef.current!.getBoundingClientRect()
+                return {
+                  left: Math.round(overRect.left - containerRect.left + 6),
+                  top: Math.round(overRect.bottom - containerRect.top + 4),
+                }
+              })()
+              : null
+            const currentOffsetPosition = xAxisOffsetPositionRef.current
+            const offsetPositionChanged =
+              currentOffsetPosition?.left !== nextOffsetPosition?.left ||
+              currentOffsetPosition?.top !== nextOffsetPosition?.top
+            if (offsetPositionChanged) {
+              xAxisOffsetPositionRef.current = nextOffsetPosition
+              setXAxisOffsetPosition(nextOffsetPosition)
             }
 
             // Draw lasso path
@@ -1364,16 +1472,14 @@ export function UPlotChart({
                   if (!xVals || !yVals) return
 
                   ctx.save()
-
-                  const xMinPx = u.bbox.left - 10
-                  const xMaxPx = u.bbox.left + u.bbox.width + 10
-                  const yMinPx = u.bbox.top - 10
-                  const yMaxPx = u.bbox.top + u.bbox.height + 10
+                  ctx.beginPath()
+                  ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height)
+                  ctx.clip()
 
                   // Single pass for downsampled data (no glow to save memory)
                   ctx.beginPath()
                   const size = s.pointSize ?? 3
-                  
+
                   for (let i = iMin; i <= iMax; i += step) {
                     const xVal = xVals[i]
                     const yVal = yVals[i]
@@ -1382,9 +1488,7 @@ export function UPlotChart({
                     const xPx = u.valToPos(xVal, "x", true)
                     const yPx = u.valToPos(yVal, "y", true)
 
-                    // Strict bounds check including NaN/Infinity
                     if (!Number.isFinite(xPx) || !Number.isFinite(yPx)) continue
-                    if (xPx < xMinPx || xPx > xMaxPx || yPx < yMinPx || yPx > yMaxPx) continue
 
                     ctx.moveTo(xPx + size, yPx)
                     ctx.arc(xPx, yPx, size, 0, 2 * Math.PI)
@@ -1403,11 +1507,9 @@ export function UPlotChart({
                   if (!xVals || !yVals) return
 
                   ctx.save()
-
-                  const xMinPx = u.bbox.left - 10
-                  const xMaxPx = u.bbox.left + u.bbox.width + 10
-                  const yMinPx = u.bbox.top - 10
-                  const yMaxPx = u.bbox.top + u.bbox.height + 10
+                  ctx.beginPath()
+                  ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height)
+                  ctx.clip()
 
                   const drawPass = (isGlow: boolean) => {
                     const size = isGlow ? 8 : (s.pointSize ?? 4)
@@ -1420,9 +1522,7 @@ export function UPlotChart({
                       const xPx = u.valToPos(xVal, "x", true)
                       const yPx = u.valToPos(yVal, "y", true)
 
-                      // Strict bounds check including NaN/Infinity
                       if (!Number.isFinite(xPx) || !Number.isFinite(yPx)) return
-                      if (xPx < xMinPx || xPx > xMaxPx || yPx < yMinPx || yPx > yMaxPx) return
 
                       ctx.moveTo(xPx + size, yPx)
                       ctx.arc(xPx, yPx, size, 0, 2 * Math.PI)
@@ -1585,7 +1685,7 @@ export function UPlotChart({
         ]
       }
     }
-  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, xRange, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom, customScatter, hoveredSegment?.index, xData.length, yRange])
+  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom, customScatter, hoveredSegment?.index, xData.length, yRange, clampXRangeToBounds])
   // Note: yRange is intentionally excluded - we handle it via setScale() in useEffect
   // yScaleType must be included as it changes the scale distribution (distr: 3 for log)
 
@@ -1664,6 +1764,19 @@ export function UPlotChart({
   return (
     <div ref={containerRef} className={`${className} group relative`} style={{ minHeight: 0 }}>
       <UplotReact key={chartKey} options={opts} data={data} />
+
+      {xAxisOffsetLabel && xAxisOffsetPosition && (
+        <div
+          className="pointer-events-none absolute z-20 whitespace-nowrap text-[10px] font-medium leading-none"
+          style={{
+            left: xAxisOffsetPosition.left,
+            top: xAxisOffsetPosition.top,
+            color: isDark ? "rgba(248,250,252,0.75)" : "rgba(15,23,42,0.65)",
+          }}
+        >
+          {xAxisOffsetLabel}
+        </div>
+      )}
 
       <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <Button
