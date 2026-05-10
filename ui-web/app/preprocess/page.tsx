@@ -13,10 +13,23 @@ import { useDataStore } from "@/lib/stores/dataStore"
 import { useParamsStore } from "@/lib/stores/paramsStore"
 import { useWebSocket } from "@/hooks/use-websocket"
 import { useResultsStore } from "@/lib/stores/resultsStore"
+import { sanitizeParameters, type ParameterValidationContext } from "@/components/preprocess/paramValidation"
+import type { Parameters } from "@/lib/types"
+
+const finiteMax = (values?: number[]) => {
+  if (!values || values.length === 0) return null
+  let max = Number.NEGATIVE_INFINITY
+  for (const value of values) {
+    if (Number.isFinite(value) && value > max) {
+      max = value
+    }
+  }
+  return Number.isFinite(max) ? max : null
+}
 
 export default function PreprocessPage() {
   const router = useRouter()
-  const { resultId, filteredResultId, setFilteredResultId } = useDataStore()
+  const { resultId, filteredResultId, setFilteredResultId, previewData, meta } = useDataStore()
   const { params, updateParam } = useParamsStore()
   const { detectionResults, setDetectionResults } = useResultsStore()
   
@@ -49,6 +62,34 @@ export default function PreprocessPage() {
     setProminenceInput(params.prominence_threshold?.toString() ?? '')
   }, [params.prominence_threshold])
 
+  const validationContext: ParameterValidationContext = {
+    signalMax: finiteMax(previewData?.filtered_amplitude ?? previewData?.amplitude),
+    durationMs: meta?.time_range
+      ? Math.max(0, (meta.time_range[1] - meta.time_range[0]) * 1000)
+      : null,
+  }
+
+  const applyParamCorrections = (
+    scope: "detect" | "filter" | "all" = "all",
+    sourceParams: Parameters = params,
+  ) => {
+    const validation = sanitizeParameters(sourceParams, validationContext, scope)
+    const corrected = validation.params
+
+    ;(Object.keys(corrected) as Array<keyof Parameters>).forEach((key) => {
+      if (corrected[key] !== sourceParams[key]) {
+        updateParam(key, corrected[key] as never)
+      }
+    })
+
+    if (corrected.prominence_threshold !== sourceParams.prominence_threshold) {
+      setProminenceInput(corrected.prominence_threshold.toString())
+    }
+
+    validation.messages.forEach((message) => toast.warning(message))
+    return corrected
+  }
+
   const handleDetectPeaks = async () => {
     if (!resultId) {
       toast.error("Please load data first")
@@ -58,19 +99,19 @@ export default function PreprocessPage() {
     
     setDetecting(true)
     try {
+      const correctedParams = applyParamCorrections("detect")
       const detectParams = {
         resultId,
         ...(filteredResultId ? { filteredResultId } : {}),
-        prominence_threshold: params.prominence_threshold,
-        distance: params.distance,
-        rel_height: params.rel_height,
-        width_ms: params.width_ms,
-        prominence_ratio: params.prominence_ratio,
-        time_resolution: params.time_resolution,
+        prominence_threshold: correctedParams.prominence_threshold,
+        distance: correctedParams.distance,
+        rel_height: correctedParams.rel_height,
+        width_ms: correctedParams.width_ms,
+        prominence_ratio: correctedParams.prominence_ratio,
+        time_resolution: correctedParams.time_resolution,
       }
       const response = await apiClient.detectPeaks(detectParams)
       setDetectionResults(response)
-      const dataType = filteredResultId ? 'filtered' : 'raw'
       toast.success(`Detected ${response.count} peaks`)
     } catch (error: any) {
       toast.error(error?.message || "Failed to detect peaks")
@@ -88,15 +129,16 @@ export default function PreprocessPage() {
 
     setLoading(true)
     try {
+      const correctedParams = applyParamCorrections("filter")
       const response = await apiClient.runPreprocess({
         resultId,
         params: {
-          filter_enabled: params.filter_enabled,
-          filter_type: params.filter_type,
-          filter_cutoff_freq: params.filter_cutoff_freq,
-          butter_order: params.butter_order,
-          savgol_window: params.savgol_window,
-          savgol_polyorder: params.savgol_polyorder,
+          filter_enabled: correctedParams.filter_enabled,
+          filter_type: correctedParams.filter_type,
+          filter_cutoff_freq: correctedParams.filter_cutoff_freq,
+          butter_order: correctedParams.butter_order,
+          savgol_window: correctedParams.savgol_window,
+          savgol_polyorder: correctedParams.savgol_polyorder,
         },
       })
 
@@ -166,6 +208,7 @@ export default function PreprocessPage() {
           resultId={resultId}
           prominenceInput={prominenceInput}
           setProminenceInput={setProminenceInput}
+          onValidateParams={applyParamCorrections}
         />
       </PageControls>
     </PageShell>

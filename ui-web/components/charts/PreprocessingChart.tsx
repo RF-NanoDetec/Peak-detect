@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import { Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/apiClient"
-import { UPlotChart } from "./UPlotChart"
+import { UPlotChart, type Series } from "./UPlotChart"
 import { UPlotHistogram } from "./UPlotHistogram"
 import { HistogramCard } from "./HistogramCard"
 import { useTheme } from "@/hooks/use-theme"
@@ -79,8 +79,20 @@ type AxisScaleOption = "linear" | "log"
 type HistogramAxisConfig = { xScale: AxisScaleOption; yScale: "linear" | "log" }
 
 const defaultAxisConfig: HistogramAxisConfig = { xScale: "log", yScale: "log" }
-const TARGET_POINTS = 2500
-const RANGE_OVERSCAN_MULTIPLIER = 3
+const DEFAULT_CHART_WIDTH_PX = 800
+const MIN_VISIBLE_SAMPLE_BUDGET = 900
+const MAX_VISIBLE_SAMPLE_BUDGET = 2400
+const SAMPLES_PER_CSS_PIXEL = 1.5
+const NARROW_WINDOW_MAX_SAMPLES = 5000
+const RANGE_OVERSCAN_MULTIPLIER = 2
+
+const clampSampleBudget = (value: number) => {
+  if (!Number.isFinite(value)) return MAX_VISIBLE_SAMPLE_BUDGET
+  return Math.max(MIN_VISIBLE_SAMPLE_BUDGET, Math.min(MAX_VISIBLE_SAMPLE_BUDGET, Math.round(value)))
+}
+
+const computeVisibleSampleBudget = (widthPx: number) =>
+  clampSampleBudget(widthPx * SAMPLES_PER_CSS_PIXEL)
 
 const cleanNumbers = (values: number[] = []) => values.filter((v) => Number.isFinite(v))
 const lowerBound = (values: ArrayLike<number>, target: number) => {
@@ -212,6 +224,7 @@ export function PreprocessingChart({
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const zoomStateFrameRef = useRef<number | null>(null)
+  const chartContainerRef = useRef<HTMLDivElement | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const lastRangeRef = useRef<WorkerRange>(null)
   const pendingRangeRef = useRef<WorkerRange>(null)
@@ -221,6 +234,11 @@ export function PreprocessingChart({
   const requestCounterRef = useRef(0)
   const { theme } = useTheme()
   const isDark = theme === "dark"
+  const [chartWidthPx, setChartWidthPx] = useState(DEFAULT_CHART_WIDTH_PX)
+  const visibleSampleBudget = useMemo(
+    () => computeVisibleSampleBudget(chartWidthPx),
+    [chartWidthPx]
+  )
   const accentColor = isDark ? "#fb923c" : "#f97316"
   // Histogram colors: distinct, visually differentiated palette
   const histogramColors = {
@@ -229,9 +247,26 @@ export function PreprocessingChart({
     interval: isDark ? "#a78bfa" : "#8b5cf6",   // Purple/violet for peak distance
   }
 
-  // Keep the plot budget stable across window sizes. uPlot still fills the
-  // available width, but a larger window no longer asks the worker to draw more samples.
+  // Use a bounded pixel-derived budget: enough samples to preserve min/max
+  // detail per screen column, capped so wider windows do not keep scaling cost.
   const ZOOM_THRESHOLD = 0.1
+
+  useEffect(() => {
+    const element = chartContainerRef.current
+    if (!element || typeof ResizeObserver === "undefined") return
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (!Number.isFinite(width) || width <= 0) return
+      setChartWidthPx((prev) => {
+        const next = Math.round(width)
+        return Math.abs(prev - next) >= 25 ? next : prev
+      })
+    })
+
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   const resetZoom = useCallback(() => {
     setZoomRange(null)
@@ -252,12 +287,12 @@ export function PreprocessingChart({
     const requestId = `range-${requestCounterRef.current++}`
     latestRequestIdRef.current = requestId
 
-    // For very narrow windows (<= 200 ms span), request the full slice with no decimation
+    // Very narrow windows get extra detail, but still keep a hard cap.
     const spanMinutes = range ? Math.max(0, range.max - range.min) : null
     const spanMs = spanMinutes != null ? spanMinutes * 60 * 1000 : null
     const effectiveTarget = spanMs != null && spanMs <= 200
-      ? Number.MAX_SAFE_INTEGER
-      : TARGET_POINTS * RANGE_OVERSCAN_MULTIPLIER
+      ? NARROW_WINDOW_MAX_SAMPLES
+      : visibleSampleBudget * RANGE_OVERSCAN_MULTIPLIER
 
     worker.postMessage({
       type: 'GET_RANGE',
@@ -269,7 +304,7 @@ export function PreprocessingChart({
         zoomThreshold: ZOOM_THRESHOLD,
       },
     })
-  }, [dynamicDownsampling])
+  }, [dynamicDownsampling, visibleSampleBudget])
 
   const requestRange = useCallback((range: WorkerRange | null) => {
     const normalizedRange = range ?? null
@@ -278,6 +313,14 @@ export function PreprocessingChart({
     if (!worker || !workerReady) return
     dispatchRangeRequest(worker, expandRange(normalizedRange, timeRangeRef.current))
   }, [dispatchRangeRequest, workerReady])
+
+  useEffect(() => {
+    const worker = workerRef.current
+    if (!worker || !workerReady) return
+    const currentRange = zoomRangeRef.current ?? zoomRange ?? null
+    dispatchRangeRequest(worker, expandRange(currentRange, timeRangeRef.current))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatchRangeRequest, workerReady, visibleSampleBudget])
 
   useEffect(() => {
     const worker = workerRef.current
@@ -485,7 +528,7 @@ export function PreprocessingChart({
         setInfo({
           original_points: base.time.length,
           displayed_points: 0,
-          decimated: base.time.length > TARGET_POINTS,
+          decimated: base.time.length > visibleSampleBudget,
           time_range: rangeMinutes,
         })
         timeRangeRef.current = rangeMinutes
@@ -782,7 +825,7 @@ export function PreprocessingChart({
   // Recalculate series when data or peaks change
   // NOTE: Must be called before any early returns to satisfy Rules of Hooks
   const series = useMemo(() => {
-    const baseSeries = [
+    const baseSeries: Series[] = [
       {
         label: "Original",
         color: isDark ? "rgba(148, 163, 184, 0.5)" : "rgba(100, 116, 139, 0.5)",
@@ -801,12 +844,15 @@ export function PreprocessingChart({
     // Convert peak times to minutes and map to current xData indices
     const peakSeries = (peakTimes?.length || 0) > 0 ? (() => {
       const peakYVals = peakAmplitudes || []
+      const peakWidthsMs = widthsMs || []
 
       // Get visible range to filter peaks
       const visibleMin = xData.length > 0 ? xData[0] : 0
       const visibleMax = xData.length > 0 ? xData[xData.length - 1] : 0
 
       const sparse = new Array(xData.length).fill(null) as (number | null)[]
+      const sparseWidthMs = new Array(xData.length).fill(null) as (number | null)[]
+      const sparsePeakTimes = new Array(xData.length).fill(null) as (number | null)[]
       const startPeak = lowerBound(peakTimes, visibleMin * 60)
       const endPeak = upperBound(peakTimes, visibleMax * 60)
       const peakIndices: number[] = []
@@ -834,22 +880,31 @@ export function PreprocessingChart({
         }
         if (idx >= 0 && idx < sparse.length) {
           sparse[idx] = peakYVals[i]
+          sparseWidthMs[idx] = Number.isFinite(peakWidthsMs[i]) ? peakWidthsMs[i] : null
+          sparsePeakTimes[idx] = Number.isFinite(peakTimes[i]) ? peakTimes[i] : null
           peakIndices.push(idx)
         }
       }
-      return [{
+      const peakSeries: Series[] = [{
         label: "Peaks",
         color: isDark ? "#f87171" : "#ef4444",
+        hoverColor: isDark ? "#f87171" : "#ef4444",
+        hoverRole: "point",
+        hoverValueLabel: "Peak",
+        hoverTimeSeconds: sparsePeakTimes,
+        hoverCounts: sparse,
+        hoverWidthMs: sparseWidthMs,
         width: 0,
         data: sparse as any,
         points: true,
         pointSize: 4,
         dataIndices: peakIndices,
       }]
+      return peakSeries
     })() : []
 
     return [...baseSeries, ...peakSeries]
-  }, [yOriginal, yFiltered, xData, peakTimes, peakAmplitudes, isDark])
+  }, [yOriginal, yFiltered, xData, peakTimes, peakAmplitudes, widthsMs, isDark])
 
   if (loading) {
     return (
@@ -888,10 +943,10 @@ export function PreprocessingChart({
           <p className="text-[11px] text-muted-foreground mb-1">
             {info.original_points?.toLocaleString()} points
             {info.displayed_points && (
-              <> • displaying {info.displayed_points.toLocaleString()}</>
+              <> • rendering {info.displayed_points.toLocaleString()} samples</>
             )}
             {info.decimated && (
-              <> <span className="text-muted-foreground/50">(target: {TARGET_POINTS.toLocaleString()})</span></>
+              <> <span className="text-muted-foreground/50">(screen budget: ~{visibleSampleBudget.toLocaleString()} visible)</span></>
             )}
             {dynamicDownsampling && zoomRange && (
               <> • zoomed: {formatZoomRange(zoomRange)}</>
@@ -905,7 +960,7 @@ export function PreprocessingChart({
       {/* Chart and Statistics side-by-side */}
       <div className="flex flex-col xl:flex-row gap-4 px-4 pb-6 min-w-0">
         {/* uPlot chart */}
-        <div className="flex-1 min-w-0" style={{ minWidth: 300 }}>
+        <div ref={chartContainerRef} className="flex-1 min-w-0" style={{ minWidth: 300 }}>
           <UPlotChart
             xData={xData}
             series={series}

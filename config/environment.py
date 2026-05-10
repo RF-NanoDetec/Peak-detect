@@ -7,7 +7,7 @@ with managing the application's runtime environment. It handles:
 
 1. Platform detection and adaptation
 2. Directory structure initialization
-3. Resource path resolution (for bundled executables)
+3. Resource path resolution from the source checkout
 4. Logging configuration
 5. System information reporting
 
@@ -18,9 +18,9 @@ Constants:
     BASE_DIR, RESOURCE_DIR, LOG_DIR, TEMP_DIR: Directory paths
 
 Functions:
-    resource_path: Resolve resource paths for both development and bundled execution
+    resource_path: Resolve resource paths from the source checkout
     setup_logging: Configure application logging
-    is_frozen: Check if application is running as a bundled executable
+    is_frozen: Compatibility helper that always returns False in source-run mode
     get_app_info: Get formatted system and application information
 """
 
@@ -28,7 +28,6 @@ import json
 import logging
 import os
 import platform
-import sys
 from pathlib import Path
 
 # Application version
@@ -43,23 +42,9 @@ IS_MAC = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
 
 # Base directories
-# When frozen (PyInstaller), __file__ points inside the temporary extraction dir (_MEIPASS).
-# Use that for resource lookup, but write logs/cache under a user-writable location.
-_SOURCE_BASE_DIR = Path(__file__).parent.parent.absolute()
-_IS_FROZEN = hasattr(sys, "frozen") and hasattr(sys, "_MEIPASS")
-
-if _IS_FROZEN:
-    # Resources live under the PyInstaller extraction directory
-    BASE_DIR = Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    # Use user local app data for logs/temp to ensure write access
-    _local_appdata = Path(os.getenv("LOCALAPPDATA", os.path.expanduser("~")))
-    _app_root = _local_appdata / "PeakAnalysisTool"
-    LOG_DIR = _app_root / "logs"
-    TEMP_DIR = _app_root / "temp"
-else:
-    BASE_DIR = _SOURCE_BASE_DIR
-    LOG_DIR = BASE_DIR / "logs"
-    TEMP_DIR = BASE_DIR / "temp"
+BASE_DIR = Path(__file__).parent.parent.absolute()
+LOG_DIR = BASE_DIR / "logs"
+TEMP_DIR = BASE_DIR / "temp"
 
 RESOURCE_DIR = BASE_DIR / "resources"
 
@@ -76,8 +61,7 @@ def resource_path(relative_path):
     """
     Get the absolute path to a resource file.
 
-    This function resolves resource paths correctly in both development mode
-    and when running as a bundled application (PyInstaller).
+    This function resolves resource paths relative to the source checkout.
 
     Parameters:
         relative_path (str): Path relative to the application's base directory
@@ -89,12 +73,7 @@ def resource_path(relative_path):
         >>> image_path = resource_path("resources/images/logo.png")
         >>> config_path = resource_path("config/settings.ini")
     """
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = getattr(sys, "_MEIPASS", str(BASE_DIR))
-        return os.path.join(base_path, relative_path)
-    except Exception:
-        return os.path.join(os.path.abspath("."), relative_path)
+    return os.path.join(BASE_DIR, relative_path)
 
 
 def setup_logging(level=None):
@@ -160,21 +139,19 @@ os.makedirs(os.path.dirname(USER_PREFS_FILE), exist_ok=True)
 
 def is_frozen():
     """
-    Determine if the application is running as a bundled executable.
+    Return whether the application is running from a frozen runtime.
 
-    This function checks if the application is running from a bundled executable
-    created with tools like PyInstaller.
+    The current repository is source-run only, so this compatibility helper
+    always returns False.
 
     Returns:
-        bool: True if running as a bundled executable, False if running in development mode
+        bool: Always False.
 
     Example:
-        >>> if is_frozen():
-        >>>     print("Running from bundled executable")
-        >>> else:
-        >>>     print("Running in development mode")
+        >>> print(is_frozen())
+        False
     """
-    return hasattr(sys, "frozen") and hasattr(sys, "_MEIPASS")
+    return False
 
 
 # -----------------------------
@@ -227,11 +204,11 @@ def get_app_info():
     """
     # Format into a multi-line string
     mode = "Production" if not DEBUG_MODE else "Development"
-    exe_mode = "Bundled Executable" if is_frozen() else "Development Mode"
+    exe_mode = "Source Checkout"
 
     info_str = (
         f"Peak Analysis Tool v{APP_VERSION}\n"
-        f"Python: {platform.python_version()} ({sys.version})\n"
+        f"Python: {platform.python_version()}\n"
         f"Platform: {platform.platform()}\n"
         f"Mode: {mode}\n"
         f"Execution: {exe_mode}\n"

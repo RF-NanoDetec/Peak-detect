@@ -64,3 +64,73 @@ def test_load_data_from_paths_returns_header_for_empty_result(monkeypatch):
 
     assert result["time_range"] == (0.0, 0.0)
     assert result["preview_head"] == HEADER
+
+
+def test_analyze_double_peaks_classifies_consecutive_pairs():
+    peaks = np.array([10, 30, 100])
+    properties = {
+        "prominences": np.array([100.0, 50.0, 50.0]),
+        "widths": np.array([5.0, 5.0, 10.0]),
+        "left_ips": np.array([8.0, 28.0, 95.0]),
+        "right_ips": np.array([13.0, 33.0, 105.0]),
+    }
+
+    result = service_functions.analyze_double_peaks_pure(
+        peaks,
+        properties,
+        time_resolution=1e-3,
+        min_distance=0.015,
+        max_distance=0.030,
+        min_amp_ratio=0.4,
+        max_amp_ratio=1.2,
+        min_width_ratio=0.8,
+        max_width_ratio=1.2,
+    )
+
+    assert result["total_pairs"] == 2
+    assert result["double_peak_count"] == 1
+    assert result["peak_pairs"][0]["is_double_peak"] is True
+    assert result["peak_pairs"][0]["peak_distance_ms"] == 20.0
+    assert result["peak_pairs"][0]["amplitude_ratio"] == 0.5
+    assert result["peak_pairs"][1]["is_double_peak"] is False
+
+
+def test_export_unified_peaks_data_marks_and_filters_double_peaks():
+    time_values = np.arange(0, 0.12, 0.001)
+    peaks = np.array([10, 30, 100])
+    properties = {
+        "prominences": np.array([100.0, 50.0, 50.0]),
+        "widths": np.array([5.0, 5.0, 10.0]),
+        "left_ips": np.array([8.0, 28.0, 95.0]),
+        "right_ips": np.array([13.0, 33.0, 105.0]),
+    }
+    double_peak_analysis = service_functions.analyze_double_peaks_pure(
+        peaks,
+        properties,
+        time_resolution=1e-3,
+        min_distance=0.015,
+        max_distance=0.030,
+        min_amp_ratio=0.4,
+        max_amp_ratio=1.2,
+        min_width_ratio=0.8,
+        max_width_ratio=1.2,
+    )
+
+    exported = service_functions.export_unified_peaks_data(
+        time_values,
+        peaks,
+        properties,
+        time_resolution=1e-3,
+        double_peak_analysis=double_peak_analysis,
+        include_double_flags=True,
+        filter_double_peaks=True,
+        pair_indices=[0],
+    )
+
+    peaks_df = exported["peaks_df"]
+    double_df = exported["double_df"]
+
+    assert list(peaks_df["Time (s)"]) == [0.01, 0.03]
+    assert list(peaks_df["Is Double Peak"]) == [True, True]
+    assert list(double_df["Is Double Peak"]) == [True]
+    assert list(double_df["Peak Distance (ms)"]) == [20.0]

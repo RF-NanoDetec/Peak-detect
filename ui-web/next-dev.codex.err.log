@@ -2,4 +2,132 @@
 Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
   npx update-browserslist-db@latest
   Why you should do it regularly: https://github.com/browserslist/update-db#readme
- ⚠ Found a change in next.config.js. Restarting the server to apply the changes...
+ ⨯ TypeError: __webpack_modules__[moduleId] is not a function
+    at Object.__webpack_require__ [as require] (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js:33:42)
+digest: "3039570015"
+TypeError: __webpack_modules__[moduleId] is not a function
+    at Object.__webpack_require__ [as require] (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js:33:42)
+    at require (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:39:20088)
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108280
+    at eo (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108465)
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:110694
+    at Object._fromJSON (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:111250)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108959)
+    at en (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108027)
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115169
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115186
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115219
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115236
+    at t (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115459)
+ ⨯ TypeError: __webpack_modules__[moduleId] is not a function
+    at Object.__webpack_require__ [as require] (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js:33:42)
+    at require (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:39:20088)
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108280
+    at eo (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108465)
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:110694
+    at Object._fromJSON (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:111250)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108959)
+    at en (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108027)
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115169
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115186
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115219
+    at C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115236
+    at t (C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115459) {
+  page: '/preprocess'
+}
+ ⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, lstat 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\combined-stream.js'
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/combined-stream' in C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server for build dependencies doesn't lead to expected result 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\combined-stream.js', but to 'Error: Can't resolve './vendor-chunks/combined-stream' in 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/combined-stream (expected C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\combined-stream.js)
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/delayed-stream' in C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server for build dependencies doesn't lead to expected result 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\delayed-stream.js', but to 'Error: Can't resolve './vendor-chunks/delayed-stream' in 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/delayed-stream (expected C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\delayed-stream.js)
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/dunder-proto' in C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server for build dependencies doesn't lead to expected result 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\dunder-proto.js', but to 'Error: Can't resolve './vendor-chunks/dunder-proto' in 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/dunder-proto (expected C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\dunder-proto.js)
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/es-define-property' in C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server for build dependencies doesn't lead to expected result 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\es-define-property.js', but to 'Error: Can't resolve './vendor-chunks/es-define-property' in 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/es-define-property (expected C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\es-define-property.js)
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\preprocess\page.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, lstat 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\es-object-atoms.js'
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/es-object-atoms' in C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server for build dependencies doesn't lead to expected result 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\es-object-atoms.js', but to 'Error: Can't resolve './vendor-chunks/es-object-atoms' in 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/es-object-atoms (expected C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\es-object-atoms.js)
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\icon.svg\route.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\icon.svg\route.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/has-tostringtag' in C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server for build dependencies doesn't lead to expected result 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\has-tostringtag.js', but to 'Error: Can't resolve './vendor-chunks/has-tostringtag' in 'C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/has-tostringtag (expected C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\vendor-chunks\has-tostringtag.js)
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\icon.svg\route.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\.next\server\app\icon.svg\route.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\lucek\Documents\Academic\University\PostDoc-Irene\peak_analysis\new_environment\ui-web\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js

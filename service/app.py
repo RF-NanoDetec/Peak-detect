@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Dict
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -24,9 +25,6 @@ except Exception:
     from service.jobs import TaskManager  # type: ignore[no-redef]
     from service.models import Params  # type: ignore[no-redef]
     from service.storage import InMemoryStore  # type: ignore[no-redef]
-
-import sys
-from pathlib import Path
 
 from config import APP_VERSION
 
@@ -60,6 +58,8 @@ def create_app() -> FastAPI:
         "http://localhost",
         "http://127.0.0.1:3000",
         "http://localhost:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost:3001",
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     ]
@@ -126,13 +126,7 @@ app.include_router(api_router)
 
 # Mount static files from Next.js build (if available)
 # Check for ui-web/out directory (Next.js static export)
-# When running as PyInstaller bundle, use sys._MEIPASS
-if getattr(sys, "frozen", False):
-    # Running as compiled executable
-    base_path = Path(sys._MEIPASS)
-else:
-    # Running as script
-    base_path = Path(__file__).parent.parent
+base_path = Path(__file__).parent.parent
 
 static_dir = base_path / "ui-web" / "out"
 next_static_dir = static_dir / "_next"
@@ -239,7 +233,7 @@ else:
         }
 
 
-# Optional entrypoint for local runs: `python -m service.app` or running the EXE
+# Optional entrypoint for local runs: `python -m service.app`
 if __name__ == "__main__":
     import threading
     import webbrowser

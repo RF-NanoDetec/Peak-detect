@@ -250,6 +250,7 @@ export function DetectionChart({
     if (peakX.length > 0) {
       // Create a sparse array matching xData length, with peaks at correct indices
       const peakDataSparse = new Array(xData.length).fill(null)
+      const peakTimeSparse = new Array(xData.length).fill(null)
 
       // Optimization: Use binary search to find indices instead of linear scan
       // This reduces complexity from O(N*M) to O(M*logN) where N=data points, M=peaks
@@ -282,6 +283,7 @@ export function DetectionChart({
         // Only add if it's actually close enough (within 0.001 min approx 60ms)
         if (idx !== -1 && Math.abs(xData[idx] - px) < 0.001) {
           peakDataSparse[idx] = peakY[i]
+          peakTimeSparse[idx] = Number.isFinite(peakTimes?.[i]) ? peakTimes?.[i] : null
           peakIndices.push(idx)
         }
       })
@@ -292,6 +294,11 @@ export function DetectionChart({
       result.push({
         label: "Peaks",
         color: isDark ? "#f87171" : "#ef4444",
+        hoverColor: isDark ? "#f87171" : "#ef4444",
+        hoverRole: "point",
+        hoverValueLabel: "Peak",
+        hoverTimeSeconds: peakTimeSparse,
+        hoverCounts: peakDataSparse,
         width: 0,
         data: peakDataSparse as any,
         points: true,
@@ -301,7 +308,7 @@ export function DetectionChart({
     }
 
     return result
-  }, [xData, yData, peakX, peakY, isDark, isDecimated])
+  }, [xData, yData, peakX, peakY, peakTimes, isDark, isDecimated])
 
   const hasAny = !!previewData || (!!xDataFull && !!yDataFull) || xDataRaw.length > 0
 

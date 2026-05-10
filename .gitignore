@@ -6,7 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
-# Distribution / packaging
+# Python build artifacts
 .Python
 build/
 develop-eggs/
@@ -24,12 +24,12 @@ wheels/
 .installed.cfg
 *.egg
 
-# PyInstaller
+# Build tool byproducts
 *.manifest
 *.spec
 *.tsbuildinfo
 
-# Installer logs
+# Package-manager logs
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -61,6 +61,7 @@ venv.bak/
 # IDE files
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 
@@ -70,12 +71,19 @@ temp/
 performance.log
 deprecated_files/
 .cursor/
+.omx/
 
 # Frontend artifacts
 ui-web/node_modules/
 ui-web/.next/
 ui-web/out/
 ui-web/.turbo/
+ui-web/next-dev*.log
+
+# Generated test/manual-run artifacts
+test_timing_data.txt
+peak_width_test_results.png
+time_resolution_test_results.png
 
 # OS specific
 .DS_Store

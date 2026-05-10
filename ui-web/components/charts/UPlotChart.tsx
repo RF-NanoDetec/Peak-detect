@@ -18,6 +18,8 @@ import {
 const UplotReact = dynamic(() => import("react-uplot").then((mod) => mod.UPlot), { ssr: false })
 
 type NumberArray = number[] | Float32Array | Float64Array
+type HoverArray = ArrayLike<number | null | undefined>
+type HoverRole = "point" | "line" | "bar"
 
 export type Series = {
   label: string
@@ -30,6 +32,16 @@ export type Series = {
   bar?: boolean
   barWidth?: number
   dataIndices?: number[] // Optional: specific indices to render (optimization for sparse data)
+  hoverRole?: HoverRole
+  hoverColor?: string
+  hoverValueLabel?: string
+  hoverUnit?: string
+  hoverTimeSeconds?: HoverArray
+  hoverCounts?: HoverArray
+  hoverWidthMs?: HoverArray
+  hoverRollingMean?: HoverArray
+  hoverRollingMeanLabel?: string
+  hoverIgnore?: boolean
 }
 
 export type WidthSegment = {
@@ -65,6 +77,36 @@ interface UPlotChartProps {
   pointColors?: string[] // Per-point colors for scatter plots
   filteredIndices?: number[] // Indices that pass filters (for dimming others)
   customScatter?: boolean // Enable custom scatter rendering (Double Peak only)
+  glowPointThreshold?: number
+  densePointThreshold?: number
+  widthSegmentDetailThreshold?: number
+}
+
+const ENABLE_CHART_PROFILING = process.env.NODE_ENV !== "production"
+
+const profileDuration = (label: string, start: number, metadata?: Record<string, number | string | boolean | undefined>) => {
+  if (!ENABLE_CHART_PROFILING) return
+  const duration = performance.now() - start
+  if (duration >= 1) {
+    console.debug(`[chart-profiler] ${label}: ${duration.toFixed(2)}ms`, metadata ?? "")
+  }
+}
+
+const formatHoverTime = (minutes: number): string => {
+  if (!Number.isFinite(minutes)) return "n/a"
+  const seconds = minutes * 60
+  const absSeconds = Math.abs(seconds)
+  if (absSeconds < 1) return `${(seconds * 1000).toFixed(3)} ms`
+  if (absSeconds < 60) return `${seconds.toFixed(absSeconds < 10 ? 3 : 2)} s`
+  if (Math.abs(minutes) < 100) return `${minutes.toFixed(4)} min`
+  return `${minutes.toFixed(6)} min`
+}
+
+const formatHoverValue = (value: number, unit?: string): string => {
+  if (!Number.isFinite(value)) return "n/a"
+  const abs = Math.abs(value)
+  const decimals = abs >= 100 ? 2 : abs >= 10 ? 3 : 4
+  return `${value.toFixed(decimals)}${unit ? ` ${unit}` : ""}`
 }
 
 // Point-in-polygon test using ray casting algorithm
@@ -281,6 +323,9 @@ export function UPlotChart({
   pointColors,
   filteredIndices,
   customScatter = false,
+  glowPointThreshold = 2500,
+  densePointThreshold = 12000,
+  widthSegmentDetailThreshold = 1200,
 }: UPlotChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const uPlotInstanceRef = useRef<uPlot | null>(null)
@@ -289,8 +334,19 @@ export function UPlotChart({
   const [mounted, setMounted] = useState(false)
   const [xAxisOffsetLabel, setXAxisOffsetLabel] = useState("")
   const [xAxisOffsetPosition, setXAxisOffsetPosition] = useState<{ left: number; top: number } | null>(null)
-  const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number; x0: number; x1: number; y: number } | null>(null)
-  const [hoveredPeak, setHoveredPeak] = useState<{ index: number; time: number; amplitude: number } | null>(null)
+  const [hoveredSegment, setHoveredSegment] = useState<{ index: number; width: number; x0: number; x1: number; y: number; color: string } | null>(null)
+  const [hoveredPeak, setHoveredPeak] = useState<{
+    index: number
+    time: number
+    label: string
+    value: number
+    unit?: string
+    color: string
+    counts?: number
+    widthMs?: number
+    rollingMean?: number
+    rollingMeanLabel?: string
+  } | null>(null)
   const [hoveredDataPoint, setHoveredDataPoint] = useState<{ x: number; values: { label: string; value: number | null | undefined; color: string }[] } | null>(null)
   // State for custom scatter point hover (DoublePeakScatter)
   const [hoveredScatterPoint, setHoveredScatterPoint] = useState<{ index: number; x: number; y: number; label: string } | null>(null)
@@ -667,7 +723,17 @@ export function UPlotChart({
       pointSize: s.pointSize,
       bar: s.bar,
       barWidth: s.barWidth,
-      dataIndices: s.dataIndices
+      dataIndices: s.dataIndices,
+      hoverRole: s.hoverRole,
+      hoverColor: s.hoverColor,
+      hoverValueLabel: s.hoverValueLabel,
+      hoverUnit: s.hoverUnit,
+      hoverTimeSeconds: s.hoverTimeSeconds,
+      hoverCounts: s.hoverCounts,
+      hoverWidthMs: s.hoverWidthMs,
+      hoverRollingMean: s.hoverRollingMean,
+      hoverRollingMeanLabel: s.hoverRollingMeanLabel,
+      hoverIgnore: s.hoverIgnore,
     }))
   }, [series])
 
@@ -843,8 +909,8 @@ export function UPlotChart({
               return gradient
             },
             points: s.points ? {
-              // Hide default points only when we render custom ones ourselves
-              show: customScatter ? false : true,
+              // Point series are rendered in the draw hook so dense views can drop glow/detail adaptively.
+              show: false,
               size: s.pointSize ?? 5,
               stroke: s.color,
               fill: s.color,
@@ -887,6 +953,7 @@ export function UPlotChart({
         ],
         setCursor: [
           (u: uPlot) => {
+            const cursorStart = performance.now()
             // RAF-based throttling to prevent excessive updates with large datasets
             const now = performance.now()
             if (now - lastCursorUpdateRef.current < 16) { // ~60fps max
@@ -908,6 +975,7 @@ export function UPlotChart({
             processCursorUpdate(u, idx)
             
             function processCursorUpdate(uPlotInst: uPlot, cursorIdx: number | null | undefined) {
+              const processStart = performance.now()
               if (cursorIdx != null && cursorIdx >= 0) {
                 const xVal = uPlotInst.data[0][cursorIdx]
                 const values = seriesConfig.map((s, i) => ({
@@ -917,10 +985,11 @@ export function UPlotChart({
                 })).filter(v => v.value != null && Number.isFinite(v.value))
 
                 // For customScatter (scatter plot), find the point series and show its data
-                const pointSeriesIdx = seriesConfig.findIndex(s => s.points)
+                const pointSeriesIdx = seriesConfig.findIndex(s => s.points && !s.hoverIgnore)
                 if (pointSeriesIdx >= 0) {
-                  const pointYVal = uPlotInst.data[pointSeriesIdx + 1][cursorIdx]
-                  const pointLabel = seriesConfig[pointSeriesIdx].label
+                  const pointSeries = seriesConfig[pointSeriesIdx]
+                  const pointYVal = pointSeries.hoverCounts?.[cursorIdx] ?? uPlotInst.data[pointSeriesIdx + 1][cursorIdx]
+                  const pointLabel = pointSeries.hoverValueLabel ?? pointSeries.label
                   
                   if (pointYVal != null && Number.isFinite(pointYVal as number)) {
                     // For customScatter (DoublePeakScatter), use hoveredScatterPoint
@@ -934,10 +1003,23 @@ export function UPlotChart({
                       setHoveredPeak(null)
                     } else {
                       // For standard peak overlay, use hoveredPeak
+                      const hoverTimeSeconds = pointSeries.hoverTimeSeconds?.[cursorIdx]
+                      const timeMinutes = Number.isFinite(hoverTimeSeconds as number)
+                        ? (hoverTimeSeconds as number) / 60
+                        : xVal as number
+                      const widthMs = pointSeries.hoverWidthMs?.[cursorIdx]
+                      const rollingMean = pointSeries.hoverRollingMean?.[cursorIdx]
                       setHoveredPeak({
                         index: cursorIdx,
-                        time: xVal as number,
-                        amplitude: pointYVal as number
+                        time: timeMinutes,
+                        label: pointLabel,
+                        value: pointYVal as number,
+                        unit: pointSeries.hoverUnit,
+                        color: pointSeries.hoverColor ?? pointSeries.color,
+                        counts: pointSeries.hoverCounts?.[cursorIdx] as number | undefined,
+                        widthMs: Number.isFinite(widthMs as number) ? widthMs as number : undefined,
+                        rollingMean: Number.isFinite(rollingMean as number) ? rollingMean as number : undefined,
+                        rollingMeanLabel: pointSeries.hoverRollingMeanLabel,
                       })
                       setHoveredScatterPoint(null)
                     }
@@ -960,7 +1042,9 @@ export function UPlotChart({
                 setHoveredPeak(null)
                 setHoveredScatterPoint(null)
               }
+              profileDuration("cursor hover process", processStart, { points: uPlotInst.data[0]?.length ?? 0 })
             }
+            profileDuration("setCursor hook", cursorStart)
           }
         ],
         ready: [
@@ -1150,6 +1234,7 @@ export function UPlotChart({
 
             // Mouse move for width segment hover detection
             over.addEventListener("mousemove", (e: MouseEvent) => {
+              const hoverScanStart = performance.now()
               if (enableLassoRef.current) {
                 setHoveredSegment(null)
                 return
@@ -1172,8 +1257,14 @@ export function UPlotChart({
               setMousePos({ x: containerX, y: containerY })
 
               let found = false
-              for (let i = 0; i < segments.length; i += 1) {
+              const xMinVisible = u.scales.x.min
+              const xMaxVisible = u.scales.x.max
+              const step = segments.length > widthSegmentDetailThreshold
+                ? Math.ceil(segments.length / widthSegmentDetailThreshold)
+                : 1
+              for (let i = 0; i < segments.length; i += step) {
                 const seg = segments[i]
+                if (xMinVisible != null && xMaxVisible != null && (seg.x1 < xMinVisible || seg.x0 > xMaxVisible)) continue
                 const x0px = u.valToPos(seg.x0, "x", true)
                 const x1px = u.valToPos(seg.x1, "x", true)
                 const ypx = u.valToPos(seg.y, "y", true)
@@ -1191,7 +1282,8 @@ export function UPlotChart({
                     width: widthValue,
                     x0: seg.x0,
                     x1: seg.x1,
-                    y: seg.y
+                    y: seg.y,
+                    color: isDark ? "#fb923c" : "#f97316",
                   })
                   found = true
                   break
@@ -1201,6 +1293,7 @@ export function UPlotChart({
               if (!found) {
                 setHoveredSegment(null)
               }
+              profileDuration("width segment hover scan", hoverScanStart, { segments: segments.length, step })
             })
 
             over.addEventListener("mouseleave", () => {
@@ -1235,6 +1328,7 @@ export function UPlotChart({
         ],
         draw: [
           (u: uPlot) => {
+            const drawStart = performance.now()
             const ctx = u.ctx
 
             // Update legend text color
@@ -1309,6 +1403,7 @@ export function UPlotChart({
             // Draw width segments
             const segments = widthSegmentsRef.current
             if (segments && segments.length > 0) {
+              const widthDrawStart = performance.now()
               ctx.save()
               ctx.beginPath()
               ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height)
@@ -1316,8 +1411,13 @@ export function UPlotChart({
               const capHeight = 8
               const xMinVisible = u.scales.x.min
               const xMaxVisible = u.scales.x.max
+              const segmentStep = segments.length > widthSegmentDetailThreshold
+                ? Math.ceil(segments.length / widthSegmentDetailThreshold)
+                : 1
+              const denseSegments = segmentStep > 1
 
               segments.forEach((seg, idx) => {
+                if (idx % segmentStep !== 0 && hoveredSegment?.index !== idx) return
                 if (xMinVisible != null && xMaxVisible != null && (seg.x1 < xMinVisible || seg.x0 > xMaxVisible)) return
                 const x0px = Math.round(u.valToPos(seg.x0, "x", true))
                 const x1px = Math.round(u.valToPos(seg.x1, "x", true))
@@ -1325,29 +1425,33 @@ export function UPlotChart({
 
                 const isHovered = hoveredSegment?.index === idx
 
-                ctx.lineWidth = isHovered ? 3 : 2
+                ctx.lineWidth = isHovered ? 3 : denseSegments ? 1 : 2
                 // Width segment colors - using accent orange
                 const baseColor = isDark ? "#fb923c" : "#f97316"
                 const hoverColor = isDark ? "#fdba74" : "#ea580c"
 
                 ctx.strokeStyle = isHovered ? hoverColor : baseColor
+                ctx.globalAlpha = isHovered ? 1 : denseSegments ? 0.35 : 1
 
                 ctx.beginPath()
                 ctx.moveTo(x0px, ypx)
                 ctx.lineTo(x1px, ypx)
                 ctx.stroke()
 
-                ctx.beginPath()
-                ctx.moveTo(x0px, ypx - capHeight / 2)
-                ctx.lineTo(x0px, ypx + capHeight / 2)
-                ctx.stroke()
+                if (!denseSegments || isHovered) {
+                  ctx.beginPath()
+                  ctx.moveTo(x0px, ypx - capHeight / 2)
+                  ctx.lineTo(x0px, ypx + capHeight / 2)
+                  ctx.stroke()
 
-                ctx.beginPath()
-                ctx.moveTo(x1px, ypx - capHeight / 2)
-                ctx.lineTo(x1px, ypx + capHeight / 2)
-                ctx.stroke()
+                  ctx.beginPath()
+                  ctx.moveTo(x1px, ypx - capHeight / 2)
+                  ctx.lineTo(x1px, ypx + capHeight / 2)
+                  ctx.stroke()
+                }
               })
               ctx.restore()
+              profileDuration("width segment draw", widthDrawStart, { segments: segments.length, step: segmentStep })
             }
 
             // Draw horizontal threshold lines
@@ -1447,6 +1551,7 @@ export function UPlotChart({
 
             // Draw glowing peaks for standard series (not customScatter)
             if (!customScatter) {
+              const pointDrawStart = performance.now()
               // Get visible index range from uPlot to optimize rendering
               // Safety: ensure indices are within bounds and limit max points to prevent OOM
               const dataLen = u.data[0] ? u.data[0].length : 0
@@ -1460,10 +1565,12 @@ export function UPlotChart({
               iMax = Math.max(iMin, Math.min(iMax, dataLen - 1))
               
               // Safety limit: don't render more than 50k points to prevent OOM
-              const maxPointsToRender = 50000
-              if (iMax - iMin > maxPointsToRender) {
+              const visiblePointCount = iMax - iMin + 1
+              const maxPointsToRender = Math.max(1, Math.min(50000, densePointThreshold))
+              const skipGlow = visiblePointCount > glowPointThreshold
+              if (visiblePointCount > maxPointsToRender) {
                 // Downsample by skipping points
-                const step = Math.ceil((iMax - iMin) / maxPointsToRender)
+                const step = Math.ceil(visiblePointCount / maxPointsToRender)
                 
                 seriesConfig.forEach((s, sIdx) => {
                   if (!s.points) return
@@ -1560,12 +1667,14 @@ export function UPlotChart({
                     }
                   }
 
-                  // Draw Glow (Halo)
-                  ctx.beginPath()
-                  drawPass(true)
-                  ctx.fillStyle = s.color
-                  ctx.globalAlpha = 0.2
-                  ctx.fill()
+                  if (!skipGlow) {
+                    // Draw Glow (Halo)
+                    ctx.beginPath()
+                    drawPass(true)
+                    ctx.fillStyle = s.color
+                    ctx.globalAlpha = 0.2
+                    ctx.fill()
+                  }
 
                   // Draw inner point (solid)
                   ctx.beginPath()
@@ -1577,12 +1686,14 @@ export function UPlotChart({
                   ctx.restore()
                 })
               }
+              profileDuration("point/glow draw", pointDrawStart, { visiblePointCount, skipGlow, maxPointsToRender })
             }
 
             // Custom point rendering with three states (Double Peak only)
             const currentXData = u.data[0] as number[]
             const firstSeries = seriesConfig.find(s => s.points)
             if (customScatter && firstSeries && currentXData && currentXData.length > 0) {
+              const customPointStart = performance.now()
               ctx.save()
               ctx.beginPath();
               ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
@@ -1680,18 +1791,22 @@ export function UPlotChart({
               }
 
               ctx.restore()
+              profileDuration("custom scatter draw", customPointStart, { points: currentXData.length })
             }
+            profileDuration("total draw hook", drawStart, { points: u.data[0]?.length ?? 0 })
           }
         ]
       }
     }
-  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom, customScatter, hoveredSegment?.index, xData.length, yRange, clampXRangeToBounds])
+  }, [width, height, isDark, seriesConfig, xLabel, yLabel, onResetZoom, hLines, vLines, onXRangeChange, onYRangeChange, xScaleType, yScaleType, legend, enableYAxisZoom, customScatter, hoveredSegment?.index, xData.length, yRange, clampXRangeToBounds, glowPointThreshold, densePointThreshold, widthSegmentDetailThreshold])
   // Note: yRange is intentionally excluded - we handle it via setScale() in useEffect
   // yScaleType must be included as it changes the scale distribution (distr: 3 for log)
 
   const data = useMemo(() => {
+    const start = performance.now()
     const result: any[] = [xData]
     series.forEach(s => result.push(s.data))
+    profileDuration("uPlot data array build", start, { series: series.length, points: xData.length })
     return result
   }, [xData, series])
 
@@ -1804,13 +1919,13 @@ export function UPlotChart({
           {/* Peak Width Info */}
           {hoveredSegment && (
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: isDark ? "#fb923c" : "#f97316" }}></div>
+              <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: hoveredSegment.color }}></div>
               <span className="text-muted-foreground">Peak Width:</span>
-              <span className="font-semibold" style={{ color: isDark ? "#fdba74" : "#ea580c" }}>
+              <span className="font-semibold" style={{ color: hoveredSegment.color }}>
                 {hoveredSegment.width.toFixed(3)} ms
               </span>
               <span className="text-muted-foreground/60 ml-1">
-                ({(hoveredSegment.x0 * 60).toFixed(2)}s – {(hoveredSegment.x1 * 60).toFixed(2)}s)
+                ({formatHoverTime(hoveredSegment.x0)} - {formatHoverTime(hoveredSegment.x1)})
               </span>
             </div>
           )}
@@ -1835,19 +1950,28 @@ export function UPlotChart({
           
           {/* Peak Point Info (for preprocessing peaks) */}
           {hoveredPeak && !hoveredSegment && !hoveredScatterPoint && (
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: isDark ? "#f87171" : "#ef4444" }}></div>
-              <span className="text-muted-foreground">Peak:</span>
-              <span className="font-semibold" style={{ color: isDark ? "#f87171" : "#ef4444" }}>
-                {hoveredPeak.amplitude.toFixed(2)}
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: hoveredPeak.color }}></div>
+              <span className="text-muted-foreground">{hoveredPeak.label}:</span>
+              <span className="font-semibold" style={{ color: hoveredPeak.color }}>
+                {formatHoverValue(hoveredPeak.value, hoveredPeak.unit)}
               </span>
               <span className="text-muted-foreground/80">at</span>
               <span className="font-medium">
-                {hoveredPeak.time >= 1 
-                  ? `${hoveredPeak.time.toFixed(3)} min`
-                  : `${(hoveredPeak.time * 60).toFixed(2)} s`
-                }
+                {formatHoverTime(hoveredPeak.time)}
               </span>
+              {hoveredPeak.widthMs != null && (
+                <>
+                  <span className="text-muted-foreground/60">Width</span>
+                  <span className="font-medium">{hoveredPeak.widthMs.toFixed(3)} ms</span>
+                </>
+              )}
+              {hoveredPeak.rollingMean != null && (
+                <>
+                  <span className="text-muted-foreground/60">{hoveredPeak.rollingMeanLabel ?? "Rolling mean"}</span>
+                  <span className="font-medium">{formatHoverValue(hoveredPeak.rollingMean, hoveredPeak.unit)}</span>
+                </>
+              )}
             </div>
           )}
         </div>

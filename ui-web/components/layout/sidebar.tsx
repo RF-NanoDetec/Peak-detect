@@ -41,7 +41,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "border-r bg-muted/40 backdrop-blur-sm flex flex-col transition-all duration-200 ease-in-out",
-        effectiveCollapsed ? "w-16" : "w-64"
+        effectiveCollapsed ? "w-16" : "w-56"
       )}
     >
       {/* Header with collapse toggle */}

@@ -41,29 +41,8 @@ export function AnalyzeView({
     )
   }
 
-  const peakCount = detectionResults?.peak_times?.length || 0
-  const widthCount = detectionResults?.properties?.widths?.length || 0
-
   return (
     <div className="flex-1 p-4 space-y-4 overflow-auto">
-      <div className="rounded-lg border bg-card/70 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">Detected peak analysis</h2>
-            <p className="text-xs text-muted-foreground">
-              Review distributions and time trends before exporting detected peak data.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-md border bg-muted/40 px-2.5 py-1">
-              {peakCount.toLocaleString()} peaks
-            </span>
-            <span className="rounded-md border bg-muted/40 px-2.5 py-1">
-              {widthCount.toLocaleString()} widths
-            </span>
-          </div>
-        </div>
-      </div>
       <AnalyzeTimeSeries
         className="flex-1"
         peakTimes={detectionResults?.peak_times || []}

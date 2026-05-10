@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 
 import { PageShell, PageControls, PageVisualization } from "@/components/layout/page-shell"
 import { LoadControls } from "@/components/load/LoadControls"
-import { LoadView } from "@/components/load/LoadView"
+import { LoadView, type LoadProgress } from "@/components/load/LoadView"
 
 import { apiClient } from "@/lib/apiClient"
 import { useDataStore } from "@/lib/stores/dataStore"
@@ -46,20 +46,49 @@ const cacheSessionFiles = (files: File[], handles?: FileSystemFileHandle[]) => {
   }
 }
 
-const getRelativeDirectory = (file: File) => {
-  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
-  if (!relativePath) return null
-  const pathParts = relativePath.split("/").filter(Boolean)
+const normalizePath = (path: string) => path.replace(/\\/g, "/")
+
+const getParentDirectory = (path: string) => {
+  const normalized = normalizePath(path)
+  const pathParts = normalized.split("/").filter(Boolean)
   if (pathParts.length <= 1) return null
   pathParts.pop()
   return pathParts.join("/")
 }
 
+const getCommonPathPrefix = (paths: string[]) => {
+  if (paths.length === 0) return null
+  const splitPaths = paths.map((path) => normalizePath(path).split("/").filter(Boolean))
+  const commonParts: string[] = []
+  const shortestLength = Math.min(...splitPaths.map((parts) => parts.length))
+
+  for (let idx = 0; idx < shortestLength; idx += 1) {
+    const candidate = splitPaths[0][idx]
+    if (splitPaths.every((parts) => parts[idx] === candidate)) {
+      commonParts.push(candidate)
+    } else {
+      break
+    }
+  }
+
+  return commonParts.length > 0 ? commonParts.join("/") : null
+}
+
+const getFileDirectory = (file: File) => {
+  const nativePath = (file as File & { path?: string }).path
+  if (nativePath) {
+    return getParentDirectory(nativePath)
+  }
+
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+  if (!relativePath) return null
+  return getParentDirectory(relativePath)
+}
+
 const getCommonDirectory = (files: File[]) => {
-  const directories = files.map(getRelativeDirectory).filter((dir): dir is string => Boolean(dir))
+  const directories = files.map(getFileDirectory).filter((dir): dir is string => Boolean(dir))
   if (directories.length !== files.length || directories.length === 0) return null
-  const firstDirectory = directories[0]
-  return directories.every((dir) => dir === firstDirectory) ? firstDirectory : null
+  return getCommonPathPrefix(directories)
 }
 
 const getSharedFilenamePattern = (fileNames: string[]) => {
@@ -157,6 +186,21 @@ const restoreCachedFiles = async (fileGroup: string[]): Promise<File[] | null> =
   return null
 }
 
+const buildCumulativeFileSizes = (files: File[]) => {
+  const fileEnds: number[] = []
+  let totalBytes = 0
+  files.forEach((file) => {
+    totalBytes += file.size
+    fileEnds.push(totalBytes)
+  })
+  return { fileEnds, totalBytes }
+}
+
+const estimateLoadedFiles = (loadedBytes: number, fileEnds: number[]) => {
+  if (fileEnds.length === 0) return 0
+  return fileEnds.filter((end) => loadedBytes >= end).length
+}
+
 export default function LoadDataPage() {
   const router = useRouter()
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -164,6 +208,7 @@ export default function LoadDataPage() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [localPreview, setLocalPreview] = useState<LocalPreviewResult | null>(null)
+  const [loadProgress, setLoadProgress] = useState<LoadProgress | null>(null)
   const previewTask = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
@@ -271,14 +316,39 @@ export default function LoadDataPage() {
     }
 
     setLoading(true)
+    setLoadProgress({
+      phase: "uploading",
+      loadedFiles: 0,
+      totalFiles: selectedFiles.length,
+      percent: 0,
+    })
     try {
       clearResults()
       clearData()
+      const cumulativeSizes = buildCumulativeFileSizes(selectedFiles)
       
       const response = await apiClient.uploadFiles(selectedFiles, params.time_resolution, {
         applyDeadTimeCorrection: photonCorrection.applyCorrection,
         deadTimeNs: photonCorrection.deadTimeNs,
         protocol: protocol,
+        onUploadProgress: (event) => {
+          const totalBytes = event.total ?? cumulativeSizes.totalBytes
+          const loadedBytes = Math.min(event.loaded, totalBytes)
+          const percent = totalBytes > 0 ? Math.min(95, Math.round((loadedBytes / totalBytes) * 100)) : 0
+          setLoadProgress({
+            phase: "uploading",
+            loadedFiles: estimateLoadedFiles(loadedBytes, cumulativeSizes.fileEnds),
+            totalFiles: selectedFiles.length,
+            percent,
+          })
+        },
+      })
+
+      setLoadProgress({
+        phase: "processing",
+        loadedFiles: selectedFiles.length,
+        totalFiles: selectedFiles.length,
+        percent: 96,
       })
 
       setResultId(response.resultId)
@@ -289,9 +359,16 @@ export default function LoadDataPage() {
       addRecentFiles(fileNames, describeRecentSessionOrigin(selectedFiles))
       cacheSessionFiles(selectedFiles)
 
+      setLoadProgress((current) => current ? { ...current, phase: "preview", percent: 98 } : current)
       const previewData = await apiClient.getDataPreview(response.resultId)
       setPreviewData(previewData)
 
+      setLoadProgress({
+        phase: "complete",
+        loadedFiles: selectedFiles.length,
+        totalFiles: selectedFiles.length,
+        percent: 100,
+      })
       toast.success(`Loaded ${response.meta.total_files} file(s) successfully`)
       
       setTimeout(() => router.push('/preprocess'), 500)
@@ -300,6 +377,7 @@ export default function LoadDataPage() {
       toast.error(describeLoadError(error))
     } finally {
       setLoading(false)
+      setLoadProgress(null)
     }
   }
 
@@ -340,6 +418,7 @@ export default function LoadDataPage() {
           previewLoading={previewLoading}
           previewError={previewError}
           localPreview={localPreview}
+          loadProgress={loadProgress}
           protocol={protocol}
           updateProtocol={updateProtocol}
           onSelectFiles={openFileSelectionFlow}

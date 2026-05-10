@@ -3,6 +3,7 @@ import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { workflowSteps } from "@/components/layout/workflow"
+import { useEffect, useState } from "react"
 
 const exportStep = workflowSteps.find((step) => step.id === "export")!
 
@@ -21,6 +22,26 @@ export function AnalyzeControls({
   rollingMeanWindow,
   setRollingMeanWindow,
 }: AnalyzeControlsProps) {
+  const [displayRollingMeanWindow, setDisplayRollingMeanWindow] = useState(rollingMeanWindow)
+
+  useEffect(() => {
+    setDisplayRollingMeanWindow(rollingMeanWindow)
+  }, [rollingMeanWindow])
+
+  useEffect(() => {
+    if (displayRollingMeanWindow === rollingMeanWindow) return
+    const timeout = window.setTimeout(() => {
+      setRollingMeanWindow(displayRollingMeanWindow)
+    }, 180)
+    return () => window.clearTimeout(timeout)
+  }, [displayRollingMeanWindow, rollingMeanWindow, setRollingMeanWindow])
+
+  const commitRollingMeanWindow = () => {
+    if (displayRollingMeanWindow !== rollingMeanWindow) {
+      setRollingMeanWindow(displayRollingMeanWindow)
+    }
+  }
+
   if (!hasResults) {
     return (
       <div className="space-y-4">
@@ -79,7 +100,7 @@ export function AnalyzeControls({
                     <InfoTooltip content="Number of points for rolling average smoothing of metrics." />
                   </label>
                   <span className="text-xs font-medium text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">
-                    {rollingMeanWindow} pts
+                    {displayRollingMeanWindow} pts
                   </span>
                </div>
                <input
@@ -87,8 +108,11 @@ export function AnalyzeControls({
                   min={2}
                   max={200}
                   step={1}
-                  value={rollingMeanWindow}
-                  onChange={(e) => setRollingMeanWindow(Number(e.target.value))}
+                  value={displayRollingMeanWindow}
+                  onChange={(e) => setDisplayRollingMeanWindow(Number(e.target.value))}
+                  onPointerUp={commitRollingMeanWindow}
+                  onKeyUp={commitRollingMeanWindow}
+                  onBlur={commitRollingMeanWindow}
                   className="w-full"
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground px-1">

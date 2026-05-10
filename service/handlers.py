@@ -427,9 +427,8 @@ def preprocess_run(
                 nyquist = fs / 2.0
 
                 # Normalize cutoff frequency
+                cutoff_freq = max(0.01, min(float(cutoff_freq), nyquist * 0.95))
                 normalized_cutoff = cutoff_freq / nyquist
-                if normalized_cutoff >= 1.0:
-                    normalized_cutoff = 0.99
 
                 with tracker.phase("butterworth_design"):
                     b, a = scipy_signal.butter(
@@ -560,6 +559,9 @@ def detect_run(
         f"PEAK DETECTION: Parameters - threshold={payload.prominence_threshold}, distance={payload.distance}, rel_height={payload.rel_height}, width_ms={payload.width_ms}, prominence_ratio={payload.prominence_ratio}"
     )
 
+    signal = filtered_result["amplitude"] if filtered_result else base["amplitude"]
+    time_values = base["time"]
+
     with tracker.phase("validate_params"):
         ok, msg = validate_peak_params(
             payload.prominence_threshold,
@@ -568,12 +570,10 @@ def detect_run(
             payload.width_ms,
             payload.time_resolution,
             payload.prominence_ratio,
+            max_signal=float(np.max(signal)) if len(signal) > 0 else None,
         )
         if not ok:
             raise HTTPException(status_code=400, detail=msg)
-
-    signal = filtered_result["amplitude"] if filtered_result else base["amplitude"]
-    time_values = base["time"]
 
     tracker.add_metadata("data_points", len(signal))
     tracker.add_metadata("using_filtered", filtered_result is not None)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useCallback, useRef } from "react"
+import { useMemo, useState, useCallback } from "react"
 import { UPlotChart, type Series } from "./UPlotChart"
 import { useTheme } from "@/hooks/use-theme"
 
@@ -39,6 +39,15 @@ type Range = { min: number; max: number } | null
 
 const MAX_ANALYSIS_POINTS = 50000
 const MAX_THROUGHPUT_BINS = 20000
+const ENABLE_ANALYZE_PROFILING = process.env.NODE_ENV !== "production"
+
+const profileAnalyzeDuration = (label: string, start: number, metadata?: Record<string, number | string | boolean | undefined>) => {
+  if (!ENABLE_ANALYZE_PROFILING) return
+  const duration = performance.now() - start
+  if (duration >= 1) {
+    console.debug(`[analyze-profiler] ${label}: ${duration.toFixed(2)}ms`, metadata ?? "")
+  }
+}
 
 const axisButtonClass = (active: boolean) =>
   `px-2.5 py-1 rounded-md border text-[10px] font-medium transition-colors ${
@@ -241,18 +250,21 @@ export function AnalyzeTimeSeries({
   const [ampScale, setAmpScale] = useState<ScaleType>("log")
   const [widthScale, setWidthScale] = useState<ScaleType>("log")
   
-  // Use refs to track previous scale to avoid unnecessary recalculations
-  const prevAmpScaleRef = useRef<ScaleType>(ampScale)
-  const prevWidthScaleRef = useRef<ScaleType>(widthScale)
-
-  const preparedSeries = useMemo(
-    () => preparePeakSeries(peakTimes, peakAmplitudes, peakWidths, timeResolution),
-    [peakTimes, peakAmplitudes, peakWidths, timeResolution],
-  )
+  const preparedSeries = useMemo(() => {
+    const start = performance.now()
+    const result = preparePeakSeries(peakTimes, peakAmplitudes, peakWidths, timeResolution)
+    profileAnalyzeDuration("prepare peak series", start, { sourceCount: result.sourceCount, displayedCount: result.displayedCount })
+    return result
+  }, [peakTimes, peakAmplitudes, peakWidths, timeResolution])
 
   // Prepare aligned chart data; very large results are sampled for rendering only.
   const xTimesMinutes = useMemo(
-    () => preparedSeries.times.map((t) => Math.max(0, t / 60)),
+    () => {
+      const start = performance.now()
+      const result = preparedSeries.times.map((t) => Math.max(0, t / 60))
+      profileAnalyzeDuration("build x time array", start, { points: result.length })
+      return result
+    },
     [preparedSeries.times],
   )
 
@@ -272,7 +284,10 @@ export function AnalyzeTimeSeries({
   // Compute rolling mean for prominence data
   const amplitudeRollingMean = useMemo(() => {
     if (!preparedSeries.amplitudes.length) return [] as number[]
-    return computeMovingAverage(preparedSeries.amplitudes, rollingMeanWindow)
+    const start = performance.now()
+    const result = computeMovingAverage(preparedSeries.amplitudes, rollingMeanWindow)
+    profileAnalyzeDuration("prominence rolling mean", start, { points: result.length, window: rollingMeanWindow })
+    return result
   }, [preparedSeries.amplitudes, rollingMeanWindow])
 
   // Compute rolling mean for width data
@@ -280,55 +295,90 @@ export function AnalyzeTimeSeries({
     const finiteWidths = preparedSeries.widthsMs.filter(Number.isFinite)
     if (!finiteWidths.length) return [] as number[]
 
+    const start = performance.now()
     const rollingValues = computeMovingAverage(preparedSeries.widthsMs, rollingMeanWindow)
-    return rollingValues.map((value, index) =>
+    const result = rollingValues.map((value, index) =>
       Number.isFinite(preparedSeries.widthsMs[index]) ? value : Number.NaN,
     )
+    profileAnalyzeDuration("width rolling mean", start, { points: result.length, window: rollingMeanWindow })
+    return result
   }, [preparedSeries.widthsMs, rollingMeanWindow])
 
   const amplitudeSeries: Series[] = useMemo(
-    () => [
-      {
-        label: "Peak prominence",
-        color: pointColor,
-        width: 0,
-        data: preparedSeries.amplitudes,
-        points: true,
-        pointSize: 3,
-      },
-      {
-        label: `Rolling mean prominence`,
-        color: rollingMeanColor,
-        width: 2,
-        data: amplitudeRollingMean,
-      },
-    ],
-    [pointColor, preparedSeries.amplitudes, amplitudeRollingMean, rollingMeanColor],
+    () => {
+      const start = performance.now()
+      const result: Series[] = [
+        {
+          label: "Peak prominence",
+          color: pointColor,
+          hoverColor: pointColor,
+          hoverRole: "point",
+          hoverValueLabel: "Peak prominence",
+          hoverTimeSeconds: preparedSeries.times,
+          hoverCounts: preparedSeries.amplitudes,
+          hoverWidthMs: preparedSeries.widthsMs,
+          hoverRollingMean: amplitudeRollingMean,
+          hoverRollingMeanLabel: "Rolling mean",
+          width: 0,
+          data: preparedSeries.amplitudes,
+          points: true,
+          pointSize: 3,
+        },
+        {
+          label: `Rolling mean prominence`,
+          color: rollingMeanColor,
+          hoverRole: "line",
+          hoverIgnore: true,
+          width: 2,
+          data: amplitudeRollingMean,
+        },
+      ]
+      profileAnalyzeDuration("build prominence series", start, { points: preparedSeries.amplitudes.length })
+      return result
+    },
+    [pointColor, preparedSeries.times, preparedSeries.amplitudes, preparedSeries.widthsMs, amplitudeRollingMean, rollingMeanColor],
   )
 
   const widthSeries: Series[] = useMemo(
-    () => [
-      {
-        label: "Peak width (ms)",
-        color: pointColor,
-        width: 0,
-        data: preparedSeries.widthsMs,
-        points: true,
-        pointSize: 3,
-      },
-      {
-        label: `Rolling mean width`,
-        color: rollingMeanColor,
-        width: 2,
-        data: widthRollingMean,
-      },
-    ],
-    [pointColor, preparedSeries.widthsMs, widthRollingMean, rollingMeanColor],
+    () => {
+      const start = performance.now()
+      const result: Series[] = [
+        {
+          label: "Peak width (ms)",
+          color: pointColor,
+          hoverColor: pointColor,
+          hoverRole: "point",
+          hoverValueLabel: "Peak width",
+          hoverUnit: "ms",
+          hoverTimeSeconds: preparedSeries.times,
+          hoverCounts: preparedSeries.widthsMs,
+          hoverWidthMs: preparedSeries.widthsMs,
+          hoverRollingMean: widthRollingMean,
+          hoverRollingMeanLabel: "Rolling mean",
+          width: 0,
+          data: preparedSeries.widthsMs,
+          points: true,
+          pointSize: 3,
+        },
+        {
+          label: `Rolling mean width`,
+          color: rollingMeanColor,
+          hoverRole: "line",
+          hoverIgnore: true,
+          width: 2,
+          data: widthRollingMean,
+        },
+      ]
+      profileAnalyzeDuration("build width series", start, { points: preparedSeries.widthsMs.length })
+      return result
+    },
+    [pointColor, preparedSeries.times, preparedSeries.widthsMs, widthRollingMean, rollingMeanColor],
   )
 
   // Compute ranges - linear starts at 0, log auto-detects from data
   // Avoid array concatenation by computing range from both arrays separately
   const amplitudeRange = useMemo(() => {
+    const start = performance.now()
     // Compute min/max from both arrays without concatenation
     let minVal = Infinity
     let maxVal = -Infinity
@@ -349,10 +399,13 @@ export function AnalyzeTimeSeries({
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) return null
     
     // Create a small array with just min/max for computeRange
-    return computeRange([minVal, maxVal], ampScale, ampScale === "linear" ? 0 : undefined)
+    const result = computeRange([minVal, maxVal], ampScale, ampScale === "linear" ? 0 : undefined)
+    profileAnalyzeDuration("prominence range", start, { points: preparedSeries.amplitudes.length, scale: ampScale })
+    return result
   }, [preparedSeries.amplitudes, amplitudeRollingMean, ampScale])
   
   const widthRange = useMemo(() => {
+    const start = performance.now()
     let minVal = Infinity
     let maxVal = -Infinity
     
@@ -371,41 +424,55 @@ export function AnalyzeTimeSeries({
     
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) return null
     
-    return computeRange([minVal, maxVal], widthScale, widthScale === "linear" ? 0 : undefined)
+    const result = computeRange([minVal, maxVal], widthScale, widthScale === "linear" ? 0 : undefined)
+    profileAnalyzeDuration("width range", start, { points: preparedSeries.widthsMs.length, scale: widthScale })
+    return result
   }, [preparedSeries.widthsMs, widthRollingMean, widthScale])
   
-  const { binCentersMinutes, throughputPerBin } = useMemo(
-    () => computeBinnedThroughput(preparedSeries.allTimes, binWidthSeconds),
-    [preparedSeries.allTimes, binWidthSeconds],
-  )
-  const movingAverage = useMemo(
-    () => computeMovingAverage(throughputPerBin, 5),
-    [throughputPerBin],
-  )
+  const { binCentersMinutes, throughputPerBin } = useMemo(() => {
+    const start = performance.now()
+    const result = computeBinnedThroughput(preparedSeries.allTimes, binWidthSeconds)
+    profileAnalyzeDuration("throughput binning", start, { peaks: preparedSeries.allTimes.length, bins: result.throughputPerBin.length })
+    return result
+  }, [preparedSeries.allTimes, binWidthSeconds])
+  const movingAverage = useMemo(() => {
+    const start = performance.now()
+    const result = computeMovingAverage(throughputPerBin, 5)
+    profileAnalyzeDuration("throughput rolling mean", start, { bins: result.length, window: 5 })
+    return result
+  }, [throughputPerBin])
 
   const throughputBarSeries: Series[] = useMemo(
-    () => [
-      {
-        label: `Rolling mean throughput (5-bin)`,
-        color: isDark ? "#fb923c" : "#f97316",  // accent orange
-        width: 2,
-        data: movingAverage,
-      },
-      {
-        label: "Peak throughput",
-        color: isDark ? "rgba(148, 163, 184, 0.6)" : "rgba(100, 116, 139, 0.65)",  // slate/gray
-        width: 0,
-        data: throughputPerBin,
-        bar: true,
-      },
-    ],
+    () => {
+      const start = performance.now()
+      const result: Series[] = [
+        {
+          label: `Rolling mean throughput (5-bin)`,
+          color: isDark ? "#fb923c" : "#f97316",  // accent orange
+          hoverIgnore: true,
+          width: 2,
+          data: movingAverage,
+        },
+        {
+          label: "Peak throughput",
+          color: isDark ? "rgba(148, 163, 184, 0.6)" : "rgba(100, 116, 139, 0.65)",  // slate/gray
+          width: 0,
+          data: throughputPerBin,
+          bar: true,
+        },
+      ]
+      profileAnalyzeDuration("build throughput series", start, { bins: throughputPerBin.length })
+      return result
+    },
     [isDark, throughputPerBin, movingAverage],
   )
 
-  const throughputBarRange = useMemo(
-    () => computeRange(throughputPerBin.concat(movingAverage), "linear", 0),
-    [throughputPerBin, movingAverage],
-  )
+  const throughputBarRange = useMemo(() => {
+    const start = performance.now()
+    const result = computeRange(throughputPerBin.concat(movingAverage), "linear", 0)
+    profileAnalyzeDuration("throughput range", start, { bins: throughputPerBin.length })
+    return result
+  }, [throughputPerBin, movingAverage])
 
   const handleSharedRangeChange = useCallback(
     (range: { min: number; max: number }) => {
@@ -473,6 +540,8 @@ export function AnalyzeTimeSeries({
             onResetZoom={handleResetZoom}
             yScaleType={ampScale}
             yRange={amplitudeRange || undefined}
+            glowPointThreshold={1500}
+            densePointThreshold={12000}
           />
         </div>
       </div>
@@ -510,6 +579,8 @@ export function AnalyzeTimeSeries({
             onResetZoom={handleResetZoom}
             yScaleType={widthScale}
             yRange={widthRange || undefined}
+            glowPointThreshold={1500}
+            densePointThreshold={12000}
           />
         </div>
       </div>

@@ -244,6 +244,7 @@ def validate_peak_params(
     width_ms,
     time_resolution,
     prominence_ratio=None,
+    max_signal=None,
 ):
     """
     Validate common peak detection parameters.
@@ -259,15 +260,18 @@ def validate_peak_params(
 
     # Prominence threshold
     try:
-        if float(prominence_threshold) < 0:
-            return False, "Prominence threshold must be >= 0"
+        prominence = float(prominence_threshold)
+        if prominence <= 0:
+            return False, "Prominence threshold must be > 0"
+        if max_signal is not None and float(max_signal) > 0 and prominence > float(max_signal):
+            return False, "Prominence threshold cannot exceed the highest data point"
     except Exception:
         return False, "Prominence threshold is invalid"
 
     # Distance (samples)
     try:
-        if int(distance) < 0:
-            return False, "Minimum distance must be >= 0 samples"
+        if int(distance) < 1:
+            return False, "Minimum distance must be at least 1 sample"
     except Exception:
         return False, "Minimum distance is invalid"
 
@@ -283,8 +287,8 @@ def validate_peak_params(
     if prominence_ratio is not None:
         try:
             pr = float(prominence_ratio)
-            if pr <= 0 or pr > 1:
-                return False, "Prominence ratio must be in (0, 1]"
+            if pr < 0 or pr > 1:
+                return False, "Prominence ratio must be in [0, 1]"
         except Exception:
             return False, "Prominence ratio is invalid"
 
@@ -292,6 +296,18 @@ def validate_peak_params(
     ok, msg = validate_width_ms_string(width_ms)
     if not ok:
         return False, msg
+
+    try:
+        if isinstance(width_ms, str):
+            width_parts = [p.strip() for p in width_ms.split(",")]
+        else:
+            width_parts = [str(v) for v in width_ms]
+        min_width_ms = float(width_parts[0])
+        resolution_ms = float(time_resolution) * 1000.0
+        if min_width_ms < resolution_ms:
+            return False, "Minimum peak width cannot be below the loaded time resolution"
+    except Exception:
+        return False, "Width values are invalid"
 
     return True, ""
 
@@ -322,7 +338,7 @@ def reset_application_state(app):
 
         # Reset variables to default values
         app.start_time.set("0:00")
-        app.height_lim.set(20)
+        app.height_lim.set(10)
         app.distance.set(30)
         app.rel_height.set(0.85)
         app.width_p.set("1,200")

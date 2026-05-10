@@ -1,29 +1,15 @@
 {
   "version": 1,
   "active": true,
-  "skill": "deep-interview",
-  "keyword": "interview me",
+  "skill": "analyze",
+  "keyword": "analyze",
   "phase": "planning",
-  "activated_at": "2026-05-09T18:59:45.708Z",
-  "updated_at": "2026-05-09T19:01:11.503Z",
+  "activated_at": "2026-05-10T12:10:13.517Z",
+  "updated_at": "2026-05-10T12:17:56.233Z",
   "source": "keyword-detector",
   "session_id": "",
-  "thread_id": "019e0e1c-05f4-7511-9c66-22930b537b64",
-  "turn_id": "019e0e1c-0682-7130-8495-eefb030fd0c3",
-  "input_lock": {
-    "active": true,
-    "scope": "deep-interview-auto-approval",
-    "acquired_at": "2026-05-09T18:59:45.708Z",
-    "blocked_inputs": [
-      "yes",
-      "y",
-      "proceed",
-      "continue",
-      "ok",
-      "sure",
-      "go ahead",
-      "next i should"
-    ],
-    "message": "Deep interview is active; auto-approval shortcuts are blocked until the interview finishes."
-  }
+  "thread_id": "019e11d0-27a8-7b33-9edd-dbed44000b83",
+  "turn_id": "019e11d0-f127-7900-bde9-d6e7a5a94a24",
+  "iteration": 3,
+  "last_turn_at": "2026-05-10T12:28:08.431Z"
 }

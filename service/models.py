@@ -47,7 +47,7 @@ class LoadFilesResponse(BaseModel):
 
 class Params(BaseModel):
     width_ms: str = "1,200"
-    prominence_threshold: float = 20.0
+    prominence_threshold: float = 10.0
     distance: int = 10
     rel_height: float = 0.5
     prominence_ratio: float = 0.8

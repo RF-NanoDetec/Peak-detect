@@ -39,28 +39,8 @@ export function PreprocessView({
     )
   }
 
-  const peakCount = detectionResults?.peak_times?.length || 0
-
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="shrink-0 border-b bg-card/60 px-4 py-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">Signal inspection and peak detection</h2>
-            <p className="text-xs text-muted-foreground">
-              Tune parameters in the control panel, then verify peaks on the chart before export.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="rounded-md border bg-muted/40 px-2.5 py-1">
-              {filteredResultId ? "Filtered signal" : "Raw signal"}
-            </span>
-            <span className="rounded-md border bg-muted/40 px-2.5 py-1">
-              {peakCount > 0 ? `${peakCount.toLocaleString()} peaks detected` : "Detection pending"}
-            </span>
-          </div>
-        </div>
-      </div>
       <PreprocessingChart
         resultId={resultId}
         filteredResultId={filteredResultId}

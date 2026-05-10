@@ -28,10 +28,10 @@ def test_health():
         response.raise_for_status()
         data = response.json()
         assert data["status"] == "ok"
-        print("✅ Health check passed")
+        print("[PASS] Health check passed")
         return True
     except Exception as e:
-        print(f"❌ Health check failed: {e}")
+        print(f"[FAIL] Health check failed: {e}")
         return False
 
 def test_version():
@@ -42,10 +42,10 @@ def test_version():
         response.raise_for_status()
         data = response.json()
         assert "version" in data
-        print(f"✅ Version check passed: {data['version']}")
+        print(f"[PASS] Version check passed: {data['version']}")
         return True
     except Exception as e:
-        print(f"❌ Version check failed: {e}")
+        print(f"[FAIL] Version check failed: {e}")
         return False
 
 def test_params():
@@ -63,12 +63,12 @@ def test_params():
         assert "savgol_window" in data
         assert "savgol_polyorder" in data
         
-        print(f"✅ Params check passed")
+        print("[PASS] Params check passed")
         print(f"   Filter type: {data['filter_type']}")
         print(f"   Filter params: cutoff={data['filter_cutoff_freq']}, butter_order={data['butter_order']}")
         return True
     except Exception as e:
-        print(f"❌ Params check failed: {e}")
+        print(f"[FAIL] Params check failed: {e}")
         return False
 
 def test_file_upload_endpoint():
@@ -82,16 +82,16 @@ def test_file_upload_endpoint():
         # We expect a 422 (validation error) because we didn't send files
         # If we get 404, the endpoint doesn't exist
         if response.status_code == 404:
-            print("❌ File upload endpoint not found (404)")
+            print("[FAIL] File upload endpoint not found (404)")
             return False
         elif response.status_code == 422:
-            print("✅ File upload endpoint exists (returns 422 for invalid request as expected)")
+            print("[PASS] File upload endpoint exists (returns 422 for invalid request as expected)")
             return True
         else:
-            print(f"✅ File upload endpoint exists (returned status {response.status_code})")
+            print(f"[PASS] File upload endpoint exists (returned status {response.status_code})")
             return True
     except Exception as e:
-        print(f"❌ File upload endpoint check failed: {e}")
+        print(f"[FAIL] File upload endpoint check failed: {e}")
         return False
 
 def main():
@@ -105,7 +105,7 @@ def main():
     try:
         requests.get(BASE_URL, timeout=2)
     except requests.exceptions.ConnectionError:
-        print(f"❌ Cannot connect to backend server at {BASE_URL}")
+        print(f"[FAIL] Cannot connect to backend server at {BASE_URL}")
         print("Please start the backend server with:")
         print("    python -m service.app")
         sys.exit(1)
@@ -123,7 +123,7 @@ def main():
     print("=" * 60)
     
     for test_name, passed in results:
-        status = "✅ PASS" if passed else "❌ FAIL"
+        status = "PASS" if passed else "FAIL"
         print(f"{test_name:.<40} {status}")
     
     total = len(results)
@@ -131,10 +131,10 @@ def main():
     print(f"\nTotal: {passed}/{total} tests passed")
     
     if passed == total:
-        print("\n🎉 All tests passed!")
+        print("\nAll tests passed.")
         sys.exit(0)
     else:
-        print(f"\n⚠️  {total - passed} test(s) failed")
+        print(f"\n{total - passed} test(s) failed")
         sys.exit(1)
 
 if __name__ == "__main__":

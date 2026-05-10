@@ -21,6 +21,7 @@ interface PreprocessControlsProps {
   resultId: string | null
   prominenceInput: string
   setProminenceInput: (val: string) => void
+  onValidateParams: (scope?: "detect" | "filter" | "all", sourceParams?: Parameters) => Parameters
 }
 
 function ParamLabel({
@@ -60,6 +61,7 @@ export function PreprocessControls({
   resultId,
   prominenceInput,
   setProminenceInput,
+  onValidateParams,
 }: PreprocessControlsProps) {
   const resolutionMs = params.time_resolution * 1000
   const distanceMs = Number((params.distance * resolutionMs).toFixed(3))
@@ -120,6 +122,10 @@ export function PreprocessControls({
                       step="1"
                       value={params.filter_cutoff_freq}
                       onChange={(e) => updateParam('filter_cutoff_freq', Math.round(parseFloat(e.target.value) || 0))}
+                      onBlur={(e) => onValidateParams("filter", {
+                        ...params,
+                        filter_cutoff_freq: Math.round(parseFloat(e.target.value) || 0),
+                      })}
                       className="text-xs"
                     />
                     <Button
@@ -231,16 +237,27 @@ export function PreprocessControls({
                   }}
                   onBlur={(e) => {
                     const value = parseFloat(e.target.value)
-                    if (isNaN(value) || value < 1 || !isFinite(value)) {
-                      const defaultValue = 20
+                    if (isNaN(value) || value <= 0 || !isFinite(value)) {
+                      const defaultValue = onValidateParams("detect", {
+                        ...params,
+                        prominence_threshold: value,
+                      }).prominence_threshold
                       setProminenceInput(defaultValue.toString())
                       updateParam('prominence_threshold', defaultValue)
                     } else {
+                      const corrected = onValidateParams("detect", {
+                        ...params,
+                        prominence_threshold: value,
+                      })
+                      if (corrected.prominence_threshold !== value) {
+                        setProminenceInput(corrected.prominence_threshold.toString())
+                        return
+                      }
                       setProminenceInput(value.toString())
                     }
                   }}
                   step={1}
-                  min={1}
+                  min={Number.EPSILON}
                   className="text-xs"
                 />
               </div>
@@ -256,6 +273,10 @@ export function PreprocessControls({
                   unit="%"
                   value={Number((params.rel_height * 100).toFixed(1))}
                   onChange={(e) => updateParam('rel_height', parseFloat(e.target.value) / 100)}
+                  onBlur={(e) => onValidateParams("detect", {
+                    ...params,
+                    rel_height: parseFloat(e.target.value) / 100,
+                  })}
                   step="0.5"
                   min="0"
                   max="100"
@@ -279,8 +300,15 @@ export function PreprocessControls({
                         const [, max] = params.width_ms.split(',')
                         updateParam('width_ms', `${value},${max || 200}`)
                       }}
+                      onBlur={(e) => {
+                        const [, max] = params.width_ms.split(',')
+                        onValidateParams("detect", {
+                          ...params,
+                          width_ms: `${e.target.value},${max || 200}`,
+                        })
+                      }}
                       step={0.1}
-                      min={0.1}
+                      min={Math.max(0.1, resolutionMs)}
                       className="text-xs"
                     />
                   </div>
@@ -293,8 +321,15 @@ export function PreprocessControls({
                         const [min] = params.width_ms.split(',')
                         updateParam('width_ms', `${min || 0.1},${value}`)
                       }}
+                      onBlur={(e) => {
+                        const [min] = params.width_ms.split(',')
+                        onValidateParams("detect", {
+                          ...params,
+                          width_ms: `${min || 0.1},${e.target.value}`,
+                        })
+                      }}
                       step={1}
-                      min={0.1}
+                      min={Math.max(0.1, resolutionMs)}
                       className="text-xs"
                     />
                   </div>
@@ -308,6 +343,16 @@ export function PreprocessControls({
                       value={distanceMs}
                       unit="ms"
                       onValueChange={updateDistanceMs}
+                      onBlur={(e) => {
+                        const value = parseFloat(e.target.value)
+                        const distanceSamples = Number.isFinite(value)
+                          ? Math.round(value / resolutionMs)
+                          : params.distance
+                        onValidateParams("detect", {
+                          ...params,
+                          distance: distanceSamples,
+                        })
+                      }}
                       min={resolutionMs}
                       step={resolutionMs}
                       className="text-xs"
@@ -324,6 +369,10 @@ export function PreprocessControls({
                       unit="%"
                       value={Number((params.prominence_ratio * 100).toFixed(1))}
                       onChange={(e) => updateParam('prominence_ratio', parseFloat(e.target.value) / 100)}
+                      onBlur={(e) => onValidateParams("detect", {
+                        ...params,
+                        prominence_ratio: parseFloat(e.target.value) / 100,
+                      })}
                       step="0.5"
                       min="0"
                       max="100"
